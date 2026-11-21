@@ -1,0 +1,130 @@
+# Change real infrastructure, one layer of one environment at a time, by hand and only from main.
+#
+#   1. plan   runs with the read-only identity and writes an encrypted plan, shown in the run summary.
+#   2. apply  waits for the GitHub environment's required reviewers, who read that plan, then applies exactly it with
+#             that environment's apply identity. Nothing is re-planned between approval and apply.
+#
+# Set up once per cloud with the bootstrap stack (infra/README.md): repository variables for the plan identity, and
+# per environment (dev, staging, prod) the apply identity's variables, required reviewers; for Azure a repository secret STATE_PASSPHRASE_<ENV> (the plan and the apply share it).
+name: Infra apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud: {description: Cloud, type: choice, options: [aws, azure, gcp], required: true}
+      environment: {description: Environment, type: choice, options: [dev, staging, prod], required: true}
+      layer: {description: Layer, type: choice, options: [platform, addons, stamp], required: true}
+      stamp: {description: "Stamp name (layer stamp only), e.g. pool or acme", type: string, required: false}
+
+concurrency:
+  # One change at a time per stack; never cancel an apply halfway.
+  group: infra-apply-${{ inputs.cloud }}-${{ inputs.environment }}-${{ inputs.layer }}-${{ inputs.stamp }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TOFU_VERSION: 1.11.5
+
+jobs:
+  plan:
+    name: Plan ${{ inputs.cloud }} ${{ inputs.environment }} ${{ inputs.layer }} ${{ inputs.stamp }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with: {tofu_version: "${{ env.TOFU_VERSION }}", tofu_wrapper: false}
+      - uses: ./.github/actions/cloud-login
+        with:
+          cloud: ${{ inputs.cloud }}
+          aws-role-arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          azure-client-id: ${{ vars.AZURE_PLAN_CLIENT_ID }}
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-service-account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+      - name: Plan
+        id: plan
+        env:
+          TF_VAR_state_passphrase: ${{ secrets[format('STATE_PASSPHRASE_{0}', inputs.environment)] }}
+          CLOUD: ${{ inputs.cloud }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          LAYER: ${{ inputs.layer }}
+          STAMP: ${{ inputs.stamp }}
+        run: |
+          set -euo pipefail
+          args=("$CLOUD" "$ENVIRONMENT" "$LAYER")
+          [ -n "$STAMP" ] && args+=(--stamp "$STAMP")
+          python3 infra/bin/stack.py "${args[@]}" init
+          # Read-only identity: no state lock here; the apply job takes the lock.
+          set +e
+          python3 infra/bin/stack.py "${args[@]}" plan -- -lock=false -no-color -detailed-exitcode | tee plan.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          [ "$code" = 1 ] && exit 1
+          echo "changes=$([ "$code" = 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          data="infra/.tofu/${CLOUD}-${ENVIRONMENT}-${LAYER}${STAMP:+-$STAMP}"
+          mkdir -p plan && cp "$data/tfplan" plan/tfplan
+          { echo "### Plan: $CLOUD $ENVIRONMENT $LAYER $STAMP"; echo '```'; tail -c 60000 plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # The plan file is encrypted by OpenTofu (state and plan encryption is enforced in every stack).
+      - if: steps.plan.outputs.changes == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: tfplan
+          path: plan/tfplan
+          retention-days: 1
+          if-no-files-found: error
+
+  apply:
+    name: Apply ${{ inputs.cloud }} ${{ inputs.environment }} ${{ inputs.layer }} ${{ inputs.stamp }}
+    needs: plan
+    if: needs.plan.outputs.changes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with: {tofu_version: "${{ env.TOFU_VERSION }}", tofu_wrapper: false}
+      - uses: ./.github/actions/cloud-login
+        with:
+          cloud: ${{ inputs.cloud }}
+          aws-role-arn: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with: {name: tfplan, path: plan}
+      - name: Apply exactly the reviewed plan
+        env:
+          TF_VAR_state_passphrase: ${{ secrets[format('STATE_PASSPHRASE_{0}', inputs.environment)] }}
+          CLOUD: ${{ inputs.cloud }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          LAYER: ${{ inputs.layer }}
+          STAMP: ${{ inputs.stamp }}
+        run: |
+          set -euo pipefail
+          args=("$CLOUD" "$ENVIRONMENT" "$LAYER")
+          [ -n "$STAMP" ] && args+=(--stamp "$STAMP")
+          python3 infra/bin/stack.py "${args[@]}" init
+          data="infra/.tofu/${CLOUD}-${ENVIRONMENT}-${LAYER}${STAMP:+-$STAMP}"
+          cp plan/tfplan "$data/tfplan"
+          # A plan made against older state is refused by OpenTofu ("Saved plan is stale"): plan again if so.
+          python3 infra/bin/stack.py "${args[@]}" apply -- -no-color

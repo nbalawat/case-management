@@ -1,0 +1,144 @@
+# Release the application image when a version tag (v1.2.3) is pushed:
+#   build, scan with Trivy (fail on fixable HIGH or CRITICAL), push to GHCR, sign keyless with cosign (GitHub OIDC,
+#   no keys to manage), attach an SPDX SBOM and SLSA build provenance, then open a pull request that releases the new
+#   version to the dev stamps (deploy/environments/dev). Argo CD deploys it once that pull request merges.
+# Kyverno's caseforge-signed-images policy admits only images signed by this workflow on a tag of this repository.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  image:
+    name: Build, scan, sign and attest the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      security-events: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      version: ${{ steps.meta.outputs.version }}
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - name: Image name
+        id: name
+        run: echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/caseforge" >> "$GITHUB_OUTPUT"
+      - name: The tag matches the application version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          chart="$(awk '/^appVersion:/ {gsub(/"/, "", $2); print $2}' deploy/helm/caseforge/Chart.yaml)"
+          [ "$tag" = "$chart" ] || { echo "::error::tag $tag but the chart's appVersion is $chart"; exit 1; }
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        id: meta
+        with:
+          images: ${{ steps.name.outputs.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Build for scanning
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          load: true
+          tags: caseforge:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan the image (fixable HIGH or CRITICAL fails the release)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: caseforge:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: Image findings for code scanning
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: caseforge:scan
+          exit-code: "0"
+          format: sarif
+          output: trivy-image.sarif
+          skip-setup-trivy: true
+      - if: always()
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with: {sarif_file: trivy-image.sarif, category: trivy-image}
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Push (the same layers, from the cache)
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          provenance: mode=max
+          sbom: true
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532
+      - name: Sign keyless
+        env: {REF: "${{ steps.name.outputs.image }}@${{ steps.push.outputs.digest }}"}
+        run: cosign sign --yes "$REF"
+      - name: SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c
+        with:
+          image: ${{ steps.name.outputs.image }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: true
+      - name: Attach the SBOM as a signed attestation
+        env: {REF: "${{ steps.name.outputs.image }}@${{ steps.push.outputs.digest }}"}
+        run: cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+      - name: Build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  release-to-dev:
+    name: Open the pull request that releases it to dev
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {ref: main, persist-credentials: false}
+      - name: Set the tag on every dev stamp
+        env: {VERSION: "${{ needs.image.outputs.version }}"}
+        run: python3 deploy/scripts/set-release.py dev "$VERSION"
+      - uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1
+        with:
+          branch: release/dev-${{ needs.image.outputs.version }}
+          title: Release ${{ needs.image.outputs.version }} to dev
+          commit-message: Release ${{ needs.image.outputs.version }} to dev
+          body: |
+            Releases image `${{ needs.image.outputs.image }}@${{ needs.image.outputs.digest }}` (tag `${{ needs.image.outputs.version }}`) to the dev stamps.
+            It is signed by the release workflow and carries an SBOM and build provenance. Argo CD deploys it when this merges.
+          labels: release
