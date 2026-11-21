@@ -76,6 +76,9 @@ class Settings:
     # the platform page shows whether each client's jobs are running.
     flink_url: str = os.getenv("FLINK_URL", "")
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
+    # A database holding another schema version: "rebuild" drops every table and starts again (demos), "refuse"
+    # stops the application with an explanation and changes nothing. The Helm chart sets refuse.
+    schema_on_mismatch: str = os.getenv("SCHEMA_ON_MISMATCH", "rebuild")
 
 
 settings = Settings()

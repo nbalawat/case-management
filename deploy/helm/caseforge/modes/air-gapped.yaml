@@ -1,0 +1,12 @@
+# Air-gapped: a site with no route to the internet. The image is carried in and pushed to the site's registry,
+# no model outside the site is called, and nothing in the chart reaches out.
+#   --set image.repository=registry.site.internal/caseforge --set image.pullPolicy=IfNotPresent
+api:
+  replicas: 2
+llm:
+  agentMode: rules      # agents work from rules; no model is called
+  askProvider: mock     # the Ask page answers from its built-in planner, with no model
+ingress:
+  enabled: true
+networkPolicy:
+  enabled: true

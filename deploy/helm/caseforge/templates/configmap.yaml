@@ -1,0 +1,38 @@
+{{- include "caseforge.checks" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "caseforge.name" . }}-env
+  labels: {{- include "caseforge.labels" . | nindent 4 }}
+data:
+  PUBLIC_URL: {{ .Values.publicUrl | quote }}
+  SCHEMA_ON_MISMATCH: {{ .Values.schemaOnMismatch | quote }}
+  DEMO_TENANTS: {{ ternary "1" "0" .Values.demoTenants | quote }}
+  AUTH_MODE: {{ .Values.auth.mode | quote }}
+  OIDC_OPERATOR_ISSUER: {{ .Values.auth.operatorIssuer | quote }}
+  OIDC_OPERATOR_AUDIENCE: {{ .Values.auth.operatorAudience | quote }}
+  OIDC_OPERATOR_CLAIM: {{ .Values.auth.operatorClaim | quote }}
+  EVENT_BUS_URL: {{ .Values.eventBus.url | quote }}
+  EVENT_TOPIC_PREFIX: {{ .Values.eventBus.topicPrefix | quote }}
+  OUTBOX_PUBLISHER: {{ .Values.eventBus.outboxPublisher | quote }}
+  BACKBONE_WORKERS: "0"    # the worker Deployment does this, never the API pods
+  PIPELINE_SCHEDULER: "0"  # an in-process timer is wrong with more than one API pod
+  SEARCH_URL: {{ .Values.search.url | quote }}
+  TEMPORAL_URL: {{ .Values.temporal.url | quote }}
+  TEMPORAL_NAMESPACE: {{ .Values.temporal.namespace | quote }}
+  TEMPORAL_TASK_QUEUE: {{ .Values.temporal.taskQueue | quote }}
+  FLINK_URL: {{ .Values.flink.url | quote }}
+  {{- with .Values.storage.evidenceUrl }}
+  EVIDENCE_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.storage.quarantineUrl }}
+  QUARANTINE_URL: {{ . | quote }}
+  {{- end }}
+  AGENT_MODE: {{ .Values.llm.agentMode | quote }}
+  ASK_PROVIDER: {{ .Values.llm.askProvider | quote }}
+  {{- with .Values.llm.askModel }}
+  ASK_MODEL: {{ . | quote }}
+  {{- end }}
+  {{- range $k, $v := .Values.extraEnv }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

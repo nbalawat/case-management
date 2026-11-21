@@ -1,0 +1,9 @@
+# Dedicated stamp: one client, its own namespace, database, topics and keys, in the firm's cloud account.
+# One release per client; the release name is the stamp. The client controls when it is upgraded.
+api:
+  replicas: 2
+  podDisruptionBudget: {enabled: true, minAvailable: 1}
+ingress:
+  enabled: true
+networkPolicy:
+  enabled: true
