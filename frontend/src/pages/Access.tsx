@@ -3,13 +3,14 @@ import { api, fmtDateTime, words } from '../api'
 import { usePeople } from '../shell/people'
 import { useApi } from '../useApi'
 import { Card, Loading, Pill } from '../components/ui'
+import ManagedServiceCard from '../components/access/ManagedServiceCard'
 
 type Policy = {
   policy: { name: string; version: string }
   permissions: { id: string; label: string }[]
   roles: { id: string; title: string; permissions: string[]; read_only: boolean; people: string[]; sees: string; limited: boolean; restricted: boolean }[]
   queues: { id: string; label: string; members: string[] }[]
-  people: { id: string; name: string; title: string; roles: string[]; queues: string[]; read_only: boolean; sees: string[]; restricted: boolean }[]
+  people: { id: string; name: string; title: string; roles: string[]; queues: string[]; read_only: boolean; sees: string[]; restricted: boolean; org?: string }[]
 }
 type AccessData = Policy & {
   tenant: { id: string; name: string }; yaml: string; can_edit: boolean
@@ -109,7 +110,7 @@ export default function Access() {
         <Card title="People">
           <table><thead><tr><th>Person</th><th>Roles</th><th>Queues</th><th>Sees</th></tr></thead>
             <tbody>{data.people.map(p => (
-              <tr key={p.id}><td><b>{p.name}</b><div className="muted small">{p.title}</div></td>
+              <tr key={p.id}><td><b>{p.name}</b>{p.org === 'provider' && <Pill tone="serious">provider</Pill>}<div className="muted small">{p.title}</div></td>
                 <td>{p.roles.map(r => <Pill key={r} tone={p.read_only ? 'warning' : 'human'}>{roleTitle(r)}</Pill>)}</td>
                 <td className="small">{p.queues.map(queueLabel).join(', ') || <span className="muted">None</span>}</td>
                 <td className="small">{p.sees.join('; ')}{p.restricted && <Pill tone="critical">restricted</Pill>}</td></tr>))}</tbody></table>
@@ -119,6 +120,7 @@ export default function Access() {
             <tbody>{data.queues.map(q => <tr key={q.id}><td><b>{q.label}</b><div className="muted small">{q.id}</div></td><td>{q.members.join(', ') || <span className="muted">Nobody</span>}</td></tr>)}</tbody></table>
         </Card>
       </div>
+      <ManagedServiceCard key={data.policy.version} />
       <Editor data={data} onPublished={reload} />
     </>
   )

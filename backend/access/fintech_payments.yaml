@@ -49,6 +49,16 @@ roles:
   restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
   auditor:           {title: External auditor, permissions: [view_team, view_restricted], read_only: true}
 
+# The platform provider's managed-service team may work here. Each engagement names one member of their staff, the
+# roles and queues they hold (only from the list below; never access control) and an end date, and waits for someone
+# here with manage_access to approve it. Steps under client_signoff need one of this client's own people as checker.
+managed_service:
+  provider: CaseForge Managed Services
+  roles: [analyst, fraud_analyst, investigator, sanctions_officer]
+  approval: client
+  max_days: 180
+  client_signoff: [four_eyes, submit_filings]
+
 people:
   - {id: nia, name: Nia Okoye, roles: [fraud_analyst, analyst], title: Financial crime analyst, queues: [fraud, aml-l1, sanctions-l1],
      about: Works fraud claims and takes the first look at monitoring alerts and sanctions hits.}

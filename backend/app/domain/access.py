@@ -4,7 +4,7 @@ The policy file is the single source of truth. Code asks the policy; it never na
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import yaml
@@ -16,6 +16,15 @@ class AccessPolicyError(ValueError):
 
 SCOPES = ("all", "queues", "own")
 RESTRICTED_VIEW, RESTRICT = "view_restricted", "restrict_case"
+# People from the platform provider's own staff who work this client's cases under a managed-service engagement.
+# Their ids carry this prefix so they can never collide with, or be mistaken for, the client's own people.
+PROVIDER_PREFIX = "ms."
+CLIENT, PROVIDER = "client", "provider"
+# Permissions a client can never hand to the provider's staff: control over who has access stays with the client.
+NEVER_DELEGATED = frozenset({"manage_access", "certify_access"})
+SIGNOFF_STEPS = {"four_eyes": "Four-eyes approvals of work done by the managed-service team",
+                 "submit_filings": "Sending regulatory reports"}
+APPROVALS = ("client", "none")
 
 
 @dataclass(frozen=True)
@@ -50,6 +59,26 @@ class Role:
 
 
 @dataclass(frozen=True)
+class ManagedService:
+    """Whether, and on what terms, the platform provider's staff may work this client's cases.
+
+    Absent from a policy, nobody from the provider can be given a place at the client: the secure default.
+    """
+    provider: str
+    roles: frozenset[str]  # the roles provider staff may be given; never one that controls access
+    approval: str = "client"  # client: each engagement waits for someone here with manage_access. none: starts at once
+    max_days: int = 180  # longest engagement; it ends by itself after this
+    client_signoff: frozenset[str] = frozenset()  # steps a provider maker needs a client checker for (SIGNOFF_STEPS)
+
+    def describe(self) -> list[str]:
+        out = [f"{self.provider} staff may hold: {', '.join(sorted(self.roles))}",
+               "Each engagement needs approval here" if self.approval == "client" else "Engagements start without approval here",
+               f"Engagements last at most {self.max_days} days"]
+        out += [f"Client sign-off: {SIGNOFF_STEPS[x].lower()}" for x in sorted(self.client_signoff)]
+        return out
+
+
+@dataclass(frozen=True)
 class Persona:
     id: str
     name: str
@@ -62,6 +91,12 @@ class Persona:
     roles: tuple[str, ...] = ()  # every role held; `role` is the first and is the one shown
     # What this person can see, one entry per role that limits it. None: at least one role sees everything.
     views: tuple[Sees, ...] | None = None
+    org: str = CLIENT  # provider: a member of the platform provider's staff, here under an engagement
+    engagement: str | None = None  # the engagement that gives a provider person their place
+
+    @property
+    def external(self) -> bool:
+        return self.org == PROVIDER
 
     def holds(self, roles) -> bool:
         return any(r in roles for r in (self.roles or (self.role,)))
@@ -80,6 +115,15 @@ class AccessPolicy:
     roles: dict[str, Role]
     people: dict[str, Persona]
     default_person: str
+    managed_service: ManagedService | None = None
+
+    @property
+    def own_people(self) -> dict[str, Persona]:
+        """The client's own people, without anyone here under a managed-service engagement."""
+        return {k: p for k, p in self.people.items() if not p.external}
+
+    def with_people(self, extra: dict[str, Persona]) -> "AccessPolicy":
+        return replace(self, people=self.own_people | extra)
 
     def person(self, pid: str | None) -> Persona:
         return self.people.get(pid or "", self.people[self.default_person])
@@ -133,26 +177,69 @@ def parse_policy(raw: dict, origin: str = "access policy") -> AccessPolicy:
         names = item.get("roles") or ([item["role"]] if item.get("role") else [])
         if not names or not isinstance(names, list):
             fail(f"person '{pid}' needs a role")
-        missing = [n for n in names if n not in roles]
-        if missing:
-            fail(f"person '{pid}' has unknown role '{missing[0]}'")
-        held = [roles[n] for n in names]
-        if len(held) > 1 and any(r.read_only for r in held):
-            fail(f"person '{pid}' combines a read-only role with another role")
-        role = held[0]
-        granted = frozenset().union(*(r.permissions for r in held))
-        bad = [q for q in item.get("queues", []) if q not in queues]
-        if bad:
-            fail(f"person '{pid}' is in unknown queue(s): {', '.join(bad)}")
-        if item.get("queues") and "work" not in granted:
-            fail(f"person '{pid}' is in a queue but holds no role that can work cases")
-        views = None if any(r.sees is None for r in held) else tuple(dict.fromkeys(r.sees for r in held))
-        people[pid] = Persona(pid, item.get("name", pid), role.id, item.get("title", role.title), tuple(item.get("queues", [])),
-                              item.get("about", ""), granted, role.read_only, tuple(names), views)
+        if str(pid).startswith(PROVIDER_PREFIX):
+            fail(f"person '{pid}': ids starting '{PROVIDER_PREFIX}' are kept for the provider's managed-service staff")
+        try:
+            people[pid] = make_persona(roles, queues, pid, item.get("name", pid), names, item.get("queues", []), item.get("title"),
+                                       item.get("about", ""))
+        except AccessPolicyError as e:
+            fail(str(e))
     default = raw.get("default_person") or next(iter(people))
     if default not in people:
         fail(f"default_person '{default}' is not one of the people")
-    return AccessPolicy(str(raw.get("policy", "default")), str(raw.get("version", "1")), permissions, queues, roles, people, default)
+    ms = _managed_service(raw.get("managed_service"), roles, people, fail)
+    return AccessPolicy(str(raw.get("policy", "default")), str(raw.get("version", "1")), permissions, queues, roles, people, default, ms)
+
+
+def make_persona(roles: dict[str, Role], queues: dict[str, str], pid: str, name: str, names: list[str], in_queues: list[str],
+                 title: str | None = None, about: str = "", org: str = CLIENT, engagement: str | None = None) -> Persona:
+    """One person holding these roles and queues, with what the roles together allow and show. Raises on a bad combination."""
+    missing = [n for n in names if n not in roles]
+    if missing:
+        raise AccessPolicyError(f"person '{pid}' has unknown role '{missing[0]}'")
+    held = [roles[n] for n in names]
+    if len(held) > 1 and any(r.read_only for r in held):
+        raise AccessPolicyError(f"person '{pid}' combines a read-only role with another role")
+    role = held[0]
+    granted = frozenset().union(*(r.permissions for r in held))
+    bad = [q for q in in_queues if q not in queues]
+    if bad:
+        raise AccessPolicyError(f"person '{pid}' is in unknown queue(s): {', '.join(bad)}")
+    if in_queues and "work" not in granted:
+        raise AccessPolicyError(f"person '{pid}' is in a queue but holds no role that can work cases")
+    views = None if any(r.sees is None for r in held) else tuple(dict.fromkeys(r.sees for r in held))
+    return Persona(pid, name, role.id, title or role.title, tuple(in_queues), about, granted, role.read_only, tuple(names), views,
+                   org, engagement)
+
+
+def _managed_service(raw, roles: dict[str, Role], people: dict[str, Persona], fail) -> ManagedService | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or set(raw) - {"provider", "roles", "approval", "max_days", "client_signoff"}:
+        fail("managed_service takes: provider, roles, approval, max_days, client_signoff")
+    names = raw.get("roles")
+    if not isinstance(names, list) or not names or not all(isinstance(x, str) for x in names):
+        fail("managed_service: roles must list the roles the provider's staff may be given")
+    unknown = [r for r in names if r not in roles]
+    if unknown:
+        fail(f"managed_service names unknown role(s): {', '.join(unknown)}")
+    for r in names:
+        kept = sorted(roles[r].permissions & NEVER_DELEGATED)
+        if kept:
+            fail(f"managed_service: role '{r}' grants {', '.join(kept)}, which stays with the client's own people")
+    approval = raw.get("approval", "client")
+    if approval not in APPROVALS:
+        fail("managed_service: approval must be 'client' (each engagement is approved here) or 'none'")
+    days = raw.get("max_days", 180)
+    if not isinstance(days, int) or isinstance(days, bool) or not 1 <= days <= 366:
+        fail("managed_service: max_days must be a whole number from 1 to 366")
+    signoff = raw.get("client_signoff") or []
+    if not isinstance(signoff, list) or set(signoff) - set(SIGNOFF_STEPS):
+        fail(f"managed_service: client_signoff takes any of: {', '.join(SIGNOFF_STEPS)}")
+    if "submit_filings" in signoff and not any(p.can("submit_filings") for p in people.values()):
+        fail("managed_service: reports need sending by the client's own people, but none of them can send them")
+    provider = str(raw.get("provider") or "Platform provider").strip()[:80]
+    return ManagedService(provider, frozenset(names), approval, days, frozenset(signoff))
 
 
 def load_policy(path: Path) -> AccessPolicy:

@@ -1,6 +1,6 @@
 // Thin API client. In this demo the active client and person travel in headers; a real deployment takes both
 // from the sign-in token, so a user can never name a client they do not belong to.
-export type Persona = { id: string; name: string; role: string; title: string; about: string; read_only: boolean; permissions: string[] }
+export type Persona = { id: string; name: string; role: string; title: string; about: string; read_only: boolean; permissions: string[]; org?: 'client' | 'provider' }
 
 import { authMode, bearer, signOut } from './auth'
 
@@ -11,10 +11,15 @@ export const getTenantId = () => tenantId
 export const isOperator = () => tenantId === OPERATOR
 export const setTenantId = (id: string) => { tenantId = id; localStorage.setItem('tenant', id) }
 export const getPersonaId = () => localStorage.getItem(personaKey()) || ''
+// Signed in as a member of the provider's staff: the token says who, and the client they are working at travels in
+// X-Tenant. The server lets that through only where the client has approved an engagement for them.
+let staffMode = false
+export const setStaffMode = (on: boolean) => { staffMode = on }
+export const isStaff = () => staffMode
 export const setPersonaId = (id: string) => localStorage.setItem(personaKey(), id)
 
 function identity(): Record<string, string> {
-  if (authMode() === 'oidc') return bearer() // signed in: the token says which client and who
+  if (authMode() === 'oidc') return { ...bearer(), ...(staffMode && !isOperator() ? { 'X-Tenant': tenantId } : {}) } // the token says who
   if (isOperator()) return { 'X-Operator': 'olivia' }
   const who = getPersonaId()
   return { 'X-Tenant': tenantId, ...(who ? { 'X-Persona': who } : {}) }
