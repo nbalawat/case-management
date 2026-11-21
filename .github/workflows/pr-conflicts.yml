@@ -1,0 +1,56 @@
+name: Flag pull requests that conflict with main
+
+# GitHub runs no pull-request checks while a pull request conflicts with its base, so a conflicted pull request
+# sits silently with no CI. Every time main moves, say so on each open pull request it now conflicts with: the
+# comment (and the label) reach whoever is watching the pull request, so they merge main and CI runs again.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pr-conflicts
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  flag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo
+            const LABEL = 'conflicts-with-main'
+            await github.rest.issues.createLabel({ owner, repo, name: LABEL, color: 'd93f0b', description: 'Merge main into this branch: CI does not run until you do' }).catch(() => {})
+            const prs = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', base: 'main', per_page: 100 })
+            for (const { number } of prs) {
+              // GitHub works out mergeability in the background after main moves; ask until it has an answer.
+              let pr
+              for (let i = 0; i < 10; i++) {
+                pr = (await github.rest.pulls.get({ owner, repo, pull_number: number })).data
+                if (pr.mergeable !== null) break
+                await new Promise(r => setTimeout(r, 6000))
+              }
+              const labelled = pr.labels.some(l => l.name === LABEL)
+              if (pr.mergeable === false) {
+                const marker = `<!-- conflicts-with-main ${pr.head.sha} ${context.sha} -->`
+                if (!labelled) await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: [LABEL] })
+                const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 })
+                if (!comments.some(c => c.body.includes(`<!-- conflicts-with-main ${pr.head.sha}`))) {
+                  await github.rest.issues.createComment({ owner, repo, issue_number: number, body:
+                    `${marker}\nThis pull request now conflicts with \`main\` (as of ${context.sha.slice(0, 7)}), so GitHub is not running its CI checks. ` +
+                    `Merge \`main\` into \`${pr.head.ref}\`, resolve the conflicts and push; CI runs again on that push. ` +
+                    `How routers, pages and migrations avoid collisions: see CONTRIBUTING.md.` })
+                }
+                core.warning(`#${number} conflicts with main`)
+              } else if (pr.mergeable === true && labelled) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: LABEL }).catch(() => {})
+              }
+            }
