@@ -88,6 +88,13 @@ Every source chip in the agent briefing, the copilot or an alert opens Transacti
 a daily chart of money in and out marks days with alerted activity; click a day (shift-click for a range) to
 filter, or group by counterparty, channel or country to see where the value went.
 
+**Dashboards.** Every figure opens the cases behind it. On the overview, a headline tile, a day's bar of cases
+opened or closed, a stage, or an alert scenario opens the case list filtered to exactly those cases (the counts
+match: `due=week`, `opened=2026-11-21`, `closed=2026-11`, `scenario=structuring` and the usual filters are list
+filters the API understands). The filters a dashboard set show as chips on the list, each removable. The
+management report does the same for months. Charts are drawn with Apache ECharts, coloured from the page's own
+tokens so they follow light and dark, and each has its figures as a table underneath.
+
 1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
    his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
 2. **An investigation, still as Ivan.** Open a case in *Investigation*. The agent briefing is on the left with

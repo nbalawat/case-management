@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
 
 export const Pill = ({ tone = 'neutral', children }: { tone?: string; children: ReactNode }) =>
@@ -36,5 +37,8 @@ export function StageClock({ hours, kind }: { hours: number | null; kind?: strin
   return <span>{span(hours)} left{kind === 'wait' ? ' (waiting)' : ''}</span>
 }
 
-export const Kpi = ({ label, value, sub, bad }: { label: string; value: ReactNode; sub?: ReactNode; bad?: boolean }) =>
-  <div className="kpi"><span>{label}</span><b className={bad ? 'bad' : ''}>{value}</b>{sub && <small>{sub}</small>}</div>
+/** A headline figure. With `to`, the whole tile opens the records behind the number. */
+export const Kpi = ({ label, value, sub, bad, to }: { label: string; value: ReactNode; sub?: ReactNode; bad?: boolean; to?: string }) => {
+  const body = <><span>{label}</span><b className={bad ? 'bad' : ''}>{value}</b>{sub && <small>{sub}</small>}</>
+  return to ? <Link className="kpi kpi-link" to={to} title="Open the records behind this figure">{body}</Link> : <div className="kpi">{body}</div>
+}

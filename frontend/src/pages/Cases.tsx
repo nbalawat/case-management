@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Download, Eye } from 'lucide-react'
+import { Download, Eye, X } from 'lucide-react'
 import { api, daysUntil, fmtDate, hoursUntil } from '../api'
 import { useApi } from '../useApi'
 import { useNameOf } from '../shell/people'
@@ -11,6 +11,7 @@ import { FacetFilter, Pager, SearchInput, Segmented, ViewsMenu } from '../compon
 import { load, save, type SavedView } from '../components/grid/prefs'
 import type { GridColumn } from '../components/grid/types'
 import { toSortParam, useListParams } from '../components/grid/useListParams'
+import { drillChips } from '../components/dashboard/drill'
 import { Button } from '../components/kit/button'
 import { Card, Pill, Priority, Rec, Sla, StageClock } from '../components/ui'
 
@@ -23,7 +24,7 @@ export type CaseRow = {
 type Page = {
   rows: CaseRow[]; total: number; page: number; size: number
   facets: Record<'case_type' | 'priority' | 'queue' | 'state' | 'owner', Record<string, number>>
-  labels: { case_type: Record<string, string>; queue: Record<string, string>; state: Record<string, string> }
+  labels: { case_type: Record<string, string>; queue: Record<string, string>; state: Record<string, string>; scenario?: Record<string, string> }
 }
 
 const GRID = 'cases'
@@ -117,6 +118,9 @@ export default function Cases() {
             <FacetFilter label="Queue" value={p.getAll('queue')} onChange={v => p.set({ queue: v })}
               options={options(f?.queue, p.getAll('queue'), v => labels?.queue[v] ?? v)} />
             <Segmented label="Owner" value={owner} onChange={v => p.set({ owner: v })} options={ownerOptions} />
+            {drillChips(new URLSearchParams(p.query), s => labels?.scenario?.[s] ?? s).map(c => (
+              <button key={c.key + c.label} className="drill-chip" title="Set by a dashboard. Remove this filter" onClick={() => p.set({ [c.key]: null })}>
+                {c.label} <X size={13} aria-hidden /></button>))}
           </>}
           footer={<>
             <Button size="sm" onClick={() => api.download(`/case-list/export.csv?${p.apiQuery}`)}><Download size={15} /> Export {data ? data.total.toLocaleString() : ''} to CSV</Button>

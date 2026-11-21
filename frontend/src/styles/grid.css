@@ -38,3 +38,6 @@
 .qv-table{font-size:13px}.qv-table td{padding:5px 6px}
 .data-grid td .muted.small a,.data-grid td .muted.small{white-space:nowrap}
 .grid-toolbar{align-items:flex-start}.grid-tools{padding-top:1px}
+.drill-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--brand); background: var(--brand-soft); color: var(--brand); font-size: 12.5px; cursor: pointer; }
+.drill-chip:hover { background: var(--brand); color: var(--on-brand); }

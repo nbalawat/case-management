@@ -217,7 +217,7 @@ await page.getByRole('button', { name: /^Run it: raise/ }).click(); await page.l
 await page.locator('section.card', { hasText: 'Lookbacks (' }).screenshot({ path: `${out}55-lookback.png` })
 // Management reporting and governance: last month's report, the change register, a recertification and the audit trail.
 await as('tara')
-await go('/overview/report'); await page.locator('.chart svg').first().waitFor(); await shot('56-management-report')
+await go('/overview/report'); await page.locator('.echart svg').first().waitFor(); await shot('56-management-report')
 await as('maya')
 await go('/governance'); await page.getByText('Change register').waitFor()
 await page.getByLabel('Review name').fill('Access recertification, November'); await page.getByRole('button', { name: 'Start a review' }).click()
