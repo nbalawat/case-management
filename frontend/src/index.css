@@ -254,3 +254,10 @@ dl.facts.dense{margin:8px 0 0;font-size:13px}dl.facts.dense dt,dl.facts.dense dd
 .seg a{display:contents}.seg a button{border-right:1px solid var(--line);border-radius:0;border-top:0;border-bottom:0;border-left:0}.seg a:last-child button{border-right:0}
 .bar-row .rstack{height:12px}details.wlist>summary{cursor:pointer;line-height:1.9}details.wlist .pill{margin-right:4px}
 .inline.wrap input[type=date],form.inline input[type=date]{min-height:32px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;font:inherit}form.inline select{max-width:220px}
+/* Knowledge library */
+.kb-split{display:grid;grid-template-columns:minmax(220px,1fr) 3fr;gap:16px;align-items:start}@media(max-width:900px){.kb-split{grid-template-columns:1fr}}
+.kb-search{position:static;border:0;margin:0 0 12px}
+.kb-docs{list-style:none;padding:0;margin:0}.kb-docs li{padding:6px 0;border-bottom:1px solid var(--line)}.kb-docs li:last-child{border:0}.kb-docs a.active{font-weight:600}
+.passage{padding:8px 0;border-bottom:1px solid var(--line)}.passage:last-child{border:0}.passage h3{font-size:14px;margin:4px 0}.passage.focus{background:var(--brand-soft,rgba(80,120,255,.06));border-radius:6px;padding:8px}
+.passage p,.passage ul{margin:4px 0;font-size:13.5px}
+.policycard{max-width:420px}.policycard summary{cursor:pointer}

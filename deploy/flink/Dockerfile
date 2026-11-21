@@ -11,7 +11,7 @@ RUN mkdir /classes \
  && jar cf /caseforge-udf.jar -C /classes .
 
 FROM flink
-ADD --chown=flink:flink --checksum=sha256:11cbbcd1163c4fae0d23f9e2c55b4ff57a719a39fe96fc780001cd21a4e5ba15 \
+ADD --chown=flink:flink --chmod=644 --checksum=sha256:11cbbcd1163c4fae0d23f9e2c55b4ff57a719a39fe96fc780001cd21a4e5ba15 \
     https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/5.0.0-2.1/flink-sql-connector-kafka-5.0.0-2.1.jar \
     /opt/flink/lib/
 COPY --from=udf --chown=flink:flink /caseforge-udf.jar /opt/flink/lib/
