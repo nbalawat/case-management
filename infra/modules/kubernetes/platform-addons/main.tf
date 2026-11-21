@@ -106,7 +106,8 @@ locals {
       chart      = "opensearch-operator"
       version    = "3.0.14"
       namespace  = "opensearch-operator"
-      values     = {}
+      # Only the current opensearch.org API: no deprecated opensearch.opster.io CRDs, webhooks or watches.
+      values = { legacyAPI = { enabled = false } }
     }
     flink-kubernetes-operator = {
       repository = "https://downloads.apache.org/flink/flink-kubernetes-operator-1.16.1"

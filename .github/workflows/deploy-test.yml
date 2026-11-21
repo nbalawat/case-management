@@ -155,7 +155,7 @@ jobs:
           helm install strimzi strimzi/strimzi-kafka-operator --version "$STRIMZI_CHART" -n strimzi --create-namespace \
             --set watchAnyNamespace=true --wait --timeout 10m
           helm install opensearch-operator opensearch-operator/opensearch-operator --version "$OPENSEARCH_OPERATOR_CHART" \
-            -n opensearch-operator --create-namespace --wait --timeout 10m
+            -n opensearch-operator --create-namespace --set legacyAPI.enabled=false --wait --timeout 10m
       - name: The stamp's data services, one node each
         run: |
           set -euo pipefail
@@ -175,8 +175,8 @@ jobs:
         run: |
           set -euo pipefail
           for _ in $(seq 1 90); do
-            phase="$(kubectl -n cf-ci get opensearchcluster search -o jsonpath='{.status.phase}' 2>/dev/null || true)"
-            health="$(kubectl -n cf-ci get opensearchcluster search -o jsonpath='{.status.health}' 2>/dev/null || true)"
+            phase="$(kubectl -n cf-ci get opensearchclusters.opensearch.org search -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+            health="$(kubectl -n cf-ci get opensearchclusters.opensearch.org search -o jsonpath='{.status.health}' 2>/dev/null || true)"
             echo "phase=$phase health=$health"
             [ "$phase" = RUNNING ] && { [ "$health" = green ] || [ "$health" = yellow ]; } && break
             sleep 10
@@ -188,7 +188,7 @@ jobs:
         if: failure()
         run: |
           kubectl get pods -A
-          kubectl -n cf-ci get kafka,kafkanodepool,kafkauser,opensearchcluster,externalsecret,certificate -o wide || true
+          kubectl -n cf-ci get kafka,kafkanodepool,kafkauser,opensearchclusters.opensearch.org,externalsecret,certificate -o wide || true
           kubectl -n cf-ci describe pods | tail -150
           kubectl -n opensearch-operator logs deploy/opensearch-operator --tail=80 || true
           kubectl -n strimzi logs deploy/strimzi-cluster-operator --tail=80 || true
