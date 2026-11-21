@@ -164,9 +164,43 @@ class _Worker:
         ready.wait(10)
 
     def close(self) -> None:
+        """Stop the worker and wait until its last activity has returned.
+
+        An activity runs on a thread and cannot be interrupted, and the worker's run waits for it. If this gave up
+        early, the activity would carry on after the module, against whatever database the next test points the
+        application at, which is often an in-memory one whose single connection that test is using (on a busy CI
+        runner a new case's briefing can take longer than 30 seconds).
+        """
         if self.stop is not None:
             self.loop.call_soon_threadsafe(self.stop.set)
-        self.thread.join(timeout=30)
+        self.thread.join(timeout=300)
+        if self.thread.is_alive():
+            raise RuntimeError("The durable worker did not stop within 5 minutes; an activity is still running.")
+
+
+@contextmanager
+def app_database(engine, factory):
+    """Point the application's own sessions (app.db.engine and SessionLocal) at a test's database for a while.
+
+    On the Temporal engine, a module's `client` fixture keeps a durable worker running beside the tests, and its
+    activities open sessions through app.db from threads of their own, whenever Temporal hands them work. A test
+    that repointed app.db at its in-memory database would share that database's one connection with them, and
+    their commits would land in the middle of the test's transactions. So the worker stops first and starts again,
+    on the application's database, once the test is done. On the built-in engine there is no worker; nothing stops.
+    """
+    import app.db as appdb
+
+    worker = _SUITE.pop("worker", None)
+    if worker is not None:
+        worker.close()
+    old = appdb.engine, appdb.SessionLocal
+    appdb.engine, appdb.SessionLocal = engine, factory
+    try:
+        yield
+    finally:
+        appdb.engine, appdb.SessionLocal = old
+        if worker is not None:
+            _SUITE["worker"] = _Worker()
 
 
 def _engine_for_the_app():

@@ -63,8 +63,12 @@ async def connect(url: str | None = None, namespace: str | None = None):
     """A client for one namespace (by default the shared one)."""
     from temporalio.client import Client
 
+    from .encryption import converter_for
+
+    ns = namespace or settings.temporal_namespace
+    converter = converter_for(ns)  # a missing key under TEMPORAL_ENCRYPTION=required is raised here, not hidden
     try:
-        return await Client.connect(target(url), namespace=namespace or settings.temporal_namespace)
+        return await Client.connect(target(url), namespace=ns, data_converter=converter)
     except DurableError:
         raise
     except Exception as e:  # noqa: BLE001
@@ -72,12 +76,14 @@ async def connect(url: str | None = None, namespace: str | None = None):
 
 
 def for_namespace(client, namespace: str):
-    """The same connection, speaking for another namespace."""
+    """The same connection, speaking for another namespace, sealing payloads with that namespace's key."""
     from temporalio.client import Client
+
+    from .encryption import converter_for
 
     if client.namespace == namespace:
         return client
-    return Client(client.service_client, namespace=namespace, data_converter=client.data_converter)
+    return Client(client.service_client, namespace=namespace, data_converter=converter_for(namespace))
 
 
 async def client_for(base, tenant_id: str, ensure: bool = True):

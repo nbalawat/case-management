@@ -117,6 +117,11 @@ class Settings:
     # What workflow ids start with, before the client. Empty: EVENT_TOPIC_PREFIX. Two deployments sharing a Temporal
     # namespace need different ones.
     temporal_id_prefix: str = os.getenv("TEMPORAL_ID_PREFIX", "")
+    # Payload encryption (app/durable/encryption.py): auto encrypts when a master key is set, required refuses to run
+    # without one, off never encrypts. The key belongs in the deployment's Secret, never in values or the image.
+    temporal_encryption: str = os.getenv("TEMPORAL_ENCRYPTION", "auto")
+    temporal_encryption_key: str = os.getenv("TEMPORAL_ENCRYPTION_KEY", "")
+    temporal_key_version: int = int(os.getenv("TEMPORAL_KEY_VERSION", "1"))
     # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. The platform
     # page shows whether each client's jobs are running.
     flink_url: str = os.getenv("FLINK_URL", "")
@@ -135,6 +140,11 @@ class Settings:
     # Bring the database to the newest migration when the application starts. Off where a separate step migrates
     # (the Helm chart): the application then refuses to start against a database that is behind.
     migrate_on_start: bool = os.getenv("MIGRATE_ON_START", "1") == "1"
+    # Postgres only. The role every request's transaction runs as (SET LOCAL ROLE), so that row-level security binds
+    # it even when DATABASE_URL names the tables' owner or a superuser, which RLS would otherwise let through. The
+    # application creates the role (no login, no superuser, no BYPASSRLS) and grants it the tables. Empty: requests run
+    # as the connecting user, and the health check reports whether that user is held by row-level security.
+    database_role: str = os.getenv("DATABASE_ROLE", "")
 
 
 settings = Settings()
