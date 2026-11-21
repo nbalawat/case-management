@@ -737,3 +737,20 @@ class Lookback(TenantScoped, Base):
     conclusion: Mapped[str] = mapped_column(Text, default="")
     report: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # the figures as they stood when it closed
     history: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class AccessReview(TenantScoped, Base):
+    """A recertification of access: everyone's access as it stood, and a manager's decision on each person."""
+
+    __tablename__ = "access_review"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(10), default="open", index=True)  # open | closed
+    policy_version: Mapped[str] = mapped_column(String(20), default="")  # the access policy the snapshot was taken from
+    started_by: Mapped[str] = mapped_column(String(40))
+    started: Mapped[datetime] = mapped_column(DateTime, default=now)
+    due: Mapped[datetime] = mapped_column(DateTime)
+    # [{person, name, title, roles, permissions, queues, read_only, last_active, open_cases, flags, decision, note, decided_by, decided_at}]
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    closed_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

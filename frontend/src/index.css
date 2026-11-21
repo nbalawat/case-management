@@ -248,3 +248,8 @@ dl.facts.dense{margin:8px 0 0;font-size:13px}dl.facts.dense dt,dl.facts.dense dd
 .override .backtest .kpi{background:var(--surface)}
 .lb-prog{display:grid;grid-template-columns:minmax(120px,320px) 1fr;gap:12px;align-items:center;font-size:13px;margin:10px 0}.lb-prog div{height:10px;background:#e6e9f0;border-radius:5px;overflow:hidden}
 .lb-prog i{display:block;height:100%;background:var(--series-1)}.override-form input[type=date]{min-height:30px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;font:inherit}
+/* management report and governance */
+.mb.in{fill:var(--series-1)}.mb.out{fill:var(--series-2)}.chart .axis.val{fill:var(--ink);font-size:11.5px}.chart .net-key{margin-bottom:4px}.chart .net-key span{display:inline-flex;align-items:center;gap:6px;margin-right:10px}
+.seg a{display:contents}.seg a button{border-right:1px solid var(--line);border-radius:0;border-top:0;border-bottom:0;border-left:0}.seg a:last-child button{border-right:0}
+.bar-row .rstack{height:12px}details.wlist>summary{cursor:pointer;line-height:1.9}details.wlist .pill{margin-right:4px}
+.inline.wrap input[type=date],form.inline input[type=date]{min-height:32px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;font:inherit}form.inline select{max-width:220px}

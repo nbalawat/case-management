@@ -26,6 +26,8 @@ import Kyc from './pages/Kyc'
 import Sanctions from './pages/Sanctions'
 import Fraud from './pages/Fraud'
 import Detection from './pages/Detection'
+import Mi from './pages/Mi'
+import Governance from './pages/Governance'
 import Search from './components/Search'
 
 type Meta = { tenant: { id: string; name: string }; personas: Persona[]; default_person: string; sample_data: boolean }
@@ -47,7 +49,7 @@ const NAV = [
   ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/entities', 'Entities'], ['/kyc', 'KYC'], ['/sanctions', 'Sanctions'], ['/fraud', 'Fraud'], ['/filings', 'Reports'], ['/team', 'Team'], ['/agents', 'Agents'],
 ]
 // Setting the platform up, as opposed to working in it.
-const SETUP = [['/workflows', 'Workflows'], ['/reference', 'Lists'], ['/detection', 'Detection'], ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations']]
+const SETUP = [['/workflows', 'Workflows'], ['/reference', 'Lists'], ['/detection', 'Detection'], ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations'], ['/governance', 'Governance']]
 
 /** The setup pages behind one menu, so the working pages keep the bar. It closes itself when the page changes. */
 function SetupMenu() {
@@ -154,6 +156,8 @@ export default function App() {
           <Route path="/sanctions" element={<Sanctions />} />
           <Route path="/fraud" element={<Fraud />} />
           <Route path="/detection" element={<Detection />} />
+          <Route path="/overview/report" element={<Mi />} />
+          <Route path="/governance" element={<Governance />} />
           <Route path="/filings" element={<Filings />} />
           <Route path="/filings/:id" element={<Filing />} />
           <Route path="/customers/:id" element={<Customer />} />

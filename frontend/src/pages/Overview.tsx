@@ -3,6 +3,7 @@ import { fmtDateTime } from '../api'
 import { useApi } from '../useApi'
 import { Card, Loading, Pill } from '../components/ui'
 import TrendChart from '../components/TrendChart'
+import { usePeople } from '../App'
 
 type Dash = {
   kpis: Record<string, number | null>
@@ -18,6 +19,7 @@ const Kpi = ({ label, value, sub, tone }: { label: string; value: string | numbe
 
 export default function Overview() {
   const { data, error } = useApi<Dash>('/dashboard')
+  const { can } = usePeople()
   if (!data) return <Loading error={error} />
   const k = data.kpis
   const maxF = Math.max(...data.funnel.map(f => f.count), 1)
@@ -25,6 +27,7 @@ export default function Overview() {
   return (
     <>
       <div className="page-h"><h1>Program overview</h1><p>Live view of the financial-crime caseload across monitoring, sanctions and KYC.</p></div>
+      {can('view_team') && <div className="toolbar"><div className="seg"><button aria-pressed>Today</button><Link to="/overview/report"><button aria-pressed={false}>Month by month</button></Link></div></div>}
       <div className="kpis">
         <Kpi label="Open cases" value={k.open_cases ?? 0} />
         <Kpi label="SLA at risk (7 days)" value={k.sla_at_risk ?? 0} sub={`${k.sla_breached} overdue`} tone={k.sla_breached ? 'bad' : ''} />
