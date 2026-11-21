@@ -105,3 +105,36 @@ def test_other_clients_cases_never_appear(client):
     assert {r["id"] for r in other["rows"]} <= mine | {c["id"] for c in full(client, "audra", "closed")}
     kestrel = client.get("/api/case-list?status=all&size=200", headers={"X-Tenant": "kestrel"}).json()
     assert not {r["id"] for r in kestrel["rows"]} & mine
+
+
+def test_drill_filters_match_the_dashboard(client):
+    """Each number on the overview opens a list with exactly that many cases."""
+    dash = client.get("/api/dashboard", headers=h("audra")).json()
+    k = dash["kpis"]
+    assert listing(client, "audra", due="week")["total"] == k["sla_at_risk"]
+    assert listing(client, "audra", due="overdue")["total"] == k["sla_breached"]
+    for d in dash["trend"][-10:]:
+        assert listing(client, "audra", status="all", opened=d["day"])["total"] == d["opened"]
+        assert listing(client, "audra", status="closed", closed=d["day"])["total"] == d["closed"]
+    for f in dash["funnel"][:5]:
+        assert listing(client, "audra", case_type=f["case_type"], state=f["state"])["total"] == f["count"]
+
+
+def test_scenario_filter_finds_cases_carrying_that_alert(client):
+    from sqlalchemy import select
+
+    import app.db as appdb
+    from app.domain.models import Alert
+    from app.tenancy import bind_tenant
+    sc = client.get("/api/dashboard", headers=h("audra")).json()["scenarios"][0]["scenario"]
+    with appdb.SessionLocal() as session:
+        expected = set(bind_tenant(session, "meridian").scalars(select(Alert.case_id).where(Alert.scenario == sc, Alert.case_id.is_not(None))))
+    out = listing(client, "audra", status="all", scenario=sc, size=200)
+    assert expected and {r["id"] for r in out["rows"]} == expected
+
+
+def test_month_period_and_bad_values(client):
+    month = listing(client, "audra", status="all", size=1, sort="-created")["rows"][0]["created"][:7]
+    assert listing(client, "audra", status="all", opened=month)["total"] >= 1
+    for bad in ({"due": "soon"}, {"opened": "21/11/2026"}, {"closed": "2026"}):
+        assert client.get("/api/case-list", headers=h("audra"), params=bad).status_code == 422

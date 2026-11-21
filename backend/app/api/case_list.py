@@ -8,6 +8,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from ..cases.case_types import load_case_types
+from ..detection.scenarios import describe
 from ..cases.listing import CaseQuery, export_csv, facets, page, parse_sort
 from ..domain.personas import Persona
 from ..tenants.registry import TenantRuntime
@@ -19,11 +20,13 @@ router = APIRouter(prefix="/api")
 def case_query(status: str = "open", case_type: list[str] = Query(default=[]), priority: list[str] = Query(default=[]),
                queue: list[str] = Query(default=[]), state: list[str] = Query(default=[]), owner: str | None = None,
                q: str = "", sort: str | None = None, page: int = 1, size: int = 50,
+               due: str | None = None, scenario: list[str] = Query(default=[]), opened: str = "", closed: str = "",
                p: Persona = Depends(persona)) -> CaseQuery:
     try:
         return CaseQuery(status=status, case_types=tuple(case_type), priorities=tuple(priority), queues=tuple(queue),
                          states=tuple(state), owner=p.id if owner == "me" else owner or None, text=q,
-                         sort=parse_sort(sort), page=page, size=size)
+                         sort=parse_sort(sort), page=page, size=size, due=due or None, scenarios=tuple(scenario),
+                         opened=opened, closed_in=closed)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 
@@ -41,7 +44,7 @@ def _labels(rt: TenantRuntime) -> dict:
 def case_list(cq: CaseQuery = Depends(case_query), s: Session = Depends(get_session), rt: TenantRuntime = Depends(tenant)):
     rows, total, alerts = page(s, cq)
     return {"rows": [case_row(c) | {"alerts": alerts.get(c.id, 0)} for c in rows], "total": total, "page": cq.page, "size": cq.size,
-            "facets": facets(s, cq), "labels": _labels(rt)}
+            "facets": facets(s, cq), "labels": _labels(rt) | {"scenario": {k: describe(k)["title"] for k in cq.scenarios}}}
 
 
 @router.get("/case-list/export.csv")
