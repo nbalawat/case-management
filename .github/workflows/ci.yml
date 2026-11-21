@@ -169,15 +169,15 @@ jobs:
           done
           # What the chart must refuse
           refuse() { if helm template stamp . "$@" > /dev/null 2>&1; then echo "should have refused: $*"; exit 1; fi; }
-          refuse --set storage.evidenceUrl=s3://b/e
-          refuse --set existingSecret=s
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set schemaOnMismatch=rebuild
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set auth.mode=demo --set ingress.enabled=true --set ingress.host=h
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.encryption=sometimes
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.keyVersion=0
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true
+          refuse --set storage.evidenceUrl=s3://b/e --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set schemaOnMismatch=rebuild --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set auth.mode=demo --set ingress.enabled=true --set ingress.host=h --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092 --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233 --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.encryption=sometimes --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.keyVersion=0 --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true --set keys.transit.addr=https://bao:8200
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e                                   # no key service
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.provider=local --set keys.transit.addr=x
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.provider=none
