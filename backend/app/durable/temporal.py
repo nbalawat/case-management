@@ -59,12 +59,20 @@ def pipelines_id(tenant_id: str) -> str:
     return f"{_prefix(tenant_id)}.pipelines"
 
 
+def answers_id(tenant_id: str) -> str:
+    return f"{_prefix(tenant_id)}.answers"
+
+
 async def connect(url: str | None = None, namespace: str | None = None):
     """A client for one namespace (by default the shared one)."""
     from temporalio.client import Client
 
+    from .encryption import converter_for
+
+    ns = namespace or settings.temporal_namespace
+    converter = converter_for(ns)  # a missing key under TEMPORAL_ENCRYPTION=required is raised here, not hidden
     try:
-        return await Client.connect(target(url), namespace=namespace or settings.temporal_namespace)
+        return await Client.connect(target(url), namespace=ns, data_converter=converter)
     except DurableError:
         raise
     except Exception as e:  # noqa: BLE001
@@ -72,12 +80,14 @@ async def connect(url: str | None = None, namespace: str | None = None):
 
 
 def for_namespace(client, namespace: str):
-    """The same connection, speaking for another namespace."""
+    """The same connection, speaking for another namespace, sealing payloads with that namespace's key."""
     from temporalio.client import Client
+
+    from .encryption import converter_for
 
     if client.namespace == namespace:
         return client
-    return Client(client.service_client, namespace=namespace, data_converter=client.data_converter)
+    return Client(client.service_client, namespace=namespace, data_converter=converter_for(namespace))
 
 
 async def client_for(base, tenant_id: str, ensure: bool = True):
@@ -166,16 +176,20 @@ async def _schedule(client, sid: str, workflow_run, tenant_id: str, every: timed
     return True
 
 
-async def ensure_schedules(client, tenant_id: str, sweep_every: timedelta | None = None, pipelines_every: timedelta | None = None) -> dict[str, bool]:
-    """A client's periodic work, as Temporal schedules in its namespace: the sweep, and starting due data pipelines.
+async def ensure_schedules(client, tenant_id: str, sweep_every: timedelta | None = None, pipelines_every: timedelta | None = None,
+                           answers_every: timedelta | None = None) -> dict[str, bool]:
+    """A client's periodic work, as Temporal schedules in its namespace: the sweep, starting due data pipelines, and
+    reading the regulator's answers from its inbox.
 
     Returns which were created now (False: already there). A schedule never overlaps itself.
     """
-    from .workflows import PipelineRuns, Sweep
+    from .workflows import PipelineRuns, RegulatorAnswers, Sweep
 
     return {"sweep": await _schedule(client, sweep_id(tenant_id), Sweep.run, tenant_id, sweep_every or timedelta(seconds=settings.temporal_sweep_seconds)),
             "pipelines": await _schedule(client, pipelines_id(tenant_id), PipelineRuns.run, tenant_id,
-                                         pipelines_every or timedelta(seconds=settings.temporal_pipeline_seconds))}
+                                         pipelines_every or timedelta(seconds=settings.temporal_pipeline_seconds)),
+            "answers": await _schedule(client, answers_id(tenant_id), RegulatorAnswers.run, tenant_id,
+                                       answers_every or timedelta(seconds=settings.temporal_answers_seconds))}
 
 
 def activities() -> list:
@@ -186,7 +200,7 @@ def activities() -> list:
     from ..cases.service import TransitionError
     from ..ingest import scheduler
     from ..workflow import jobs
-    from .workflows import FILING_DUE, FILING_LOOK, JOB_REFUSED, JOB_RETRY, LOOK, PERFORM, PIPELINES, REFUSED, RUN_JOB, STAGE_DUE, SWEEP
+    from .workflows import ANSWERS, FILING_DUE, FILING_LOOK, JOB_REFUSED, JOB_RETRY, LOOK, PERFORM, PIPELINES, REFUSED, RUN_JOB, STAGE_DUE, SWEEP
 
     @activity.defn(name=LOOK)
     def case_look(tenant_id: str, case: str) -> dict:
@@ -211,6 +225,12 @@ def activities() -> list:
     def pipelines_due(tenant_id: str) -> dict:
         return {"started": scheduler.tick_one(tenant_id)}
 
+    @activity.defn(name=ANSWERS)
+    def regulator_answers(tenant_id: str) -> dict:
+        from ..filing import answers
+
+        return answers.collect_for(tenant_id)
+
     @activity.defn(name=FILING_LOOK)
     def filing_look(tenant_id: str, filing: str) -> dict:
         return steps.filing_look(tenant_id, filing)
@@ -230,7 +250,7 @@ def activities() -> list:
                 raise ApplicationError(str(e), f"{type(e).__module__}:{type(e).__name__}", type=JOB_RETRY) from None
             raise ApplicationError(str(e), f"{type(e).__module__}:{type(e).__name__}", type=JOB_REFUSED, non_retryable=True) from None
 
-    return [case_look, case_perform, stage_due, sweep, pipelines_due, filing_look, filing_follow_up, run_job]
+    return [case_look, case_perform, stage_due, sweep, pipelines_due, regulator_answers, filing_look, filing_follow_up, run_job]
 
 
 async def running(client, tenant_id: str, limit: int = 5000) -> int:

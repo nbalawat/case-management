@@ -49,15 +49,25 @@ with TestClient(app) as c:  # startup creates the schema and seeds every demo cl
         waiting = s.scalar(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.published_at.is_(None)))
     on_bus = [m.headers['id'] for t in bus.topics() for m in bus.read(t)]
     out['_outbox'] = {'rows': rows, 'sent': sent, 'waiting': waiting, 'on_bus': len(on_bus), 'same': sorted(on_bus) == sorted(ids), 'again': relay.drain(bus)}
+    from app import rls
+    with engine.connect() as conn:
+        st = rls.status(conn)
+    out['_rls'] = {'enabled': st.enabled, 'tables': st.tables, 'missing': st.missing, 'role': st.role, 'bypass': st.bypass,
+                   'console': [x for x in c.get('/api/platform/health', headers={'X-Operator': 'olivia'}).json()['checks'] if x['name'] == 'row_security']}
 print('RESULT ' + json.dumps(out))
 """
 
 
 def test_the_demo_starts_and_answers_on_postgres():
-    env = {**os.environ, "DATABASE_URL": URL, "PIPELINE_SCHEDULER": "0"}
+    # Every request runs as a role row-level security binds, as in Compose and the Helm chart, so the whole demo is
+    # proved to work with the database enforcing the tenant wall and not only the application.
+    env = {**os.environ, "DATABASE_URL": URL, "PIPELINE_SCHEDULER": "0", "DATABASE_ROLE": "caseforge_app"}
     run = subprocess.run([sys.executable, "-c", SCRIPT], cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True, timeout=600)
     assert run.returncode == 0, run.stderr[-3000:]
     out = json.loads(next(line for line in run.stdout.splitlines() if line.startswith("RESULT ")).removeprefix("RESULT "))
+    sec = out.pop("_rls")
+    assert len(sec["console"]) == 1 and sec["console"][0]["ok"] and "enforced on" in sec["console"][0]["note"], sec["console"]
+    assert sec["enabled"] and sec["tables"] > 40 and not sec["missing"] and sec["role"] == "caseforge_app" and not sec["bypass"], sec
     box = out.pop("_outbox")
     assert box["rows"] > 1000 and box["sent"] == box["rows"] == box["on_bus"] and box["same"] and box["waiting"] == 0 and box["again"] == 0, box
     assert set(out) == {"meridian", "kestrel", "alder"}

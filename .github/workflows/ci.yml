@@ -117,7 +117,7 @@ jobs:
           TEST_OPENSEARCH_URL: opensearch://localhost:9200
           TEST_AGE_URL: age://caseforge:ci-only@localhost:5455/graph
           TEST_TEMPORAL_URL: temporal://localhost:7233
-        run: uv run pytest -q tests/test_postgres.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
+        run: uv run pytest -q tests/test_postgres.py tests/test_rls.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
 
   frontend:
     name: Frontend lint and build
@@ -168,6 +168,8 @@ jobs:
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set auth.mode=demo --set ingress.enabled=true --set ingress.host=h
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.encryption=sometimes
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.keyVersion=0
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true
           # Migrations: a hook job by default and pods that wait for it; without the job, pods migrate themselves
           helm template stamp . $ARGS | grep -q 'helm.sh/hook: pre-install,pre-upgrade'
