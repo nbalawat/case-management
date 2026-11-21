@@ -83,6 +83,8 @@ class Settings:
     lake_catalog: str = os.getenv("LAKE_CATALOG", "")
     # Where backups go: any object store URL (file://, s3://, abfs://, gs://). Empty on a laptop: data/backups.
     backup_url: str = os.getenv("BACKUP_URL", f"file://{ROOT / 'data' / 'backups'}")
+    # Where trained models are kept: any object store URL. Empty on a laptop: data/models.
+    model_store_url: str = os.getenv("MODEL_STORE_URL", f"file://{ROOT / 'data' / 'models'}")
     # The lake writer gathers this many messages, or waits this long, before writing: fewer, larger files.
     lake_flush_rows: int = int(os.getenv("LAKE_FLUSH_ROWS", "20000"))
     lake_flush_seconds: float = float(os.getenv("LAKE_FLUSH_SECONDS", "5"))

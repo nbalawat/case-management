@@ -1009,6 +1009,59 @@ class LineageEvent(TenantScoped, Base):
     event: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class FeatureValue(TenantScoped, Base):
+    """The online feature store: the latest values of one feature set for one customer."""
+
+    __tablename__ = "feature_value"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    feature_set: Mapped[str] = mapped_column(String(60))
+    set_version: Mapped[str] = mapped_column(String(20))
+    entity_id: Mapped[str] = mapped_column(String(40))
+    values: Mapped[dict] = mapped_column(JSON, default=dict)
+    computed: Mapped[datetime] = mapped_column(DateTime, default=now)
+    __table_args__ = (UniqueConstraint("tenant_id", "feature_set", "entity_id"),)
+
+
+class TrainingLabel(TenantScoped, Base):
+    """An outcome a model may learn from, besides the platform's own closed cases: a client's historical outcomes
+    loaded from its old system, or (in the demo) synthetic history. `source` says which."""
+
+    __tablename__ = "training_label"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ref: Mapped[str] = mapped_column(String(60))
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime)
+    label: Mapped[bool] = mapped_column(Boolean)
+    source: Mapped[str] = mapped_column(String(40))
+    __table_args__ = (UniqueConstraint("tenant_id", "ref"),)
+
+
+class ModelVersion(TenantScoped, Base):
+    """One trained model: what it learnt from, how it scored on data it never saw, who approved it, and its state."""
+
+    __tablename__ = "model_version"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    algorithm: Mapped[str] = mapped_column(String(60))
+    feature_set: Mapped[str] = mapped_column(String(60))
+    set_version: Mapped[str] = mapped_column(String(20))
+    features: Mapped[list] = mapped_column(JSON, default=list)
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)  # the training window, rows, positives and where the labels came from
+    artifact: Mapped[str] = mapped_column(String(300))
+    sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(12), default="candidate")  # candidate | approved | champion | challenger | retired
+    trained_by: Mapped[str] = mapped_column(String(40))
+    trained: Mapped[datetime] = mapped_column(DateTime, default=now)
+    approved_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    approved: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    history: Mapped[list] = mapped_column(JSON, default=list)  # trained, approved, promoted, retired: when, by whom
+    __table_args__ = (UniqueConstraint("tenant_id", "name", "version"),)
+
+
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox
 from ..ai import usage as _ai_usage  # noqa: E402,F401  registers the model usage table
 from ..views import store as _views  # noqa: E402,F401  registers the grid settings and saved view tables

@@ -696,6 +696,9 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     governance_demo.seed(s, g.end)
     customers_demo.seed(s, g.end)  # again, for the customers the steps above added; it never overwrites
     extra["parties"] += customers_demo.plant_duplicate(s, g.end)
+    from .ml import demo as ml_demo
+
+    ml_demo.seed(s, g.end)
     resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))

@@ -60,10 +60,14 @@ def route_alerts(s: Session, alerts: list[Alert], screened: bool = False, woken:
     Alerts pass the triage gate first, where an agent may close one if the client's policy lets it. `screened` skips
     the gate for an alert a person has just reopened.
     """
+    incoming = list(alerts)
     if not screened:
         from ..agents.triage import gate
 
         alerts = gate(s, alerts)
+    from ..ml.scoring import score
+
+    score(s, incoming)  # the champion model's reading beside the triage agent's; it ranks, it never decides
     touched: dict[str, Case] = {}
     opened: list[Case] = []
     tenant = tenant_of(s)
