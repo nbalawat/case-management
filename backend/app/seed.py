@@ -677,6 +677,9 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     from .detection import demo as detection_demo
 
     detection_demo.seed(s, g.end)
+    from .governance import demo as governance_demo
+
+    governance_demo.seed(s, g.end)
     resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))
