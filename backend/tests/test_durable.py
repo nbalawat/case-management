@@ -252,21 +252,23 @@ def test_the_engine_is_chosen_by_configuration():
 def test_the_workflow_definitions_are_valid_and_named():
     from temporalio import workflow
 
-    from app.durable.workflows import CaseWorkflow, FilingWorkflow, PipelineRuns, StageClock, Sweep
+    from app.durable.workflows import CaseWorkflow, FilingWorkflow, JobWorkflow, PipelineRuns, StageClock, Sweep
 
     case = workflow._Definition.must_from_class(CaseWorkflow)
     assert case.name == "CaseWorkflow" and set(case.signals) == {"observed"} and set(case.updates) == {"perform"} and "state" in case.queries
     assert set(workflow._Definition.must_from_class(FilingWorkflow).signals) == {"observed"}
-    for cls, name in ((Sweep, "Sweep"), (PipelineRuns, "PipelineRuns"), (StageClock, "StageClock"), (FilingWorkflow, "FilingWorkflow")):
+    for cls, name in ((Sweep, "Sweep"), (PipelineRuns, "PipelineRuns"), (StageClock, "StageClock"), (FilingWorkflow, "FilingWorkflow"),
+                      (JobWorkflow, "JobWorkflow")):
         assert workflow._Definition.must_from_class(cls).name == name
 
 
 def test_the_activities_carry_the_names_the_workflows_call():
     from temporalio import activity
 
-    from app.durable.workflows import FILING_DUE, FILING_LOOK, LOOK, PERFORM, PIPELINES, STAGE_DUE, SWEEP
+    from app.durable.workflows import FILING_DUE, FILING_LOOK, LOOK, PERFORM, PIPELINES, RUN_JOB, STAGE_DUE, SWEEP
 
-    assert {activity._Definition.must_from_callable(a).name for a in temporal.activities()} == {LOOK, PERFORM, STAGE_DUE, SWEEP, PIPELINES, FILING_LOOK, FILING_DUE}
+    assert {activity._Definition.must_from_callable(a).name for a in temporal.activities()} == {
+        LOOK, PERFORM, STAGE_DUE, SWEEP, PIPELINES, FILING_LOOK, FILING_DUE, RUN_JOB}
 
 
 def test_workflow_code_imports_nothing_from_the_application():
@@ -333,3 +335,25 @@ def test_the_worker_will_not_start_without_an_address(capsys):
     finally:
         _with(**old)
     assert appdb.engine is not None
+
+
+# ---- registered jobs
+
+def test_every_registered_job_names_a_function_and_refusals_that_exist():
+    from app.workflow import jobs
+
+    for job in jobs.JOBS.values():
+        assert callable(job.function()) and len(job.refusal_types()) == len(job.refusals), job.name
+        assert job.key({"lookback_id": "lb-1", "filing_id": "f-1", "case_id": "c-1"})
+    with pytest.raises(jobs.UnknownJob):
+        jobs.get("nothing.here")
+
+
+def test_on_the_builtin_engine_a_job_runs_in_the_callers_transaction(s):
+    from app.agents.investigator import investigate  # noqa: F401  the briefing a new case gets
+    from app.workflow import BuiltinEngine
+
+    c = case_due_in(s, "A", 600)
+    before = len(list(s.scalars(select(m.AgentRun).where(m.AgentRun.case_id == c.id))))
+    BuiltinEngine().brief(s, c)
+    assert len(list(s.scalars(select(m.AgentRun).where(m.AgentRun.case_id == c.id)))) == before + 1

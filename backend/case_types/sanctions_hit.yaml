@@ -11,7 +11,7 @@ states:
     queue: sanctions-l1
     sla_hours: 4
     tasks:
-      - {id: compare_identifiers, label: Compare name, country and secondary identifiers}
+      - {id: compare_identifiers, label: "Compare name, country and secondary identifiers"}
       - {id: payment_held, label: Confirm the payment is held}
   escalated:
     label: Sanctions officer review
