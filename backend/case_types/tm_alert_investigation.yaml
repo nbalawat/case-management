@@ -1,0 +1,26 @@
+case_type: tm_alert_investigation
+title: Transaction monitoring investigation
+version: 3.2.0
+scenarios: [structuring, rapid_movement, high_risk_geo]
+initial_state: triage
+states:
+  triage:        {label: Triage, kind: open}
+  investigation: {label: Investigation, kind: open}
+  sar_drafting:  {label: SAR drafting, kind: open}
+  mlro_review:   {label: MLRO review, kind: open}
+  filed:         {label: SAR filed, kind: closed, disposition: sar_filed}
+  closed_no_sar: {label: Closed, no SAR, kind: closed, disposition: no_sar}
+transitions:
+  - {from: triage, to: investigation, label: Escalate to investigation, roles: [analyst, investigator]}
+  - {from: triage, to: closed_no_sar, label: Close as not suspicious, roles: [analyst, investigator], requires: [note]}
+  - {from: investigation, to: sar_drafting, label: Recommend SAR, roles: [investigator]}
+  - {from: investigation, to: closed_no_sar, label: Close, no SAR, roles: [investigator], requires: [note]}
+  - {from: sar_drafting, to: mlro_review, label: Submit for MLRO review, roles: [investigator], requires: [narrative]}
+  - {from: mlro_review, to: filed, label: Approve and file SAR, roles: [mlro], requires: [narrative], four_eyes: true}
+  - {from: mlro_review, to: sar_drafting, label: Return for rework, roles: [mlro], requires: [note]}
+sla:
+  clock: SAR filing deadline
+  due_days: 30
+agents:
+  on_create: [data_assembly, entity_research, typology_analyst, narrative_writer, qa_critic]
+  autonomy: L2

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.db
+*.db-*
+.pytest_cache/
+data/samples/*.csv
+.DS_Store

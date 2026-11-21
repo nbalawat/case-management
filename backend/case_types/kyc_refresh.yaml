@@ -1,0 +1,23 @@
+case_type: kyc_refresh
+title: KYC periodic refresh
+version: 2.0.1
+scenarios: []
+initial_state: outreach
+states:
+  outreach:      {label: Customer outreach, kind: open}
+  review:        {label: Analyst review, kind: open}
+  edd:           {label: Enhanced due diligence, kind: open}
+  approved:      {label: Refreshed, kind: closed, disposition: refreshed}
+  exit:          {label: Exit recommended, kind: closed, disposition: exit}
+transitions:
+  - {from: outreach, to: review, label: Documents received, roles: [analyst, investigator]}
+  - {from: review, to: approved, label: Approve refresh, roles: [analyst, investigator], requires: [note]}
+  - {from: review, to: edd, label: Escalate to EDD, roles: [analyst, investigator]}
+  - {from: edd, to: approved, label: Approve after EDD, roles: [mlro], requires: [note]}
+  - {from: edd, to: exit, label: Recommend exit, roles: [mlro], requires: [note]}
+sla:
+  clock: Periodic review due
+  due_days: 45
+agents:
+  on_create: [data_assembly, entity_research]
+  autonomy: L2
