@@ -60,7 +60,11 @@ FACTORY = {
     "MatchCandidate": lambda k: m.MatchCandidate(id=f"mc-{k}", kind="counterparty_variant", left_key="same a", right_key="same b",
                                                  left_name="A", right_name="B", score=0.9),
     "AskLog": lambda k: m.AskLog(id=f"q-{k}", conversation_id=f"ask-{k}", asked_by="x", role="analyst", question="q"),
+    "Engagement": lambda k: m.Engagement(id=f"eng-{k}", staff_id="priya", roles=["analyst"], ends=NOW, proposed_by="x"),
+    "AccessEvent": lambda k: m.AccessEvent(actor="x", org="provider", kind="provider.request"),
 }
+# Tables that hold no client data at all: the client list itself and the provider's own staff directory.
+PLATFORM_TABLES = {"Tenant", "ProviderStaff"}
 ORDER = ["Party", "Account", "Transaction", "Case", "Alert"]  # parents first; the rest in any order
 
 
@@ -83,7 +87,7 @@ def two(db):
 
 def test_every_business_table_is_tenant_scoped():
     unscoped = {mp.class_.__name__ for mp in Base.registry.mappers if not issubclass(mp.class_, SCOPED)}
-    assert unscoped == {"Tenant"}, f"tables without a tenant: {unscoped - {'Tenant'}}"
+    assert unscoped == PLATFORM_TABLES, f"tables without a tenant: {unscoped - PLATFORM_TABLES}"
     for cls in SCOPED_MODELS:
         col = cls.__table__.c.tenant_id
         assert not col.nullable and (col.index or col.primary_key), f"{cls.__name__}.tenant_id must be required and indexed"

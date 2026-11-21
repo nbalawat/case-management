@@ -804,4 +804,59 @@ class StreamStat(TenantScoped, Base):
     __table_args__ = (UniqueConstraint("tenant_id", "stream"),)
 
 
+class ProviderStaff(Base):
+    """A member of the platform provider's own staff. Not client data, so not tenant-scoped: it is the provider's directory.
+
+    `console` staff run the operator console. Anyone active can be given an engagement at a client that allows it.
+    """
+
+    __tablename__ = "provider_staff"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    title: Mapped[str] = mapped_column(String(120), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    console: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class Engagement(TenantScoped, Base):
+    """A place at one client for one member of the provider's staff: the roles and queues they hold, and until when.
+
+    Proposed by the provider, approved by the client (unless the client's policy waives approval), and ended by either
+    side or by the calendar. It belongs to the client, so the client's own isolation applies to it.
+    """
+
+    __tablename__ = "engagement"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    staff_id: Mapped[str] = mapped_column(String(40), index=True)
+    roles: Mapped[list] = mapped_column(JSON, default=list)
+    queues: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(12), default="proposed", index=True)  # proposed | active | rejected | ended
+    starts: Mapped[datetime] = mapped_column(DateTime, default=now)
+    ends: Mapped[datetime] = mapped_column(DateTime)
+    note: Mapped[str] = mapped_column(Text, default="")
+    proposed_by: Mapped[str] = mapped_column(String(60))
+    proposed: Mapped[datetime] = mapped_column(DateTime, default=now)
+    decided_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    decided: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    ended: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    end_reason: Mapped[str] = mapped_column(String(300), default="")
+
+
+class AccessEvent(TenantScoped, Base):
+    """Append-only record of access worth a second look: provider staff at work, engagements changing hands, and later
+    break-glass openings. The client reads its own; the provider cannot edit it."""
+
+    __tablename__ = "access_event"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    actor: Mapped[str] = mapped_column(String(60))
+    org: Mapped[str] = mapped_column(String(10))  # client | provider | system
+    kind: Mapped[str] = mapped_column(String(60), index=True)
+    subject: Mapped[str] = mapped_column(String(200), default="")
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox

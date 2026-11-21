@@ -27,12 +27,14 @@ from .auth import dev_idp
 from .api.data import router as data_router
 from .api.navigation import router as navigation_router
 from .api.case_list import router as case_list_router
+from .api.managed import router as managed_router
 from .api.platform import router as platform_router
 from .api.routes import router
 from .api.work import router as work_router
 from .api.workflows import router as workflows_router
 from .config import ROOT, settings
 from .db import ensure_schema, session_scope
+from .tenants import provider
 from .tenants.onboarding import hydrate
 
 
@@ -40,6 +42,7 @@ from .tenants.onboarding import hydrate
 async def lifespan(_: FastAPI):
     ensure_schema()
     with session_scope(platform=True) as s:
+        provider.bootstrap(s, settings.bootstrap_operator)
         clients = hydrate(s)
     if not clients and settings.demo_tenants:
         from .seed import seed_demo
@@ -64,7 +67,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="CaseForge demo API", version="0.24.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
-for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, backbone_router, navigation_router, case_list_router):
+for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, backbone_router, navigation_router, case_list_router, managed_router):
     app.include_router(r, dependencies=[Depends(signed_in)])
 app.include_router(auth_router)
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1

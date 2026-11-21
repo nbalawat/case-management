@@ -10,7 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..domain.models import Alert, Case, CaseEvent, Filing, InfoRequest, Transaction, new_id, now
-from ..domain.personas import Persona, queue_members
+from ..domain.access import PROVIDER_PREFIX
+from ..domain.personas import Persona, policy_of, queue_members
 from ..tenancy import tenant_of
 from . import conditions
 from .case_types import get_definition
@@ -117,6 +118,9 @@ def _blocked(s: Session, case: Case, t: dict, persona: Persona, note: str | None
             return "Four-eyes: the drafter cannot approve their own work"
         if (case.data or {}).get("last_actor") == persona.id:
             return "Four-eyes: a second person must take this step"
+        why = cross_signoff(case, persona, "four_eyes")
+        if why:
+            return why
     req = t.get("requires", [])
     if "tasks" in req:
         missing = [x["label"] for x in stage_tasks(case) if x["required"] and not x["done"]]
@@ -142,6 +146,17 @@ def _blocked(s: Session, case: Case, t: dict, persona: Persona, note: str | None
             if why:
                 return why
     return None
+
+
+def cross_signoff(case: Case, persona: Persona, step: str) -> str | None:
+    """Where the client's policy says so, work the provider's staff did must be checked by the client's own people."""
+    ms = policy_of(case.tenant_id).managed_service
+    if not persona.external or ms is None or step not in ms.client_signoff:
+        return None
+    makers = (case.drafted_by, (case.data or {}).get("last_actor"))
+    if step == "four_eyes" and not any(m and m.startswith(PROVIDER_PREFIX) for m in makers):
+        return None
+    return f"Client sign-off: work by the {ms.provider} team must be approved by the client's own staff"
 
 
 @system_work
