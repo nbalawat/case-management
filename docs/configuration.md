@@ -139,7 +139,7 @@ policy says what they may do.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MODEL_STORE_URL` | `data/models` | Where trained models are kept: any object store URL. Each file is checked against the digest recorded at training before it is loaded. Helm sets it from `storage.modelStoreUrl`. See [models](models.md) |
+| `MODEL_STORE_URL` | `file://<repo>/data/models` | Where trained models are kept: a storage URL (`file://`, `s3://`, `abfss://`, `gs://`). Each file is checked against the digest recorded at training before it is loaded. Helm sets it from `storage.modelStoreUrl`. See [models](models.md) |
 
 ### Engines
 

@@ -68,7 +68,7 @@ on, so remove a feature only once no approved version uses it.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MODEL_STORE_URL` | `data/models` | Where model files are kept. Helm: `storage.modelStoreUrl` |
+| `MODEL_STORE_URL` | `file://<repo>/data/models` | Where model files are kept, as a storage URL (`file://`, `s3://`, `abfss://`, `gs://`, `memory://`). Helm: `storage.modelStoreUrl` |
 
 scikit-learn is the optional `ml` dependency group (`uv sync --group ml`); the container image includes it. Without
 it the registry and feature store still work, and training says what is missing.

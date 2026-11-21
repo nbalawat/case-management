@@ -910,9 +910,20 @@ def _staff_claims(s: Session, p: Persona, n: int = 2) -> int:
     return len(cases)
 
 
+def rebuild_schema(eng=None) -> None:
+    """Drop every table and build the schema again from the migrations. The migrations' own version table goes too:
+    left behind, it would say the schema is current and nothing would be built."""
+    from sqlalchemy import text
+
+    eng = eng or engine
+    Base.metadata.drop_all(eng)
+    with eng.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    ensure_schema(eng)
+
+
 def main() -> None:
-    Base.metadata.drop_all(engine)
-    ensure_schema()
+    rebuild_schema()
     reset()
     print("Seeded:", seed_demo())
 
