@@ -20,6 +20,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if not (has .Values.auth.mode (list "oidc" "demo")) }}{{ fail "auth.mode must be oidc or demo" }}{{ end -}}
 {{- if and (eq .Values.auth.mode "demo") .Values.ingress.enabled (not .Values.demoTenants) }}{{ fail "auth.mode=demo lets anyone act as anyone; it cannot be exposed through an ingress unless this is a demo (demoTenants=true)" }}{{ end -}}
 {{- if and (not .Values.demoTenants) (not .Values.storage.evidenceUrl) }}{{ fail "storage.evidenceUrl is required: pods keep nothing on local disk" }}{{ end -}}
+{{- if not (has .Values.keys.provider (list "transit" "none")) }}{{ fail "keys.provider must be transit or none: pods keep nothing on local disk, so a local keyring would be lost with its data" }}{{ end -}}
+{{- if and (eq .Values.keys.provider "transit") (not .Values.keys.transit.addr) (not .Values.demoTenants) }}{{ fail "keys.transit.addr is required with keys.provider=transit (or set keys.provider=none for a demo)" }}{{ end -}}
+{{- if and (eq .Values.keys.provider "none") (not .Values.demoTenants) }}{{ fail "keys.provider=none stores customer documents unsealed; it is only allowed with demoTenants=true" }}{{ end -}}
 {{- if and .Values.eventBus.url (not (hasPrefix "kafka://" .Values.eventBus.url)) }}{{ fail "eventBus.url must start with kafka://" }}{{ end -}}
 {{- if and .Values.temporal.url (not (hasPrefix "temporal://" .Values.temporal.url)) }}{{ fail "temporal.url must start with temporal://" }}{{ end -}}
 {{- if not (has .Values.temporal.encryption (list "auto" "required" "off")) }}{{ fail "temporal.encryption must be auto, required or off" }}{{ end -}}

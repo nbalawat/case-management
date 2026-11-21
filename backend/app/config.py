@@ -48,6 +48,18 @@ class Settings:
     quarantine_url: str = os.getenv("QUARANTINE_URL", f"file://{ROOT / 'data' / 'quarantine'}")
     # Customer documents. Each client's files live under evidence_url/<client>/; any object store URL works (s3://, abfs://, gs://).
     evidence_url: str = os.getenv("EVIDENCE_URL", f"file://{ROOT / 'data' / 'evidence'}")
+    # Offboarding bundles: everything a leaving client is handed, sealed under its key until it is erased (app/tenants/offboarding.py).
+    exports_url: str = os.getenv("EXPORTS_URL", f"file://{ROOT / 'data' / 'exports'}")
+    # Per-client keys (app/keys). Customer documents are sealed with envelope encryption under their client's key.
+    # local: a keyring under KEYS_DIR sealed by KEYS_MASTER_KEY (32 bytes, base64; a random one is written beside the
+    # keyring when unset, for demos). transit: OpenBao or Vault Transit at TRANSIT_ADDR. none: documents are stored as given.
+    key_provider: str = os.getenv("KEY_PROVIDER", "local")
+    keys_dir: Path = Path(os.getenv("KEYS_DIR", ROOT / "data" / "keys"))
+    keys_master_key: str = os.getenv("KEYS_MASTER_KEY", "")
+    transit_addr: str = os.getenv("TRANSIT_ADDR", "")
+    transit_token: str = os.getenv("TRANSIT_TOKEN", "")
+    transit_mount: str = os.getenv("TRANSIT_MOUNT", "transit")
+    transit_prefix: str = os.getenv("TRANSIT_PREFIX", "caseforge-")
     # Regulator schemas. FinCEN's ship with the app. goAML schemas are published by each FIU, often on terms that forbid
     # redistributing them, so the operator downloads the client's FIU schema and points this at the folder holding it.
     goaml_schema_dir: Path = Path(os.getenv("GOAML_SCHEMA_DIR", ROOT / "data" / "schemas" / "goaml"))

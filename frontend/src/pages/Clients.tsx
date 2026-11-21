@@ -6,6 +6,9 @@ import { Card, Kpi, Loading, Pill } from '../components/ui'
 import ManagedServiceConsole from '../components/platform/ManagedServiceConsole'
 import BackupsCard from '../components/platform/BackupsCard'
 import HealthCard from '../components/platform/HealthCard'
+import ClientKeysCard from '../components/platform/ClientKeysCard'
+import OffboardingCard from '../components/platform/OffboardingCard'
+import UsageCard from '../components/platform/UsageCard'
 
 type ClientRow = {
   id: string; name: string; template_title: string; region_label: string; deployment_label: string; status: string; created: string
@@ -157,6 +160,9 @@ export default function Clients() {
       <Onboard onDone={reload} />
       <h2 id="managed-service">Managed service</h2>
       <ManagedServiceConsole />
+      <ClientKeysCard />
+      <UsageCard />
+      <OffboardingCard clients={data.tenants} onChange={reload} />
       <Card title="How clients are kept apart">
         <dl className="facts wide">
           <dt>Data</dt><dd>{data.isolation.model}. Customer, account and transaction ids are unique per client, so two clients can use the same ids.</dd>

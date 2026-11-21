@@ -18,7 +18,8 @@ That is deliberate: those are stateful systems with their own upgrade and backup
       --set image.repository=registry.example.com/caseforge --set image.tag=0.26.0 \
       --set publicUrl=https://cases.acme.example --set ingress.host=cases.acme.example \
       --set auth.operatorIssuer=https://idp.example.com/realms/ops \
-      --set storage.evidenceUrl=s3://acme-caseforge/evidence --set storage.quarantineUrl=s3://acme-caseforge/quarantine
+      --set storage.evidenceUrl=s3://acme-caseforge/evidence --set storage.quarantineUrl=s3://acme-caseforge/quarantine \
+      --set keys.transit.addr=https://openbao.vault:8200
 
 The chart never writes a secret. Every key of the Secret you name becomes an environment variable, so it can also
 carry `ANTHROPIC_API_KEY`, `KAFKA_CONFIG`, `SEARCH_CONFIG`, `GRAPH_URL` and `LAKE_CATALOG`.
