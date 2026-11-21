@@ -123,9 +123,12 @@ def _filter_by_viewer(state) -> None:
     from .domain.models import AgentRun, AgentStep, Alert, Case, CaseEvent, Filing, InfoRequest
 
     visible = visible_ids(session, v)
-    opts = [with_loader_criteria(Case, Case.id.in_(visible), include_aliases=True)]
+    # Lambdas, not fixed expressions: SQLAlchemy re-applies a lambda to each alias of the class (a join to the case
+    # table under another name), where a fixed expression would still name the unaliased table.
+    opts = [with_loader_criteria(Case, lambda cls: cls.id.in_(visible), include_aliases=True, track_closure_variables=True)]
     for child in (CaseEvent, AgentRun, InfoRequest):
-        opts.append(with_loader_criteria(child, child.case_id.in_(visible), include_aliases=True))
+        opts.append(with_loader_criteria(child, lambda cls: cls.case_id.in_(visible), include_aliases=True, track_closure_variables=True))
     for loose in (Alert, AgentStep, Filing):  # rows that may belong to no case at all
-        opts.append(with_loader_criteria(loose, or_(loose.case_id.is_(None), loose.case_id.in_(visible)), include_aliases=True))
+        opts.append(with_loader_criteria(loose, lambda cls: or_(cls.case_id.is_(None), cls.case_id.in_(visible)), include_aliases=True,
+                                         track_closure_variables=True))
     state.statement = state.statement.options(*opts)
