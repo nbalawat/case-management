@@ -72,6 +72,7 @@ policy says what they may do.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL` | SQLite under `data/` | The operational store; Postgres 16 in any real deployment |
+| `DATABASE_ROLE` | empty | Postgres only. The role every request's transaction runs as (`SET LOCAL ROLE`), so row-level security binds it even when `DATABASE_URL` names a superuser or the tables' owner. The application creates it (no login, no BYPASSRLS) with its grants at start. Compose and Helm set `caseforge_app`. Empty: requests run as the connecting user, and the health check says whether that user is held |
 | `SCHEMA_ON_MISMATCH` | `rebuild` | A database at another schema version: `rebuild` drops every table (demos only), `refuse` stops with an explanation. Helm sets `refuse` |
 | `MIGRATE_ON_START` | `1` | Migrate at start. Off where a separate step migrates (the Helm hook job) |
 | `DEMO_TENANTS` | `1` | Seed the three demo clients |
