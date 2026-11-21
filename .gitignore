@@ -33,3 +33,4 @@ deploy/flink/jobs/
 .env
 .schemas/
 data/schemas/
+data/loadtest/

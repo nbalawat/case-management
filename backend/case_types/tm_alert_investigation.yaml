@@ -31,7 +31,7 @@ states:
     queue: aml-l2
     sla_hours: 72
     tasks:
-      - {id: five_ws, label: Narrative covers who, what, when, where and why}
+      - {id: five_ws, label: "Narrative covers who, what, when, where and why"}
       - {id: amounts, label: Amounts and dates reconcile to the transactions}
   mlro_review:
     label: MLRO review
@@ -42,7 +42,7 @@ states:
     queue: senior-approval
     sla_hours: 24
   filed:         {label: SAR filed, kind: closed, disposition: sar_filed}
-  closed_no_sar: {label: Closed, no SAR, kind: closed, disposition: no_sar}
+  closed_no_sar: {label: "Closed, no SAR", kind: closed, disposition: no_sar}
 
 transitions:
   - {from: triage, to: investigation, label: Escalate to investigation, roles: [analyst, investigator], requires: [tasks]}
@@ -50,7 +50,7 @@ transitions:
   - {from: investigation, to: awaiting_information, label: Park for information, roles: [investigator], requires: [open_request]}
   - {from: awaiting_information, to: investigation, label: Resume investigation, roles: [investigator], requires: [requests_answered]}
   - {from: investigation, to: sar_drafting, label: Recommend SAR, roles: [investigator], requires: [tasks]}
-  - {from: investigation, to: closed_no_sar, label: Close, no SAR, roles: [investigator], requires: [tasks, note, reason]}
+  - {from: investigation, to: closed_no_sar, label: "Close, no SAR", roles: [investigator], requires: [tasks, note, reason]}
   - {from: sar_drafting, to: mlro_review, label: Submit for MLRO review, roles: [investigator], requires: [tasks, narrative]}
   # Ordinary filings: the MLRO approves and files.
   - from: mlro_review

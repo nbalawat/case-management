@@ -351,6 +351,91 @@ def test_a_sent_report_is_chased_when_the_regulator_is_late_and_then_waits_for_i
     assert flagged() == [followups.OVERDUE]
 
 
+# ---- durable jobs
+
+CALLS: dict[str, int] = {}
+
+
+def _job_target(s, persona, key: str, fail_times: int = 0, refuse: bool = False, pause: float = 0.0) -> dict:
+    """A registered job for these tests: counts its runs, can stumble a few times, refuse, or take a while."""
+    import time
+
+    from app.detection.lookbacks import LookbackError
+
+    CALLS[key] = CALLS.get(key, 0) + 1
+    if refuse:
+        raise LookbackError("Lookback not found")
+    if CALLS[key] <= fail_times:
+        raise RuntimeError("the model gateway timed out")
+    time.sleep(pause)
+    return {"key": key, "runs": CALLS[key]}
+
+
+@pytest.fixture
+def test_job(monkeypatch):
+    from app.workflow import jobs
+
+    job = jobs.Job("test.job", "test_temporal:_job_target", ("app.detection.lookbacks:LookbackError",), key=lambda p: p["key"], attempts=4,
+                   timeout_seconds=20)
+    monkeypatch.setitem(jobs.JOBS, "test.job", job)
+    CALLS.clear()
+    return job
+
+
+def job(world, params, tenant=T, persona="tara"):
+    with world.tenant(tenant) as s:
+        return world.engine_.run_job(s, "test.job", params, get_persona(tenant, persona))
+
+
+def test_a_job_runs_as_a_workflow_and_is_retried_until_it_succeeds(world, test_job):
+    async def go():
+        base, _ = await clients(T)
+        async with working(base, T):
+            return await asyncio.to_thread(job, world, {"key": "k1", "fail_times": 2})
+    assert asyncio.run(go()) == {"key": "k1", "runs": 3} and CALLS["k1"] == 3
+
+
+def test_a_refused_job_is_not_retried_and_raises_what_the_rules_raised(world, test_job):
+    from app.detection.lookbacks import LookbackError
+
+    async def go():
+        base, _ = await clients(T)
+        async with working(base, T):
+            with pytest.raises(LookbackError, match="Lookback not found"):
+                await asyncio.to_thread(job, world, {"key": "k2", "refuse": True})
+    asyncio.run(go())
+    assert CALLS["k2"] == 1
+
+
+def test_two_requests_for_the_same_run_share_it(world, test_job):
+    async def go():
+        base, _ = await clients(T)
+        async with working(base, T):
+            return await asyncio.gather(*(asyncio.to_thread(job, world, {"key": "k3", "pause": 2.0}) for _ in range(3)))
+    assert asyncio.run(go()) == [{"key": "k3", "runs": 1}] * 3 and CALLS["k3"] == 1
+
+
+def test_a_new_cases_briefing_runs_after_commit_on_a_worker(world):
+    cid = new_case(world, "A", 600)
+
+    def runs() -> int:
+        with world.tenant(T) as s:
+            return len(list(s.scalars(select(m.AgentRun).where(m.AgentRun.case_id == cid))))
+
+    before = runs()
+
+    async def go():
+        base, _ = await clients(T)
+        async with working(base, T):
+            with world.tenant(T) as s:
+                world.engine_.brief(s, s.get(m.Case, cid))
+                assert runs() == before  # nothing yet: the briefing starts once this transaction commits
+                s.commit()
+            await until(lambda: runs() > before)
+    asyncio.run(go())
+    assert runs() == before + 1
+
+
 # ---- schedules
 
 def test_each_clients_sweep_and_pipelines_run_from_schedules(world):

@@ -13,6 +13,7 @@
 @import "./dashboard.css" layer(components);
 @import "./studio.css" layer(components);
 @import "./customer.css" layer(components);
+@import "./designer.css" layer(components);
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 

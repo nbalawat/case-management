@@ -328,6 +328,24 @@ class WorkflowVersion(TenantScoped, Base):
     __table_args__ = (Index("ux_workflow_version", "tenant_id", "case_type", "version", unique=True),)
 
 
+class WorkflowDraft(TenantScoped, Base):
+    """A workflow being composed in the designer: its design document, saved as people work, until it is published."""
+
+    __tablename__ = "workflow_draft"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    case_type: Mapped[str] = mapped_column(String(60), index=True)
+    title: Mapped[str] = mapped_column(String(120))
+    design: Mapped[dict] = mapped_column(JSON)
+    revision: Mapped[int] = mapped_column(Integer, default=1)  # raised on every save, so two editors never overwrite each other unseen
+    status: Mapped[str] = mapped_column(String(12), default="draft")  # draft | published | archived
+    origin: Mapped[str] = mapped_column(String(80), default="")  # the template, case type or file it started from
+    created_by: Mapped[str] = mapped_column(String(40))
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_by: Mapped[str] = mapped_column(String(40))
+    updated: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    published_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
 class AccessPolicyVersion(TenantScoped, Base):
     """A client's access policy as published. The newest row is the one in force."""
 

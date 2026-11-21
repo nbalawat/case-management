@@ -23,7 +23,7 @@ states:
     queue: fraud
     sla_hours: 72
     tasks:
-      - {id: device_review, label: Review device, location and login history}
+      - {id: device_review, label: "Review device, location and login history"}
       - {id: liability, label: Liability assessment recorded}
   refund_approval:
     label: Refund approval
@@ -31,7 +31,7 @@ states:
     sla_hours: 24
   refunded:        {label: Fraud confirmed and refunded, kind: closed, disposition: fraud_confirmed}
   declined:        {label: Claim declined, kind: closed, disposition: claim_declined}
-  closed_no_fraud: {label: Closed, genuine activity, kind: closed, disposition: genuine}
+  closed_no_fraud: {label: "Closed, genuine activity", kind: closed, disposition: genuine}
 
 transitions:
   - {from: triage, to: customer_contact, label: Contact customer, roles: [fraud_analyst], requires: [tasks, open_request]}

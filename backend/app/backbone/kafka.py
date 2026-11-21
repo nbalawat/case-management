@@ -94,6 +94,22 @@ class KafkaBus:
         except ck.KafkaException as e:
             raise BusError(f"Kafka at {self._servers} cannot be reached: {e.args[0].str()}") from None
 
+    def group_members(self, group: str) -> int | None:
+        """How many consumers are in a group now, or None if the broker will not say."""
+        try:
+            admin = self._admin()  # held until the answer comes: a collected client never completes its futures
+            desc = admin.describe_consumer_groups([group])[group].result(10)
+            return len(desc.members)
+        except Exception:  # noqa: BLE001  an operational nicety, never worth failing over
+            return None
+
+    def partitions(self, topic: str) -> int | None:
+        try:
+            meta = self._admin().list_topics(topic, timeout=10).topics.get(topic)
+            return len(meta.partitions) if meta is not None and meta.error is None else None
+        except ck.KafkaException:
+            return None
+
     def close(self) -> None:
         for s in self._subs:
             s.close()

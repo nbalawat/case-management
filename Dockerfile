@@ -10,7 +10,7 @@ FROM python:3.13-slim
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock backend/
-RUN cd backend && uv sync --frozen --no-dev --group llm --group s3 --group adls --group gcs --group kafka --group lake --group search --group durable
+RUN cd backend && uv sync --frozen --no-dev --group llm --group s3 --group adls --group gcs --group kafka --group lake --group search --group durable --group tracing
 COPY backend/ backend/
 COPY --from=ui /ui/dist frontend/dist
 # Everything the app writes on disk is under /app/data. It belongs to the user Kubernetes runs the pods as, so the
