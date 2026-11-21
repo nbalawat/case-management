@@ -122,3 +122,63 @@ kyc_triggers:
     - {code: report_filed, label: A suspicious activity report was filed, action: open_review}
     - {code: true_match, label: A sanctions match was confirmed, action: open_review}
     - {code: adverse_media, label: New adverse media names the customer, action: note}
+hold_reasons:
+  title: Reasons for holding a payment or freezing access
+  about: >-
+    Why money or access is stopped while a case is decided. "kind" is sanctions, fraud or legal: a sanctions hold that
+    ends blocked or rejected must be reported to the authority. "review_hours" is how long a hold may sit before it is
+    escalated. With "two_person" set to yes, one person proposes the outcome and a second, who holds the release
+    permission, decides it.
+  fields: {kind: text, review_hours: count, two_person: text}
+  codes:
+    - {code: sanctions_potential_match, label: Possible sanctions match on a party to the payment, kind: sanctions, review_hours: 4, two_person: "yes"}
+    - {code: suspected_fraud, label: Suspected fraud on the account, kind: fraud, review_hours: 24, two_person: "no"}
+    - {code: account_takeover, label: Signs that someone else controls the account, kind: fraud, review_hours: 24, two_person: "no"}
+    - {code: legal_order, label: Court order or law enforcement instruction, kind: legal, review_hours: 72, two_person: "yes"}
+dispute_reasons:
+  title: Reasons a customer disputes a payment
+  about: What the customer says went wrong. Shown when a dispute is opened on a fraud claim, and used to report losses by cause.
+  codes:
+    - {code: unauthorised, label: Customer did not make or approve the payment}
+    - {code: account_takeover, label: Someone else took control of the account}
+    - {code: card_not_present, label: Card details used online or by phone without the card}
+    - {code: counterfeit_card, label: Counterfeit or skimmed card}
+    - {code: scam_authorised, label: Customer was tricked into sending the payment}
+    - {code: duplicate, label: Charged twice for the same thing}
+dispute_rules:
+  title: Dispute clocks by payment type
+  about: >-
+    The deadlines that apply to a disputed payment, by how it was made. "credit_days" is the business days allowed before
+    the customer must have their money back while the claim is looked into (0 means no such duty). "resolve_days" is the
+    calendar days to finish. "recovery_days" is how long after the payment the other side will still accept a chargeback
+    or return (0 means recovery is by request only). The US defaults follow Regulation E and the card and ACH network rules.
+  closed: true
+  fields: {credit_days: count, resolve_days: count, recovery_days: count}
+  codes:
+    - {code: card, label: Card payments, credit_days: 10, resolve_days: 45, recovery_days: 120}
+    - {code: ach, label: ACH payments, credit_days: 10, resolve_days: 45, recovery_days: 60}
+    - {code: p2p, label: Person-to-person payments, credit_days: 10, resolve_days: 45, recovery_days: 0}
+    - {code: wire, label: Wire transfers, credit_days: 0, resolve_days: 30, recovery_days: 0}
+screening_rules:
+  title: Sanctions screening settings
+  about: >-
+    How close a name must be to a list entry to raise a hit, how long a decision that a name is not a list entry
+    stays in force before it must be looked at again, and how long the client has to report blocked or rejected property.
+  closed: true
+  fields: {value: number}
+  codes:
+    - {code: match_at, label: Similarity at which a name is a possible match (0 to 1), value: 0.86}
+    - {code: exemption_months, label: Months a false-match decision stays in force, value: 12}
+    - {code: report_business_days, label: Business days to report blocked or rejected property, value: 10}
+info_share_rules:
+  title: Law enforcement search settings
+  about: >-
+    How a subject list from law enforcement is searched: how far back, how close a name must be, and how many days the
+    client has to answer. The US defaults follow section 314(a): accounts over 12 months, transactions over 6, answer in 14 days.
+  closed: true
+  fields: {value: number}
+  codes:
+    - {code: response_days, label: Days to respond, value: 14}
+    - {code: account_months, label: Months of customer records searched, value: 12}
+    - {code: transaction_months, label: Months of transactions searched, value: 6}
+    - {code: match_at, label: Similarity at which a name is a possible match (0 to 1), value: 0.9}

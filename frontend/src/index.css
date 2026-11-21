@@ -177,7 +177,10 @@ button.link{border:0;background:none;color:var(--brand);padding:0;min-height:0;t
 .months{display:flex;flex-direction:column;gap:8px}.month{display:grid;grid-template-columns:64px 1fr 96px;gap:10px;align-items:center;font-size:12.5px}
 .month div{display:flex;flex-direction:column;gap:2px}.month i{display:block;height:9px;border-radius:0 4px 4px 0;min-width:2px}.month i.in{background:var(--series-1)}.month i.out{background:var(--series-2)}
 @media(max-width:1640px){.top .persona>span{display:none}.top .persona select{max-width:140px}}
-.top nav .setup{display:flex;gap:2px;margin-left:8px;padding-left:8px;border-left:1px solid var(--line)}.top nav .setup a{color:var(--muted)}
+.setup{position:relative;flex:none}.setup summary{list-style:none;cursor:pointer;font-size:13.5px;font-weight:500;color:var(--muted);padding:8px 10px;border-radius:7px;white-space:nowrap}
+.setup summary::-webkit-details-marker{display:none}.setup summary::after{content:" ▾"}.setup summary:hover{color:var(--ink)}.setup summary.active{background:var(--brand-soft);color:var(--brand)}
+.setup>div{position:absolute;right:0;top:40px;min-width:170px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 32px rgba(11,15,26,.14);padding:6px;z-index:20;display:flex;flex-direction:column}
+.setup>div a{padding:7px 10px;border-radius:7px;color:var(--soft);font-size:13.5px}.setup>div a:hover{background:var(--bg);text-decoration:none}.setup>div a.active{color:var(--brand);background:var(--brand-soft)}
 .problems{margin:6px 0 12px;padding-left:18px;color:var(--crit)}.doc{max-height:560px;white-space:pre}
 .stack{display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin:10px 0}.stack .lbl{width:100%}.stack input,.stack textarea{width:100%;display:block;margin-top:4px;padding:7px 9px;border:1px solid var(--line);border-radius:8px}
 /* casework at volume: bulk bar, merge, scorecards, code lists */
@@ -217,3 +220,20 @@ svg.flow{display:block;margin:6px auto}.ff path{opacity:.3;transition:opacity .1
 .ff:hover path{opacity:.55}.ff.dim{opacity:.35}.ff .nm{font-size:12px;fill:var(--ink)}.ff .sub{font-size:11px;fill:var(--soft)}
 .ff.flagged rect{stroke:var(--serious);stroke-width:2;paint-order:stroke}.ff.flagged .nm{font-weight:700}.ff.flagged .sub{fill:var(--serious)}
 .ff-mid.in{fill:var(--series-1)}.ff-mid.out{fill:var(--series-2)}
+/* fraud and sanctions: holds, disputes, list matches, watchlists */
+.hold{border:1px solid var(--line);border-left:4px solid #8b93a7;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13.5px}
+.hold.active{border-left-color:var(--serious)}.hold.blocked,.hold.rejected{border-left-color:var(--crit)}.hold.released{border-left-color:#8b93a7}
+.hold-h{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}.hold-h .push,.push{margin-left:auto}
+.hold-act{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}.hold-act .inline{margin:6px 0}.hold-act input[type=number]{width:120px}.hold-act input[type=search]{flex:1;min-width:180px}
+.hold details{margin-top:6px}.hold summary{cursor:pointer;color:var(--soft)}
+dl.facts.dense{margin:8px 0 0;font-size:13px}dl.facts.dense dt,dl.facts.dense dd{padding-top:2px;padding-bottom:2px}
+.match{padding:10px 0;border-top:1px solid var(--line)}.match:first-child{border-top:0;padding-top:0}
+.pair{display:grid;grid-template-columns:1fr 64px 1fr;gap:10px;align-items:center;margin-bottom:6px}.pair>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pair b{font-size:14.5px;overflow-wrap:anywhere}.pair .sim{align-items:center;justify-content:center;background:var(--warn-bg);border-radius:8px;padding:8px 0}.pair .sim b{font-size:15px}
+.wlist{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0}.wlist .custody{max-height:140px;overflow-y:auto}
+.scroll.tall.short{max-height:240px}.req-detail{font-size:13.5px}.req-detail .inline{margin:6px 0}
+.reasons{display:flex;flex-direction:column;gap:10px}.reason-row{display:grid;grid-template-columns:minmax(150px,1fr) 2fr 110px;gap:12px;align-items:center;font-size:13px}
+.reason-row small{display:block;color:var(--soft);font-size:11.5px}.reason-row .num{text-align:right}
+.rstack{display:flex;gap:2px;height:14px;min-width:4px}.rstack i{display:block;min-width:2px}.rstack i:last-child{border-radius:0 4px 4px 0}
+.rstack i.in{background:var(--series-1)}.rstack i.out{background:var(--series-2)}.rstack i.rest,.k.rest{background:#c9cedb}.k.rest{border-radius:2px}
+.cap::first-letter{text-transform:uppercase}.hold-act input[type=number]{min-height:34px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}

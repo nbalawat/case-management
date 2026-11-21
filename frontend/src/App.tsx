@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { api, getPersonaId, getTenantId, isOperator, OPERATOR, setPersonaId, setTenantId, type Persona } from './api'
 import { authMode, signOut } from './auth'
 import MyWork from './pages/MyWork'
@@ -23,6 +23,8 @@ import Filing from './pages/Filing'
 import Alerts from './pages/Alerts'
 import Reference from './pages/Reference'
 import Kyc from './pages/Kyc'
+import Sanctions from './pages/Sanctions'
+import Fraud from './pages/Fraud'
 import Search from './components/Search'
 
 type Meta = { tenant: { id: string; name: string }; personas: Persona[]; default_person: string; sample_data: boolean }
@@ -41,10 +43,22 @@ export const usePersona = () => useContext(PeopleContext).persona
 export const useNameOf = () => useContext(PeopleContext).nameOf
 
 const NAV = [
-  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/entities', 'Entities'], ['/kyc', 'KYC'], ['/filings', 'Reports'], ['/team', 'Team'], ['/agents', 'Agents'],
+  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/entities', 'Entities'], ['/kyc', 'KYC'], ['/sanctions', 'Sanctions'], ['/fraud', 'Fraud'], ['/filings', 'Reports'], ['/team', 'Team'], ['/agents', 'Agents'],
 ]
 // Setting the platform up, as opposed to working in it.
 const SETUP = [['/workflows', 'Workflows'], ['/reference', 'Lists'], ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations']]
+
+/** The setup pages behind one menu, so the working pages keep the bar. It closes itself when the page changes. */
+function SetupMenu() {
+  const { pathname } = useLocation()
+  const here = SETUP.find(([to]) => pathname.startsWith(to))
+  return (
+    <details className="setup" key={pathname}>
+      <summary className={here ? 'active' : ''}>{here ? `Setup: ${here[1]}` : 'Setup'}</summary>
+      <div>{SETUP.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}</div>
+    </details>
+  )
+}
 
 /** Switching client is a clean break: nothing from one client may linger on screen for the next. */
 export function switchClient(id: string) {
@@ -106,7 +120,8 @@ export default function App() {
       <header className="top">
         <div className="brand"><span className="mark" aria-hidden />CaseForge</div>
         <nav>{NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}
-          <span className="setup">{SETUP.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}</span></nav>
+        </nav>
+        <SetupMenu />
         {meta && people.persona && <Search key={pid} />}
         {sso ? <>
           <span className="persona"><span>{meta?.tenant.name}</span><b>{people.persona ? `${people.persona.name} · ${people.persona.title}` : ''}</b></span>
@@ -135,6 +150,8 @@ export default function App() {
           <Route path="/reference" element={<Reference />} />
           <Route path="/entities" element={<Entities />} />
           <Route path="/kyc" element={<Kyc />} />
+          <Route path="/sanctions" element={<Sanctions />} />
+          <Route path="/fraud" element={<Fraud />} />
           <Route path="/filings" element={<Filings />} />
           <Route path="/filings/:id" element={<Filing />} />
           <Route path="/customers/:id" element={<Customer />} />

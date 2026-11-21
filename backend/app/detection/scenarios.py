@@ -4,6 +4,8 @@ The same definitions are meant to run in batch here and, later, in a stream proc
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import difflib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -14,6 +16,37 @@ from ..domain.models import Transaction
 HIGH_RISK_COUNTRIES = {"IR", "KP", "SY", "MM", "AF"}
 # Fictional names for the demo watchlist. Not a real sanctions list.
 DEMO_WATCHLIST = ["Volkov Maritime Trading", "Northgate Petrochem FZE", "Darya Shipping Lines", "Zarin Exchange House"]
+
+
+@dataclass(frozen=True)
+class Watch:
+    """What one run screens against: the names on a client's lists in force, and the pairs a person has ruled out."""
+
+    names: tuple[tuple[str, str], ...]  # (name or alias, list entry id)
+    exempt: frozenset[tuple[str, str]] = frozenset()  # (folded counterparty name, list entry id)
+    threshold: float | None = None
+
+
+_watch: contextvars.ContextVar[Watch | None] = contextvars.ContextVar("watch", default=None)
+
+
+def subject_key(name: str) -> str:
+    """A screened name as exemptions are keyed: case and spacing ignored."""
+    return " ".join(name.lower().split())
+
+
+def watch() -> Watch:
+    """The lists in force for this run. Outside a run, the names every client starts with."""
+    return _watch.get() or Watch(tuple((w, w) for w in DEMO_WATCHLIST))
+
+
+@contextlib.contextmanager
+def screening_against(w: Watch):
+    token = _watch.set(w)
+    try:
+        yield
+    finally:
+        _watch.reset(token)
 
 
 @dataclass
@@ -95,13 +128,17 @@ def high_risk_geo(txns: list[Transaction]) -> list[Hit]:
 
 @scenario("sanctions_name", "1.1.0", "Counterparty name matches watchlist", "Sanctions exposure", {"threshold": 0.86})
 def sanctions_name(txns: list[Transaction]) -> list[Hit]:
-    th = REGISTRY["sanctions_name"]["params"]["threshold"]
+    lists = watch()
+    th = lists.threshold or REGISTRY["sanctions_name"]["params"]["threshold"]
     hits = []
     for t in txns:
         if not t.counterparty:
             continue
-        for w in DEMO_WATCHLIST:
-            r = difflib.SequenceMatcher(None, t.counterparty.lower(), w.lower()).ratio()
+        seen, folded = t.counterparty.lower(), subject_key(t.counterparty)
+        for w, entry in lists.names:
+            if (folded, entry) in lists.exempt:
+                continue  # a person decided this name is not this entry
+            r = difflib.SequenceMatcher(None, seen, w.lower()).ratio()
             if r >= th:
                 hits.append(Hit("sanctions_name", "1.1.0", t.id, round(r, 2),
                                 f"Counterparty '{t.counterparty}' matches watchlist entry '{w}' at {r:.0%} similarity on a ${t.amount:,.0f} {t.channel}.",
@@ -110,8 +147,10 @@ def sanctions_name(txns: list[Transaction]) -> list[Hit]:
     return hits
 
 
-# Scenarios raised by engines outside this platform (overlay mode). They have no detection function here.
+# Scenarios with no per-transaction function here: raised by engines outside this platform (overlay mode), or by
+# screening customers themselves against the lists.
 EXTERNAL_SCENARIOS = {
+    "sanctions_customer": {"title": "Customer name matches watchlist", "typology": "Sanctions exposure"},
     "account_takeover": {"title": "Account takeover", "typology": "Fraud"},
     "card_fraud": {"title": "Unauthorised card use", "typology": "Fraud"},
 }

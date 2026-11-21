@@ -14,7 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..cases.case_types import case_type_for_scenario
-from ..detection.scenarios import DEMO_WATCHLIST, HIGH_RISK_COUNTRIES
+from ..detection.scenarios import HIGH_RISK_COUNTRIES
+from ..sanctions import lists
 from ..domain.access import Persona
 from ..domain.models import Alert, Case, Party, Transaction, new_id, now
 from ..tenancy import tenant_of
@@ -77,8 +78,9 @@ def match_strength(s: Session, a: Alert) -> dict:
     """How close the screened names are to the watchlist, for the adjudicator."""
     txns = list(s.scalars(select(Transaction).where(Transaction.id.in_(a.txn_ids)))) if a.txn_ids else []
     best, name, risky = 0.0, "", False
+    listed = lists.names(s)
     for t in txns:
-        for w in DEMO_WATCHLIST:
+        for w in listed:
             r = difflib.SequenceMatcher(None, (t.counterparty or "").lower(), w.lower()).ratio()
             if r > best:
                 best, name = r, w
@@ -117,7 +119,7 @@ def gate(s: Session, alerts: list[Alert]) -> list[Alert]:
                 action = "close_alert"
             else:
                 box.use("transactions", f"{len(a.txn_ids)} screened")
-                box.use("watchlist", f"{len(DEMO_WATCHLIST)} entries")
+                box.use("watchlist", f"{len(lists.names(s))} entries")
                 m = match_strength(s, a)
                 ok = bool(m["screened"]) and m["similarity"] < pol.limits["discount_hit_below"] and not m["high_risk_country"]
                 why = (f"Best name similarity {m['similarity']:.0%} against '{m['entry']}', under the client's limit of "

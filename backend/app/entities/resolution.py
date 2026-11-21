@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from ..detection.scenarios import DEMO_WATCHLIST, HIGH_RISK_COUNTRIES
+from ..detection.scenarios import HIGH_RISK_COUNTRIES
+from ..sanctions import lists
 from ..domain.models import Entity, EntityEdge, MatchCandidate, Party, Transaction, now
 from ..domain.personas import Persona
 from ..tenancy import tenant_of
@@ -184,13 +185,14 @@ def resolve(s: Session) -> dict:
     for (pid, target) in edges:
         degree[target].add(pid)
     made = 0
+    listed = [n for n, _ in lists.watch(s).names]  # names and aliases on the client's lists in force
     for root, members in clusters.items():
         if root in owner_of:
             continue
         mine = sorted((sp for sp in spellings.values() if sp.key in members), key=lambda sp: (-sp.txns, sp.name.isupper(), len(sp.name), sp.name))  # ties: mixed case, then the shortest
         eid = entity_id(root)
         countries = sorted(set().union(*(sp.countries for sp in mine)))
-        best = max((names.similarity(root, w) for w in DEMO_WATCHLIST), default=0.0)
+        best = max((names.similarity(root, w) for w in listed), default=0.0)
         flags = (["watchlist"] if best >= limits["watchlist_at"] else []) + (["high_risk_country"] if set(countries) & HIGH_RISK_COUNTRIES else []) \
             + (["common"] if len(degree[eid]) >= common_at else [])
         aliases = [{"name": sp.name, "count": sp.txns,

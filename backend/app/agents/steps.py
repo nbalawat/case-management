@@ -35,6 +35,16 @@ class Context:
             self.tools.use(tool, detail)
 
     @property
+    def watchlist(self) -> list[str]:
+        """The names on the client's screening lists in force."""
+        from sqlalchemy.orm import object_session
+
+        from ..sanctions import lists
+
+        session = object_session(self.case)
+        return lists.names(session) if session is not None else list(DEMO_WATCHLIST)
+
+    @property
     def profile(self) -> str:
         return f"Customer profile {self.party.id}"
 
@@ -177,10 +187,13 @@ def fraud_analyst(ctx: Context) -> Step:
 def sanctions_adjudicator(ctx: Context) -> Step:
     import difflib
     ctx.use("transactions", f"{len(ctx.alerted)} screened")
-    ctx.use("watchlist", f"{len(DEMO_WATCHLIST)} entries")
+    listed = ctx.watchlist
+    ctx.use("watchlist", f"{len(listed)} entries")
     f = []
+    if not ctx.alerted:  # the customer's own name matched, not a payment
+        f.append(_f(f"The hit is on the customer's own name, '{ctx.party.name}', not on a payment. Compare identifiers with the list entry.", [], [ctx.profile]))
     for t in ctx.alerted:
-        best = max(DEMO_WATCHLIST, key=lambda w: difflib.SequenceMatcher(None, t.counterparty.lower(), w.lower()).ratio())
+        best = max(listed, key=lambda w: difflib.SequenceMatcher(None, t.counterparty.lower(), w.lower()).ratio())
         r = difflib.SequenceMatcher(None, t.counterparty.lower(), best.lower()).ratio()
         f.append(_f(f"'{t.counterparty}' against watchlist entry '{best}': {r:.0%} name similarity, "
                     f"counterparty country {t.counterparty_country}.", [t.id]))

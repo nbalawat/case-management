@@ -48,5 +48,8 @@ def run_timers(s: Session, at: datetime | None = None) -> dict:
 
     from ..kyc import triggers  # here, not at the top: perpetual KYC opens cases, so it imports this package
 
+    from .. import holds
+    from ..fraud import disputes
+
     return {"stage_breaches": breached, "requests_overdue": overdue, "alerts_expired": sweep_hibernated(s, at), "kyc_triggers": triggers.scan(s, at),
-            "at": at.isoformat()}
+            "holds_overdue": holds.sweep(s, at), "dispute_deadlines": disputes.sweep(s, at), "at": at.isoformat()}

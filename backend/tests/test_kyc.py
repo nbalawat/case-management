@@ -781,9 +781,10 @@ def test_a_document_filed_on_a_restricted_case_is_hidden_with_the_case(client):
 def test_flow_of_funds_over_http_for_a_customer_and_for_one_case(client):
     pid = _company(client, "Halcyon Imports Ltd")
     out = client.get(f"/api/customers/{pid}/flow", headers=h("meridian", "kai")).json()
-    assert out["txns"] == 7 and out["total_out"] == 48200 + 31750 + 27900 + 39900 and out["destinations"][0]["name"] == "Rheinhafen Spedition GmbH"
+    held = 48200  # the payment the sanctions demo holds on a possible match: counted, because it was instructed
+    assert out["txns"] == 8 and out["total_out"] == 48200 + 31750 + 27900 + 39900 + held and out["destinations"][0]["name"] == "Rheinhafen Spedition GmbH"
     assert out["destinations"][0]["txns"] == 2 and out["measures"]["abroad_share"] > 0.4
-    assert client.get(f"/api/customers/{pid}/flow?days=30", headers=h("meridian", "kai")).json()["txns"] < 7
+    assert client.get(f"/api/customers/{pid}/flow?days=30", headers=h("meridian", "kai")).json()["txns"] < 8
     rows = client.get("/api/cases?status=all", headers=h("meridian", "audra")).json()
     case = next(c for c in rows if c["case_type"] == "tm_alert_investigation" and c["alerts"] and not c["restricted"])
     one = client.get(f"/api/customers/{case['party_id']}/flow?case_id={case['id']}", headers=h("meridian", "audra")).json()

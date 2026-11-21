@@ -8,6 +8,9 @@ import type { Kyc } from '../components/kyc/types'
 import { useNameOf, usePeople, usePersona } from '../App'
 import { Card, Loading, Pill, Priority, Sla, StageClock } from '../components/ui'
 import CaseExtras from '../components/CaseExtras'
+import HoldsCard from '../components/HoldsCard'
+import DisputesCard from '../components/DisputesCard'
+import ScreeningCard from '../components/ScreeningCard'
 import type { CaseRow } from './Cases'
 
 type Finding = { text: string; cites: string[]; sources?: string[] }
@@ -57,6 +60,7 @@ export default function CaseWorkspace() {
     try { await fn(); setMsg(ok); setNote(''); setReason(''); setTick(n => n + 1); reload() } catch (e) { setMsg((e as Error).message) }
   }
   const { access } = data
+  const changed = (m: string) => { setMsg(m); setTick(n => n + 1); reload() }
   const ask = (q: string) => {
     if (!q.trim()) return
     setAsking(true)
@@ -233,7 +237,10 @@ export default function CaseWorkspace() {
             </>}
             {msg && <p className="msg" role="status">{msg}</p>}
           </Card>
-          <CaseExtras caseId={c.id} tick={tick} onChange={(m: string) => { setMsg(m); setTick(n => n + 1); reload() }} />
+          {c.case_type === 'sanctions_hit' && <ScreeningCard caseId={c.id} tick={tick} onChange={changed} />}
+          {c.case_type !== 'qa_review' && <HoldsCard caseId={c.id} tick={tick} onChange={changed} />}
+          {c.case_type === 'fraud_claim' && <DisputesCard caseId={c.id} tick={tick} onChange={changed} />}
+          <CaseExtras caseId={c.id} tick={tick} onChange={changed} />
           <Card title="Narrative" action={<span className="muted small">{c.drafted_by ? `Saved by ${nameOf(c.drafted_by)}` : narr ? 'Agent draft, not yet reviewed' : ''}</span>}>
             <textarea rows={11} value={narr} onChange={e => setNarr(e.target.value)} disabled={!c.open || !access.can_work} aria-label="Narrative" />
             {c.open && access.can_work && <button onClick={() => act(() => api.post(`/cases/${c.id}/narrative`, { text: narr }), 'Narrative saved under your name.')} disabled={!narr.trim()}>Save as my narrative</button>}
