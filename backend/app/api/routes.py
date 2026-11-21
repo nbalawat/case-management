@@ -13,6 +13,7 @@ from ..cases.requests import RECIPIENTS
 from ..workflow import Action, engine
 from ..cases.service import TransitionError, allowed_transitions, definition, facts, record, save_narrative, stage_tasks
 from ..config import settings
+from ..db import session_scope
 from ..detection.engine import run_detection
 from ..entities import resolution
 from ..detection.scenarios import REGISTRY, describe
@@ -47,8 +48,20 @@ def list_tenants():
 def meta(rt: TenantRuntime = Depends(tenant)):
     return {"tenant": {"id": rt.id, "name": rt.name},
             "personas": [{"id": p.id, "name": p.name, "role": p.role, "title": p.title, "about": p.about, "read_only": p.read_only,
-                          "permissions": sorted(x for x in p.permissions if p.can(x))} for p in rt.policy.people.values()],
+                          "org": p.org, "permissions": sorted(x for x in p.permissions if p.can(x))} for p in rt.policy.people.values()],
+            "former": _former_staff(rt),
             "default_person": rt.policy.default_person, "sample_data": True, "llm_provider": settings.llm_provider}
+
+
+def _former_staff(rt: TenantRuntime) -> dict[str, str]:
+    """Names of provider staff who once worked here, so history still reads with names after their engagement ends."""
+    from ..domain.models import Engagement, ProviderStaff
+    from ..tenants.provider import persona_id
+
+    with session_scope(rt.id) as s:
+        ids = set(s.scalars(select(Engagement.staff_id).distinct()))
+        rows = s.scalars(select(ProviderStaff).where(ProviderStaff.id.in_(ids))) if ids else []
+        return {persona_id(m.id): m.name for m in rows if persona_id(m.id) not in rt.policy.people}
 
 
 @router.get("/dashboard")

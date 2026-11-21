@@ -7,7 +7,8 @@ const PENDING = 'signin:pending'
 
 export type AuthConfig = { mode: 'demo' | 'oidc'; dev_idp: boolean }
 export type SignedIn = { token: string; expires: number; organisation: string }
-export type WhoAmI = { mode: string; subject?: string; known?: boolean; tenant?: { id: string; name: string }; operator?: { id: string; name: string; title: string } | null }
+type Staff = { id: string; name: string; title: string; console: boolean }
+export type WhoAmI = { mode: string; subject?: string; known?: boolean; tenant?: { id: string; name: string }; operator?: Staff | null; staff?: Staff | null }
 
 let config: AuthConfig = { mode: 'demo', dev_idp: false }
 export const authMode = () => config.mode

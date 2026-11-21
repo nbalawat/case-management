@@ -238,6 +238,8 @@ def test_platform_staff_sign_in_through_their_own_provider_and_see_no_client_dat
     assert sso.get("/api/auth/whoami", headers=olivia).json()["operator"]["name"] == "Olivia Grant"
     for path in ("/api/cases", "/api/me", "/api/dashboard", "/api/work"):
         r = sso.get(path, headers=olivia | {"X-Tenant": "meridian", "X-Persona": "maya"})
+        assert r.status_code == 403 and "no engagement at Meridian" in r.text  # staff reach a client only through an engagement
+        r = sso.get(path, headers=olivia | {"X-Persona": "maya"})
         assert r.status_code == 403 and "no access to client data" in r.text
     assert sso.get("/api/platform/overview", headers=bearer("platform", "mallory")).status_code == 403
     assert sso.get("/api/platform/overview", headers=bearer("meridian", "olivia")).status_code == 403  # the right name from the wrong provider
