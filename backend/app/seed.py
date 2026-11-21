@@ -214,19 +214,17 @@ def _work_monitoring(d: Desk, cases: list[Case]) -> None:
 
 
 def _work_qa(d: Desk) -> None:
-    """Quinn reviews most sampled cases; one fails and sends its case back to the investigators."""
+    """Quinn reviews most sampled cases; the most recent one fails and sends its case back to the team."""
     reviews = sorted(d.s.scalars(select(Case).where(Case.case_type == "qa_review")), key=lambda c: c.created)
-    for n, c in enumerate(reviews):
-        age_h = (d.g.end - c.created).total_seconds() / 3600
-        if age_h < 48:
-            continue
-        at = c.created + timedelta(hours=d.g.r.randint(20, 44))
-        if n == 1:
+    due = [c for c in reviews if (d.g.end - c.created).total_seconds() / 3600 >= 48]
+    for n, c in enumerate(due):
+        if c is due[-1]:
+            at = d.g.end - timedelta(hours=7)
             d.own(c, "quinn", at - timedelta(hours=1))
             transition(d.s, c, "failed", PERSONAS["quinn"],
-                       "Closure rationale does not address the two first-time counterparties. Returned for a documented explanation.", ts=at)
+                       "The closure rationale does not explain why the pattern fits the customer's business. Returned for a documented explanation.", ts=at)
         elif n % 4 != 3:
-            d.step(c, "passed", "quinn", at)
+            d.step(c, "passed", "quinn", c.created + timedelta(hours=d.g.r.randint(20, 44)))
 
 
 def _seed_kyc(d: Desk) -> None:
@@ -402,8 +400,8 @@ def seed(s: Session, n_baseline: int = 260) -> dict:
     g.sanctions(8, 30, "Darya Shipping Lines", "IR")
     for name in ["Volkov Maritime Trading Co", "Darya Shipping Line LLC", "Zarin Exchange Houses", "Northgate Petrochem FZC"]:
         g.sanctions(1, 35, name, g.r.choice(["DE", "SG", "AE", "GB"]))
-    planted = _plant_fraud(g, g.r.sample(ordinary, len(FRAUD)))
     g.settle()
+    planted = _plant_fraud(g, g.r.sample(ordinary, len(FRAUD)))  # after settling, so "35 minutes ago" stays 35 minutes ago
     s.flush()
     alerts = run_detection(s)
     cases = route_alerts(s, alerts)

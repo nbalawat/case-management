@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { daysUntil, fmtDate } from '../api'
+import { daysUntil, fmtDate, hoursUntil } from '../api'
 import { useApi } from '../useApi'
-import { Card, Loading, Priority, Rec, Sla } from '../components/ui'
+import { useNameOf } from '../App'
+import { Card, Loading, Pill, Priority, Rec, Sla, StageClock } from '../components/ui'
 
 export type CaseRow = {
   id: string; case_type: string; type_title: string; state: string; state_label: string; open: boolean; priority: string
   owner: string | null; party_id: string; party_name: string; created: string; sla_due: string | null; sla_clock: string | null
   disposition: string | null; agent_recommendation: string | null; alerts: number
+  domain: string; state_kind: string; queue: string | null; queue_label: string; stage_due: string | null; stage_breached: boolean; parent_id: string | null
 }
 const ORDER = ['critical', 'high', 'medium', 'low']
 
@@ -17,6 +19,7 @@ export default function Cases() {
   const [q, setQ] = useState('')
   const { data, error } = useApi<CaseRow[]>(`/cases?status=${status}`)
   const nav = useNavigate()
+  const nameOf = useNameOf()
   const rows = useMemo(() => (data ?? [])
     .filter(c => type === 'all' || c.case_type === type)
     .filter(c => !q || `${c.party_name} ${c.id} ${c.party_id}`.toLowerCase().includes(q.toLowerCase()))
@@ -24,7 +27,7 @@ export default function Cases() {
   const types = [...new Map((data ?? []).map(c => [c.case_type, c.type_title])).entries()]
   return (
     <>
-      <div className="page-h"><h1>Cases</h1><p>One queue for monitoring, sanctions and KYC work, ordered by priority and deadline.</p></div>
+      <div className="page-h"><h1>Cases</h1><p>Every case across monitoring, sanctions, fraud, KYC and QA, ordered by priority and deadline.</p></div>
       <Card>
         <div className="toolbar">
           <div className="seg" role="group" aria-label="Status">
@@ -38,15 +41,16 @@ export default function Cases() {
         </div>
         {!data ? <Loading error={error} /> : rows.length === 0 ? <p className="empty">No cases match these filters.</p> : (
           <div className="scroll"><table className="rows">
-            <thead><tr><th>Priority</th><th>Customer</th><th>Case type</th><th>Stage</th><th className="num">Alerts</th><th>Agent view</th><th>Deadline</th><th>Opened</th><th>Owner</th></tr></thead>
+            <thead><tr><th>Priority</th><th>Customer</th><th>Case type</th><th>Stage</th><th>Stage clock</th><th className="num">Alerts</th><th>Agent view</th><th>Deadline</th><th>Opened</th><th>Queue and owner</th></tr></thead>
             <tbody>{rows.map(c => (
               <tr key={c.id} tabIndex={0} onClick={() => nav(`/cases/${c.id}`)} onKeyDown={e => e.key === 'Enter' && nav(`/cases/${c.id}`)}>
                 <td><Priority p={c.priority} /></td>
                 <td><b>{c.party_name}</b><div className="muted small">{c.id}</div></td>
-                <td>{c.type_title}</td><td>{c.state_label}</td><td className="num">{c.alerts}</td>
+                <td>{c.type_title}</td><td>{c.state_label}{c.state_kind === 'wait' && <Pill tone="warning">waiting</Pill>}</td>
+                <td>{c.open ? <StageClock hours={hoursUntil(c.stage_due)} /> : <span className="muted">–</span>}</td><td className="num">{c.alerts}</td>
                 <td><Rec r={c.agent_recommendation} /></td>
                 <td><Sla days={daysUntil(c.sla_due)} open={c.open} /></td>
-                <td>{fmtDate(c.created)}</td><td>{c.owner ?? <span className="muted">Unassigned</span>}</td>
+                <td>{fmtDate(c.created)}</td><td>{c.open ? <>{c.owner ? nameOf(c.owner) : <span className="muted">Unassigned</span>}<div className="muted small">{c.queue_label}</div></> : <span className="muted">Closed</span>}</td>
               </tr>))}</tbody>
           </table></div>)}
       </Card>

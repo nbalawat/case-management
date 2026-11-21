@@ -7,7 +7,7 @@ const PRI: Record<string, string> = { critical: 'critical', high: 'serious', med
 export const Priority = ({ p }: { p: string }) => <Pill tone={PRI[p]}>{p}</Pill>
 
 export const Rec = ({ r }: { r: string | null }) =>
-  r ? <Pill tone={r === 'escalate' ? 'serious' : 'good'}>Agent: {r === 'escalate' ? 'escalate' : 'close'}</Pill> : <span className="muted">No agent run</span>
+  r ? <Pill tone={r === 'escalate' ? 'serious' : 'good'}>Agent: {r === 'escalate' ? 'escalate' : 'close'}</Pill> : <span className="muted">–</span>
 
 export function Sla({ days, open }: { days: number | null; open: boolean }) {
   if (!open || days === null) return <span className="muted">Closed</span>
@@ -25,3 +25,16 @@ export const Card = ({ title, action, children, className = '' }: { title?: stri
 
 export const Loading = ({ error }: { error?: string | null }) =>
   <div className="loading">{error ? `Could not load: ${error}` : 'Loading…'}</div>
+
+const span = (h: number) => (Math.abs(h) >= 48 ? `${Math.round(Math.abs(h) / 24)}d` : `${Math.abs(h)}h`)
+
+/** The clock on the current stage, as opposed to the regulatory deadline on the whole case. */
+export function StageClock({ hours, kind }: { hours: number | null; kind?: string }) {
+  if (hours === null) return <span className="muted">–</span>
+  if (hours < 0) return <Pill tone="critical">{span(hours)} over</Pill>
+  if (hours <= 8) return <Pill tone="warning">{span(hours)} left</Pill>
+  return <span>{span(hours)} left{kind === 'wait' ? ' (waiting)' : ''}</span>
+}
+
+export const Kpi = ({ label, value, sub, bad }: { label: string; value: ReactNode; sub?: ReactNode; bad?: boolean }) =>
+  <div className="kpi"><span>{label}</span><b className={bad ? 'bad' : ''}>{value}</b>{sub && <small>{sub}</small>}</div>
