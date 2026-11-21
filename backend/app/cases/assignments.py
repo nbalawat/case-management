@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from ..domain.models import Case
-from ..domain.personas import PERSONAS, Persona, queue_members
+from ..domain.personas import Persona, policy_of
 from .service import TransitionError, record
 
 
@@ -35,8 +35,9 @@ def reassign(s: Session, case: Case, to: str, persona: Persona, reason: str = ""
         raise TransitionError("Reassignment needs a team lead")
     if case.closed is not None:
         raise TransitionError("The case is closed")
-    target = PERSONAS.get(to)
-    if target is None or target not in queue_members(case.queue):
+    policy = policy_of(case.tenant_id)
+    target = policy.people.get(to)
+    if target is None or target not in policy.queue_members(case.queue):
         raise TransitionError("The new owner must be a member of the case's queue")
     previous, case.owner = case.owner, target.id
     record(s, case.id, persona.id, "human", "case.assigned",

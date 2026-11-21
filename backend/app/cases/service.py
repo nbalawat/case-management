@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..domain.models import Alert, Case, CaseEvent, Filing, InfoRequest, Transaction, new_id, now
 from ..domain.personas import Persona, queue_members
+from ..tenancy import tenant_of
 from . import conditions
 from .case_types import get_definition
 
@@ -24,7 +25,7 @@ ON_CLOSED: list[Callable[[Session, Case, dict, Persona, datetime], None]] = []
 
 
 def definition(case: Case) -> dict:
-    return get_definition(case.case_type, case.type_version)
+    return get_definition(case.tenant_id, case.case_type, case.type_version)
 
 
 def record(s: Session, case_id: str, actor: str, actor_kind: str, kind: str, payload: dict | None = None,
@@ -38,7 +39,7 @@ def create_case(s: Session, case_type: dict, party_id: str, priority: str, creat
                 parent_id: str | None = None, actor: str = "alert-hub") -> Case:
     created = created or now()
     initial = case_type["initial_state"]
-    c = Case(id=new_id("case"), case_type=case_type["case_type"], type_version=case_type["version"], state=initial,
+    c = Case(id=new_id("case"), tenant_id=tenant_of(s), case_type=case_type["case_type"], type_version=case_type["version"], state=initial,
              party_id=party_id, priority=priority, created=created, state_entered=created, parent_id=parent_id,
              queue=case_type["states"][initial].get("queue"), data={},
              sla_due=created + timedelta(days=case_type.get("sla", {}).get("due_days", 30)))
@@ -96,7 +97,7 @@ def _open_requests(s: Session, case: Case) -> int:
 
 def _blocked(s: Session, case: Case, t: dict, persona: Persona, note: str | None) -> str | None:
     """Why this persona cannot take this transition now. `note=None` skips the note check (it is typed at click time)."""
-    if persona.role not in t["roles"]:
+    if not persona.holds(t["roles"]):
         return f"Needs role: {', '.join(r.replace('_', ' ') for r in t['roles'])}"
     if t.get("four_eyes"):
         if case.drafted_by == persona.id:
@@ -117,6 +118,12 @@ def _blocked(s: Session, case: Case, t: dict, persona: Persona, note: str | None
     if note is not None and "note" in req and not note.strip():
         return "A rationale note is required"
     return None
+
+
+def applicable_targets(s: Session, case: Case) -> set[str]:
+    """The stages this case could move to next, whoever takes the step."""
+    f = facts(s, case)
+    return {t["to"] for t in definition(case)["transitions"] if t["from"] == case.state and conditions.evaluate(t.get("when"), f)}
 
 
 def allowed_transitions(s: Session, case: Case, persona: Persona) -> list[dict]:
@@ -175,7 +182,7 @@ def enter_state(s: Session, case: Case, defn: dict, state: str, ts: datetime, ac
     queue = target.get("queue")
     if queue != case.queue:
         case.queue = queue
-        if case.owner and queue and case.owner not in {p.id for p in queue_members(queue)}:
+        if case.owner and queue and case.owner not in {p.id for p in queue_members(case.tenant_id, queue)}:
             record(s, case.id, "workflow", "system", "case.handed_off", {"from_owner": case.owner, "queue": queue}, ts=ts)
             case.owner = None
 

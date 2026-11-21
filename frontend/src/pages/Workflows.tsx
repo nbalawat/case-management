@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, fmtDateTime, words } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf, usePersona } from '../App'
+import { useNameOf, usePeople } from '../App'
 import { Card, Loading, Pill } from '../components/ui'
 import WorkflowDiagram from '../components/WorkflowDiagram'
 
@@ -22,14 +22,14 @@ type Scenario = { name: string; version: string; title: string; typology: string
 const clock = (h: number | null) => (h === null ? 'No stage clock' : h >= 48 ? `${Math.round(h / 24)} days` : `${h} hours`)
 
 function Editor({ ct, onPublished }: { ct: CT; onPublished: () => void }) {
-  const persona = usePersona()
+  const { can, holder } = usePeople()
   const ref = useApi<Ref>('/workflow-reference')
   const [src, setSrc] = useState(ct.yaml)
   const [note, setNote] = useState('')
   const [check, setCheck] = useState<Check | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   useEffect(() => { setSrc(ct.yaml); setCheck(null); setMsg(null) }, [ct.case_type, ct.version]) // eslint-disable-line
-  const admin = persona?.role === 'admin'
+  const admin = can('publish_workflow')
   const run = () => api.post<Check>('/case-types/check', { source: src }).then(r => { setCheck(r); setMsg(null) }).catch(e => setMsg(e.message))
   const publish = () => api.post<{ version: string }>('/case-types/publish', { source: src, note })
     .then(r => { setMsg(`Published v${r.version}. New cases use it from now on; open cases finish on the version they started with.`); setCheck(null); setNote(''); onPublished() })
@@ -43,8 +43,8 @@ function Editor({ ct, onPublished }: { ct: CT; onPublished: () => void }) {
             <button onClick={run}>Check draft</button>
             <input type="search" placeholder="What changed and why" value={note} onChange={e => setNote(e.target.value)} aria-label="Change note" />
             <button className="primary" disabled={!admin || !check?.ok} onClick={publish}
-              title={!admin ? 'Publishing needs the platform admin' : !check?.ok ? 'Check the draft first' : ''}>Publish new version</button>
-            {!admin && <span className="muted small">Sign in as Omar Haddad (platform admin) to publish.</span>}
+              title={!admin ? 'Publishing needs the publish workflow permission' : !check?.ok ? 'Check the draft first' : ''}>Publish new version</button>
+            {!admin && <span className="muted small">Sign in as {holder('publish_workflow')} to publish.</span>}
           </div>
           {msg && <p className="msg" role="status">{msg}</p>}
         </div>
@@ -54,7 +54,7 @@ function Editor({ ct, onPublished }: { ct: CT; onPublished: () => void }) {
           {check?.ok && <div className="verdict good"><b>Valid. Publishing would:</b><ul>{check.changes!.map(c => <li key={c}>{c}</li>)}</ul></div>}
           {check?.ok && check.preview && <WorkflowDiagram states={check.preview.states} steps={check.preview.transitions} initial={check.preview.initial_state} />}
           {ref.data && <details><summary><b>What a definition can refer to</b></summary>
-            <h3>Roles</h3><p>{ref.data.roles.map(r => <Pill key={r.id} tone="human">{r.id}</Pill>)}</p>
+            <h3>Roles</h3><p>{ref.data.roles.map(r => <Pill key={r.id} tone="human">{r.id}</Pill>)}<span className="muted small">These are this client's roles. Another client's list can differ.</span></p>
             <h3>Queues</h3><p>{ref.data.queues.map(q => <Pill key={q.id}>{q.id}</Pill>)}</p>
             <h3>Requirements for a step</h3><ul className="plain">{ref.data.requirements.map(r => <li key={r.id}><code>{r.id}</code> {r.label}</li>)}</ul>
             <h3>Facts for conditions</h3><ul className="plain">{ref.data.facts.map(f => <li key={f.id}><code>{f.id}</code> {f.label}</li>)}</ul>
@@ -78,7 +78,7 @@ export default function Workflows() {
   const open = Object.values(ct.open_by_state).reduce((a, b) => a + b, 0)
   return (
     <>
-      <div className="page-h"><h1>Workflows</h1><p>Each case type is a versioned definition: stages, who works them, what must be done, which steps are allowed and under what conditions. Changing one is a configuration change, checked before it goes live.</p></div>
+      <div className="page-h"><h1>Workflows</h1><p>Each case type is a versioned definition: stages, who works them, what must be done, which steps are allowed and under what conditions. Changing one is a configuration change, checked before it goes live. Versions published here belong to this client only.</p></div>
       <div className="seg" role="group" aria-label="Case type">
         {types.data.map(t => <button key={t.case_type} aria-pressed={t.case_type === ct.case_type} onClick={() => { setSel(t.case_type); setStage(null) }}>{t.title}</button>)}
       </div>
@@ -117,7 +117,7 @@ export default function Workflows() {
           <table><thead><tr><th>Version</th><th>Source</th><th className="num">Open cases</th><th>Published</th></tr></thead>
             <tbody>{ct.versions.map(v => (
               <tr key={v.version}><td><b>v{v.version}</b> {v.active && <Pill tone="good">active</Pill>}</td><td>{v.origin}</td><td className="num">{v.open_cases}</td>
-                <td className="small">{v.published ? `${fmtDateTime(v.published)} by ${nameOf(v.published_by)}${v.note ? `: ${v.note}` : ''}` : 'Shipped with the platform'}</td></tr>))}</tbody></table>
+                <td className="small">{v.published ? `${fmtDateTime(v.published)} by ${nameOf(v.published_by)}${v.note ? `: ${v.note}` : ''}` : 'Platform library'}</td></tr>))}</tbody></table>
         </Card>
       </div>
       <Editor ct={ct} onPublished={types.reload} />

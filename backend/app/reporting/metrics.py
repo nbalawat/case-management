@@ -7,8 +7,9 @@ from datetime import timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..cases.case_types import load_case_types
+from ..cases.case_types import library, load_case_types
 from ..detection.scenarios import describe
+from ..tenancy import tenant_of
 from ..domain.models import Alert, Case, CaseEvent, Feed, Filing, Transaction, now
 
 
@@ -16,7 +17,7 @@ ESCALATED = ("sar_filed", "true_match", "fraud_confirmed")  # dispositions that 
 
 
 def dashboard(s: Session) -> dict:
-    types = load_case_types()
+    types = library() | load_case_types(tenant_of(s))
     cases = list(s.scalars(select(Case)))
     today = now()
     open_cases = [c for c in cases if c.closed is None]

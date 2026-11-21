@@ -12,8 +12,11 @@ page.on('pageerror', e => errors.push(String(e)))
 const shot = async name => { await page.evaluate(() => window.scrollTo(0, 0)); await page.waitForTimeout(150); return page.screenshot({ path: `${out}${name}.png`, fullPage: true }) }
 const go = async path => { await page.goto(base + path); await page.waitForLoadState('networkidle') }
 
-const as = async who => { await page.goto(base + '/'); await page.evaluate(w => localStorage.setItem('persona', w), who) }
-const cases = await (await fetch(`${base}/api/cases?status=all`)).json()
+const as = async (who, client = 'meridian') => {
+  await page.goto(base + '/')
+  await page.evaluate(([w, c]) => { localStorage.setItem('tenant', c); if (w) localStorage.setItem(`persona:${c}`, w) }, [who, client])
+}
+const cases = await (await fetch(`${base}/api/cases?status=all`, { headers: { 'X-Tenant': 'meridian' } })).json()
 const find = fn => cases.find(fn) ?? cases[0]
 
 await as('ivan')
@@ -42,5 +45,23 @@ await page.getByRole('button', { name: 'Load and run detection' }).waitFor()
 await page.getByRole('button', { name: 'Load and run detection' }).click()
 await page.getByText('Count reconciliation').waitFor(); await page.waitForLoadState('networkidle'); await page.waitForTimeout(400)
 await shot('11-data-onboarding')
+// A second client: different people, roles and workloads, and its own access policy to edit.
+await as('joy', 'kestrel')
+await go('/'); await shot('12-second-client-my-work')
+await as('pat', 'kestrel')
+await go('/access')
+const box = page.getByLabel('Access policy')
+const draft = (await box.inputValue()).replace('version: 1.0.0', 'version: 1.1.0')
+  .replace('default_person: nia', '  - {id: uma, name: Uma Reyes, role: fraud_analyst, queues: [fraud], about: New joiner.}\n\ndefault_person: nia')
+await box.fill(draft)
+await page.getByRole('button', { name: 'Check draft' }).click()
+await page.getByText('Valid. Publishing would').waitFor()
+await shot('13-second-client-access')
+// The provider's own view across clients, and onboarding a new one.
+await as(null, '@operator')
+await go('/')
+await page.getByPlaceholder('Northwind Credit Union').fill('Northwind Credit Union')
+await page.getByText('Ready to onboard').waitFor()
+await shot('14-operator-console')
 await browser.close()
 console.log(errors.length ? `Console errors:\n${errors.join('\n')}` : 'Done, no console errors.')

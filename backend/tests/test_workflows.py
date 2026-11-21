@@ -4,13 +4,15 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.cases import assignments, conditions, publishing, requests
-from app.cases.case_types import CaseTypeError, get_definition, load_case_types, parse
+from app.cases.case_types import CaseTypeError, get_definition, library, load_case_types
 from app.cases.qa import sampled
 from app.cases.service import (TransitionError, allowed_transitions, complete_stage_tasks, create_case, save_narrative,
                                set_task, stage_tasks, transition)
 from app.cases.timers import run_timers
 from app.domain.models import Account, Alert, Case, CaseEvent, Party, Transaction
-from app.domain.personas import PERSONAS
+from app.tenants import registry
+from app.tenants.onboarding import hydrate
+from support import PERSONAS, T
 
 P = PERSONAS
 T0 = datetime(2026, 5, 1, 9)
@@ -21,7 +23,7 @@ def make_case(s, case_type="tm_alert_investigation", amount=20_000.0, pep=False,
     s.add(Account(id=f"A-{pid}", party_id=pid))
     s.add(Transaction(id=f"t-{pid}", account_id=f"A-{pid}", party_id=pid, ts=T0, amount=amount, direction="out", channel="wire"))
     s.flush()
-    c = create_case(s, load_case_types()[case_type], pid, "medium", created=T0)
+    c = create_case(s, load_case_types(T)[case_type], pid, "medium", created=T0)
     s.add(Alert(id=f"alr-{pid}", dedupe_key=f"k-{pid}", scenario="rapid_movement", scenario_version="1", party_id=pid, score=0.8,
                 explanation="x", txn_ids=[f"t-{pid}"], case_id=c.id, created=T0))
     s.flush()
@@ -220,35 +222,38 @@ def test_filed_sars_are_outside_the_qa_sample(s, monkeypatch):
 
 # --- versions --------------------------------------------------------------------
 def _draft(version="4.1.0", **replace):
-    src = load_case_types()["tm_alert_investigation"]["source"].replace("version: 4.0.0", f"version: {version}")
+    src = library()["tm_alert_investigation"]["source"].replace("version: 4.0.0", f"version: {version}")
     for a, b in replace.items():
         src = src.replace(a, b)
     return src
 
 
 def test_publish_needs_admin_and_a_higher_version(s):
-    with pytest.raises(CaseTypeError, match="admin"):
+    with pytest.raises(CaseTypeError, match="permission"):
         publishing.publish(s, _draft(), P["maya"])
     with pytest.raises(CaseTypeError, match="higher"):
         publishing.publish(s, _draft("4.0.0"), P["omar"])
     with pytest.raises(CaseTypeError, match="higher"):
         publishing.publish(s, _draft("3.9.9"), P["omar"])
     publishing.publish(s, _draft("4.1.0"), P["omar"])
-    assert load_case_types()["tm_alert_investigation"]["version"] == "4.1.0"
+    assert load_case_types(T)["tm_alert_investigation"]["version"] == "4.1.0"
 
 
-def test_open_cases_stay_on_their_version_and_new_cases_get_the_new_one(s):
+def test_open_cases_stay_on_their_version_and_new_cases_get_the_new_one(s, db):
     old = make_case(s, pid="P1")
     src = _draft("4.1.0").replace("sla_hours: 48\n    tasks:\n      - {id: review_briefing", "sla_hours: 12\n    tasks:\n      - {id: review_briefing")
     result = publishing.publish(s, src, P["omar"], "tighter triage clock")
     assert "Changes stage 'Triage'" in result["changes"]
     new = make_case(s, pid="P2")
     assert (old.type_version, new.type_version) == ("4.0.0", "4.1.0")
-    assert get_definition(old.case_type, old.type_version)["states"]["triage"]["sla_hours"] == 48
+    assert get_definition(T, old.case_type, old.type_version)["states"]["triage"]["sla_hours"] == 48
     assert run_timers(s, at=T0 + timedelta(hours=13))["stage_breaches"] == 1  # only the case on the new version
     assert (old.priority, new.priority) == ("medium", "high")
-    publishing.hydrate(s)  # a restart reads the published version back
-    assert load_case_types()["tm_alert_investigation"]["version"] == "4.1.0"
+    s.commit()
+    registry.reset()
+    with db.platform() as p:
+        hydrate(p)  # a restart reads the client's published version back
+    assert load_case_types(T)["tm_alert_investigation"]["version"] == "4.1.0"
 
 
 @pytest.mark.parametrize("mutate,message", [
@@ -261,13 +266,13 @@ def test_open_cases_stay_on_their_version_and_new_cases_get_the_new_one(s):
       "  - {from: senior_approval, to: mlro_review, label: Return to MLRO, roles: [head_fiu], requires: [note]}\n": ""}, "dead end"),
     ({"kind: wait": "kind: paused"}, "kind must be"),
 ])
-def test_bad_definitions_are_rejected_before_they_go_live(mutate, message):
+def test_bad_definitions_are_rejected_before_they_go_live(s, mutate, message):
     with pytest.raises(CaseTypeError, match=message):
-        parse(_draft("9.0.0", **mutate))
+        publishing.check(T, _draft("9.0.0", **mutate))
 
 
 def test_every_shipped_case_type_is_valid_and_every_stage_can_reach_an_end():
-    for ct in load_case_types().values():
+    for ct in library().values():
         closed = {k for k, v in ct["states"].items() if v.get("kind") == "closed"}
         for start in ct["states"]:
             seen, frontier = {start}, [start]

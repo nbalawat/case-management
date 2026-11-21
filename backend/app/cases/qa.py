@@ -24,13 +24,13 @@ def sampled(case_id: str, rate: float) -> bool:
 
 def _sample_on_close(s: Session, case: Case, defn: dict, actor: Persona, ts: datetime) -> None:
     qa = defn.get("qa")
-    if not qa or case.case_type == QA_CASE_TYPE or QA_CASE_TYPE not in load_case_types():
+    if not qa or case.case_type == QA_CASE_TYPE or QA_CASE_TYPE not in load_case_types(case.tenant_id):
         return
     if qa.get("dispositions") and case.disposition not in qa["dispositions"]:
         return
     if (case.data or {}).get("qa_done") or not sampled(case.id, float(qa.get("sample_rate", 0))):
         return
-    review = create_case(s, load_case_types()[QA_CASE_TYPE], case.party_id, "low", created=ts, parent_id=case.id, actor="qa-sampler")
+    review = create_case(s, load_case_types(case.tenant_id)[QA_CASE_TYPE], case.party_id, "low", created=ts, parent_id=case.id, actor="qa-sampler")
     review.data = {"closed_by": actor.id}
     case.data = dict(case.data or {}) | {"qa_done": True}
     record(s, case.id, "qa-sampler", "system", "qa.sampled", {"review_case": review.id, "sample_rate": qa.get("sample_rate")}, ts=ts)

@@ -1,26 +1,20 @@
-"""Publishing a new version of a case type from the workflow editor."""
+"""Publishing a new version of a case type from the workflow editor. Versions belong to one client."""
 from __future__ import annotations
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..domain.models import WorkflowVersion
-from ..domain.personas import Persona
+from ..domain.personas import Persona, policy_of
+from ..tenancy import tenant_of
 from . import case_types as registry
 from .case_types import CaseTypeError
 
 
-def hydrate(s: Session) -> None:
-    """Load published versions from the database into the registry at start-up."""
-    registry.reset_published()
-    for row in s.scalars(select(WorkflowVersion).order_by(WorkflowVersion.id)):
-        registry.register_published(registry.parse(row.source, f"{row.case_type} {row.version}"))
-
-
-def check(source: str) -> dict:
-    """Validate a draft and say what publishing it would change."""
+def check(tenant_id: str, source: str) -> dict:
+    """Validate a draft against the client's own access policy and say what publishing it would change."""
     ct = registry.parse(source, "draft")
-    current = registry.load_case_types().get(ct["case_type"])
+    registry.check_policy(ct, policy_of(tenant_id), "draft")
+    current = registry.load_case_types(tenant_id).get(ct["case_type"])
     if current is None:
         return {"definition": ct, "is_new": True, "changes": [f"New case type '{ct['case_type']}'"]}
     if registry.version_key(ct["version"]) <= registry.version_key(current["version"]):
@@ -49,10 +43,11 @@ def diff(old: dict, new: dict) -> list[str]:
 
 def publish(s: Session, source: str, persona: Persona, note: str = "") -> dict:
     if not persona.can("publish_workflow"):
-        raise CaseTypeError("Publishing a workflow needs the platform admin role")
-    result = check(source)
+        raise CaseTypeError("Publishing a workflow needs the 'publish workflow' permission")
+    tenant = tenant_of(s)
+    result = check(tenant, source)
     ct = result["definition"]
     s.add(WorkflowVersion(case_type=ct["case_type"], version=ct["version"], source=source, published_by=persona.id, note=note))
     s.flush()
-    registry.register_published(ct)
+    registry.register_published(tenant, ct)
     return result

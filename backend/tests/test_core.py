@@ -1,15 +1,13 @@
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy.orm import sessionmaker
 
 from app.agents.investigator import investigate
 from app.alerts.hub import ingest_external_alert, route_alerts
 from app.cases.service import TransitionError, complete_stage_tasks, save_narrative, transition
-from app.db import Base, make_engine
 from app.detection.engine import run_detection
 from app.domain.models import Account, CaseEvent, Filing, Party, Transaction
-from app.domain.personas import PERSONAS
+from support import PERSONAS, T
 from app.ingest.connectors import CsvConnector
 from app.ingest.mapping import HeuristicProposer
 from app.ingest.service import profile, run_feed
@@ -22,14 +20,6 @@ CSV = """TXN_REF,CUST_NO,ACCT_NBR,TXN_DT,TXN_AMT,DR_CR_IND,CHNL,CNTRPRTY_NM,CNTR
 5,C1,A1,20260104110000,,CR,CSH,,US
 6,C1,A1,20260104120000,50.00,ZZ,CRD,Shop,US
 """
-
-
-@pytest.fixture
-def s():
-    eng = make_engine("sqlite://")
-    Base.metadata.create_all(eng)
-    with sessionmaker(bind=eng, expire_on_commit=False)() as session:
-        yield session
 
 
 def mapping():

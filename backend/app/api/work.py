@@ -12,10 +12,10 @@ from ..cases import assignments, requests
 from ..cases.qa import QA_CASE_TYPE
 from ..cases.service import TransitionError, set_task
 from ..cases.timers import run_timers
-from ..db import get_session
 from ..domain.models import Case, InfoRequest, now
-from ..domain.personas import PERSONAS, QUEUES, Persona, queue_members
-from .deps import actor, case_row, get_case_or_404, persona, require
+from ..domain.personas import Persona
+from ..tenants.registry import TenantRuntime
+from .deps import actor, case_row, get_case_or_404, get_session, persona, require, tenant
 
 router = APIRouter(prefix="/api")
 PRIORITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -32,33 +32,34 @@ def _urgency(row: dict):
     return (not row["stage_breached"], PRIORITY_RANK[row["priority"]], row["stage_due"] or row["sla_due"] or "")
 
 
-def _persona_out(p: Persona) -> dict:
-    return {"id": p.id, "name": p.name, "role": p.role, "title": p.title, "about": p.about, "read_only": p.read_only,
-            "queues": [{"id": q, "label": QUEUES[q]} for q in p.queues], "permissions": sorted(p.permissions)}
+def _persona_out(p: Persona, rt: TenantRuntime) -> dict:
+    return {"id": p.id, "name": p.name, "role": p.role, "roles": list(p.roles), "title": p.title, "about": p.about, "read_only": p.read_only,
+            "queues": [{"id": q, "label": rt.policy.queues[q]} for q in p.queues], "permissions": sorted(p.permissions),
+            "tenant": {"id": rt.id, "name": rt.name}}
 
 
 @router.get("/me")
-def me(p: Persona = Depends(persona)):
-    return _persona_out(p)
+def me(p: Persona = Depends(persona), rt: TenantRuntime = Depends(tenant)):
+    return _persona_out(p, rt)
 
 
 @router.get("/work")
-def my_work(s: Session = Depends(get_session), p: Persona = Depends(persona)):
+def my_work(s: Session = Depends(get_session), p: Persona = Depends(persona), rt: TenantRuntime = Depends(tenant)):
     """What this persona should do next: their own cases first, then unassigned work in their queues."""
     run_timers(s)
     open_cases = [case_row(c) for c in s.scalars(select(Case).where(Case.closed.is_(None)))]
     mine = sorted((r for r in open_cases if r["owner"] == p.id), key=_urgency)
-    queues = [{"id": q, "label": QUEUES[q],
+    queues = [{"id": q, "label": rt.policy.queues[q],
                "cases": sorted((r for r in open_cases if r["queue"] == q and r["owner"] is None), key=_urgency),
                "assigned": sum(1 for r in open_cases if r["queue"] == q and r["owner"])} for q in p.queues]
-    return {"persona": _persona_out(p), "mine": mine, "queues": queues,
+    return {"persona": _persona_out(p, rt), "mine": mine, "queues": queues,
             "stats": {"mine": len(mine), "available": sum(len(q["cases"]) for q in queues),
                       "breached": sum(1 for r in mine if r["stage_breached"]),
                       "waiting": sum(1 for r in mine if r["state_kind"] == "wait")}}
 
 
 @router.get("/team")
-def team(s: Session = Depends(get_session), p: Persona = Depends(persona)):
+def team(s: Session = Depends(get_session), p: Persona = Depends(persona), rt: TenantRuntime = Depends(tenant)):
     if not p.can("view_team"):
         raise HTTPException(403, f"{p.title} does not have the team view")
     run_timers(s)
@@ -66,17 +67,17 @@ def team(s: Session = Depends(get_session), p: Persona = Depends(persona)):
     rows = [case_row(c) for c in cases if c.closed is None]
     owned, late = Counter(r["owner"] for r in rows if r["owner"]), Counter(r["owner"] for r in rows if r["owner"] and r["stage_breached"])
     people = [{"id": x.id, "name": x.name, "title": x.title, "queues": list(x.queues), "open": owned[x.id], "breached": late[x.id]}
-              for x in PERSONAS.values() if x.can("work")]
+              for x in rt.policy.people.values() if x.can("work")]
     today = now()
     queues = []
-    for q, label in QUEUES.items():
+    for q, label in rt.policy.queues.items():
         inq = [r for r in rows if r["queue"] == q]
         waiting = [r for r in inq if r["owner"] is None]
         oldest = min((r["stage_entered"] for r in waiting), default=None)
         queues.append({"id": q, "label": label, "open": len(inq), "unassigned": len(waiting),
                        "breached": sum(1 for r in inq if r["stage_breached"]),
                        "oldest_hours": None if oldest is None else round((today - next(c.state_entered for c in cases if c.state_entered.isoformat() == oldest)).total_seconds() / 3600),
-                       "members": [m.id for m in queue_members(q)]})
+                       "members": [m.id for m in rt.policy.queue_members(q)]})
     reviews = [c for c in cases if c.case_type == QA_CASE_TYPE]
     return {"people": people, "queues": queues,
             "attention": sorted((r for r in rows if r["stage_breached"]), key=_urgency)[:25],

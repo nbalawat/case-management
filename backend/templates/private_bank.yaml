@@ -1,0 +1,6 @@
+template: private_bank
+title: Private bank
+summary: Client due diligence first - onboarding, periodic review and enhanced due diligence - plus monitoring, sanctions and QA.
+access: private_bank.yaml
+case_types: [kyc_onboarding, kyc_refresh, tm_alert_investigation, sanctions_hit, qa_review]
+settings: {default_case_type: tm_alert_investigation}
