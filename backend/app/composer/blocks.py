@@ -85,6 +85,8 @@ STEP_FIELDS = (
     Field("label", "Step name", "text", True, (), "", "What the button says, such as 'Escalate to investigation'"),
     Field("roles", "Who can take it", "multiselect", True, "roles"),
     Field("requires", "Before it can be taken", "multiselect", False, "requirements"),
+    Field("forms", "Forms to complete", "multiselect", False, "forms", None,
+          "The step waits until these forms are submitted on the case. Built under Forms."),
     Field("four_eyes", "Four-eyes: someone other than the last person to act", "bool", False, (), False),
 )
 BRANCH_STEP_FIELDS = (Field("label", "Step name", "text", False, (), "", "Leave empty to use the step into the decision with the branch name"),)
