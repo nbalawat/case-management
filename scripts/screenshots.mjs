@@ -122,8 +122,8 @@ await page.locator('.net-node.flagged rect').first().hover(); await page.locator
 await go(`/counterparties/${firm.id}`); await shot('30-counterparty')
 await go('/entities'); await page.getByRole('button', { name: 'Same' }).first().click()
 await page.getByText('Decisions on record').waitFor(); await shot('31-entities-desk')
-await page.getByLabel('Search customers, counterparties, cases').fill('volkof')
-await page.locator('.search-pop button').first().waitFor(); await page.screenshot({ path: `${out}32-search.png` })
+await page.keyboard.press('/'); await page.getByPlaceholder(/Search cases and customers/).fill('volkof')
+await page.locator('[cmdk-group-heading]', { hasText: 'Counterparties' }).waitFor(); await page.screenshot({ path: `${out}32-search.png` })
 await page.keyboard.press('Escape')
 // Regulatory reports: the register, one accepted SAR with its document, and a CTR prepared and sent from a cash day.
 await as('maya')

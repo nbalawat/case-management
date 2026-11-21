@@ -1,0 +1,37 @@
+/* Style entry point. Order of precedence, lowest first:
+   theme (Tailwind tokens) < legacy (the original page styles in index.css) < components (the kit) < utilities.
+   Putting the original styles in their own layer lets the kit's utility classes win over element rules such
+   as `button {}` without rewriting every page at once. Tailwind's preflight reset is deliberately left out. */
+@layer theme, base, legacy, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "../index.css" layer(legacy);
+@import "./tokens.css";
+@import "./shell.css" layer(components);
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Tailwind names for the product's own tokens, so `bg-surface` or `text-soft` follow the theme. */
+@theme inline {
+  --font-sans: Inter, system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-soft: var(--soft);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-chip: var(--chip);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-on-brand: var(--on-brand);
+  --color-agent: var(--agent);
+  --color-agent-bg: var(--agent-bg);
+  --color-crit: var(--crit);
+  --color-crit-bg: var(--crit-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-good: var(--good);
+  --color-good-bg: var(--good-bg);
+}

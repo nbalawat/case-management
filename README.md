@@ -50,18 +50,26 @@ and watch the Integrations page. To run the broker tests, set `TEST_KAFKA_URL=ka
 
 For development, run `make dev-api` and `make dev-ui` in two terminals and open <http://localhost:5173>.
 
-**Sign-in.** By default there is no login: pickers at the top right choose the client and the person. To see
+**Sign-in.** By default there is no login: the account menu at the top right chooses the client and the person. To see
 single sign-on instead, start the API with `AUTH_MODE=oidc DEV_IDP=1` (for example
-`cd backend && AUTH_MODE=oidc DEV_IDP=1 uv run uvicorn app.main:app --port 8000`). The pickers disappear, every
+`cd backend && AUTH_MODE=oidc DEV_IDP=1 uv run uvicorn app.main:app --port 8000`). The switchers disappear, every
 request needs a signed token, and "signing in" sends you through a small built-in identity provider that stands
 in for each client's own. To use a real provider (Keycloak, Entra ID, Okta), leave `DEV_IDP` off and register
 each client's issuer: `PUT /api/platform/tenants/{id}/identity`.
 
 ## A fifteen-minute demo
 
-The client and person pickers at the top right are the whole login. Steps 1 to 9 are at Meridian Retail Bank;
-each says who to be. Steps 10 to 12 show the platform running several clients. Workflows, Lists, Detection,
-Access, Data, Integrations and Governance are under Setup in the top bar.
+The account menu at the top right is the whole login: "View as" picks the person, "Client" the client (or type
+a name into the command palette). Steps 1 to 9 are at Meridian Retail Bank; each says who to be. Steps 10 to 12
+show the platform running several clients.
+
+**Finding your way.** The menu on the left is built for the person signed in: their work, the desks they work
+(KYC, Sanctions, Fraud), investigation tools, oversight pages if they manage, and an Administration area only if
+they configure something. An analyst sees six items; the MLRO about twenty; the auditor lands on the dashboard.
+Press `/` or `Ctrl K` (`⌘K` on a Mac) anywhere for the command palette: find any case, customer, counterparty or
+transaction, jump to any page you have, or type a question and ask it. Light, dark or system theme is in the
+account menu. Every page still opens by its address for anyone, and the server still decides what each person
+may see and do; the menu only decides what is in front of them.
 
 1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
    his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
@@ -221,6 +229,10 @@ backend/reference/     the starting code lists: closing reasons, QA criteria and
 backend/access/       starting access policies: permissions, roles, queues, people
 backend/templates/    client templates: a starting policy plus a set of case types
 frontend/src/         React + TypeScript UI
+  shell/       the app frame: module registry (one entry per page), role-shaped sidebar, command palette,
+               account menu, theme. A new page is one entry in shell/registry.tsx
+  components/kit/  accessible primitives (Radix, cmdk) styled with Tailwind on the product's tokens
+  pages/       one file per page
 ```
 
 Each replaceable part sits behind a small interface (`ObjectStore`, `SearchIndex`, filing `Format` and `Channel`, `Connector`, `MappingProposer`, `LLMProvider`, the scenario
@@ -234,7 +246,7 @@ registry, and `ChatModel` for the model that answers questions), so later milest
     "not found". Lena Fischer, who is cleared for restricted matters, can claim it and carry on. Open Access as
     Omar to see what each role sees, then change a role's `sees` rule and check the draft.
 
-16. **Who is who, as Ivan at Meridian.** Type "volkof" in the search box (or press `/`): the misspelling still finds
+16. **Who is who, as Ivan at Meridian.** Press `/` and type "volkof": the misspelling still finds
     Volkov Maritime Trading, which payments spell two ways. Open Entities: spellings merged without a person,
     look-alikes waiting for one, and "is this payee one of our own customers?" questions. Press Same on one and it
     moves to the record. Open a customer from a case ("Customer profile and network"): money in and out, every
@@ -267,15 +279,15 @@ registry, and `ChatModel` for the model that answers questions), so later milest
     the law enforcement request and decide a possible match; switch to Ivan Petrov and the section is gone. As
     Fran Dubois, open Fraud: a wire dispute is in recovery, and the closed ones show what came back and what was
     lost. Open its case to record money coming back and resolve it on the figures.
-21. **Tuning detection, at Meridian.** Open Setup, then Detection. As Maya Chen, a change to cash structuring
+21. **Tuning detection, at Meridian.** Open Detection tuning (under Administration). As Maya Chen, a change to cash structuring
     waits for her: Omar Haddad proposed four deposits instead of three, and the backtest shows which alerts
     would go and that none of them mattered. As Omar, press "Try different settings" on Rapid movement of
     funds, set the hours to 24 and run it: three alerts that led to filings would be lost, so approving it
     would take a written reason. As Hugo Laurent, run the lookback "Cash deposits from $5,000": its alerts land
     in cases for people, and it can be signed off by someone else once those cases are decided.
-22. **Reporting and governance, at Meridian.** As Tara Singh, open Overview and choose "Month by month": the
-    month as a committee reads it, with last month one click away and two downloads. As Maya Chen, open Setup,
-    then Governance. The change register lists every change to the setup with its second person. Start an
+22. **Reporting and governance, at Meridian.** As Tara Singh, open Management reports (or Dashboard, then "Month by month"): the
+    month as a committee reads it, with last month one click away and two downloads. As Maya Chen, open
+    Governance. The change register lists every change to the setup with its second person. Start an
     access review: Maya and Hugo are flagged for holding both sides of the detection control, nobody can
     certify their own access, and last month's review still shows one change that was asked for and not made.
     In Audit search, look for the word "jurisdiction", then switch to Tara and see that events on the
