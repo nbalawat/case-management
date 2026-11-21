@@ -5,6 +5,7 @@ import { useApi } from '../useApi'
 import { Card, Loading, Pill } from '../components/ui'
 import ManagedServiceCard from '../components/access/ManagedServiceCard'
 import { BreakGlassCard } from '../components/access/BreakGlass'
+import DirectoryCard from '../components/access/DirectoryCard'
 
 type Policy = {
   policy: { name: string; version: string }
@@ -128,6 +129,7 @@ export default function Access() {
         </Card>
       </div>
       <BreakGlassCard key={`bg-${data.policy.version}`} hours={data.break_glass?.hours ?? null} restricted={data.break_glass?.restricted ?? false} />
+      {data.can_edit && <DirectoryCard key={`dir-${data.policy.version}`} />}
       <ManagedServiceCard key={data.policy.version} />
       <Editor data={data} onPublished={reload} />
     </>

@@ -65,6 +65,36 @@ people:
 restricted cases also need `view_restricted`. In sign-in mode the identity provider proves who someone is and the
 policy says what they may do.
 
+### People from the identity provider: groups, SCIM and a second factor
+
+Naming everyone in `people:` does not scale past a team. The policy can instead map the client's identity provider
+groups to roles, and say who must sign in with a second factor:
+
+```yaml
+groups:
+  AML Investigators: {roles: [investigator], queues: [aml-l2]}
+  Internal Audit:    {roles: [auditor]}
+sign_in:
+  mfa: [mlro, head_fiu]     # or all, or none (the default)
+  acr: [gold]               # optional: 'acr' values that also mean a second factor was used
+```
+
+- **Provisioning (SCIM 2.0).** An administrator makes a SCIM token on the Access page and gives the identity
+  provider the tenant URL `<PUBLIC_URL>/api/scim/v2` and that token (Entra ID, Okta, OneLogin and Keycloak's SCIM
+  plugins all take these two). The provider then creates, updates, deactivates and deletes users and groups.
+  Every active user in a mapped group is a person here, with the roles and queues of all their groups.
+  Deactivating a user at the provider, or taking them out of every mapped group, takes them out at once, including
+  someone the policy names by id. The token names its client, is stored only as a keyed hash, and can be revoked.
+  Supported: `eq` filters on `userName`, `externalId`, `id`, `emails.value` (users) and `displayName`,
+  `externalId`, `id` (groups); PATCH `add`, `replace`, `remove`; paging. Bulk, sort and ETags are not.
+- **At sign-in.** For a client that does not provision, a token's `groups` claim gives the same roles to a user it
+  never provisioned (Keycloak's full group paths such as `/AML Investigators` match too). Someone the policy names
+  keeps exactly the policy's roles, whatever groups they are in.
+- **A second factor.** Where `sign_in.mfa` covers a person, their token must show one: an `amr` value (RFC 8176)
+  such as `otp`, `hwk` or `mfa`, or an `acr` listed in `sign_in.acr`. Otherwise the request is refused with
+  `401` and `WWW-Authenticate: Bearer error="insufficient_user_authentication"` (RFC 9470), so the client asks the
+  provider for a stronger sign-in. Platform staff always need one unless `OIDC_OPERATOR_MFA=0`.
+
 ## Deployment settings
 
 ### Core
@@ -86,6 +116,7 @@ policy says what they may do.
 | `AUTH_MODE` | `demo` | `demo`: client and person from headers and the pickers. `oidc`: only from a signed token |
 | `PUBLIC_URL` | `http://localhost:8000` | The address users reach, for redirects |
 | `OIDC_OPERATOR_ISSUER`, `OIDC_OPERATOR_AUDIENCE`, `OIDC_OPERATOR_CLAIM` | empty | The separate provider platform staff sign in through |
+| `OIDC_OPERATOR_MFA` | `1` | Platform staff's tokens must show a second factor (`amr`); `0` only where the staff provider cannot say so |
 | `DEV_IDP` | `0` | A built-in identity provider for laptops and tests; never in a real deployment |
 
 ### Storage

@@ -74,6 +74,8 @@ class Settings:
     oidc_operator_issuer: str = os.getenv("OIDC_OPERATOR_ISSUER", "")
     oidc_operator_audience: str = os.getenv("OIDC_OPERATOR_AUDIENCE", "caseforge")
     oidc_operator_claim: str = os.getenv("OIDC_OPERATOR_CLAIM", "preferred_username")
+    # 1: platform staff must have signed in with a second factor (the token's 'amr' says so), or nothing is answered.
+    oidc_operator_mfa: bool = os.getenv("OIDC_OPERATOR_MFA", "1") == "1"
     # A built-in identity provider for laptops and tests. Never switch it on in a real deployment.
     dev_idp: bool = os.getenv("DEV_IDP", "0") == "1"
     # The event backbone. Unset: events wait in the outbox table. memory:// keeps them in this process (tests, a laptop).

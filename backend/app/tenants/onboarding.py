@@ -202,8 +202,23 @@ def hydrate(s: Session) -> list[TenantRuntime]:
             registry.register_published(row.id, registry.parse(wv.source, f"{wv.case_type} {wv.version}"))
         provider.expire(s, row.id)
         provider.refresh(s, rt)
+        _directory(s, rt)
         out.append(rt)
     return out
+
+
+def _directory(s: Session, rt: TenantRuntime) -> None:
+    """Add the people the client's identity provider provisioned, read under that client's own session."""
+    from sqlalchemy.orm import Session as OrmSession
+
+    from ..directory import service as directory
+    from ..tenancy import bind_tenant
+
+    # Its own session and transaction on the same database, so row-level security binds it to this one client and
+    # the platform session's own settings are left as they are.
+    with OrmSession(bind=s.get_bind()) as ts:
+        bind_tenant(ts, rt.id)
+        directory.refresh(ts, rt)
 
 
 def set_status(s: Session, tenant_id: str, status: str) -> TenantRuntime:
