@@ -44,6 +44,7 @@ FACTORY = {
     "Lookback": lambda k: m.Lookback(id=f"lbk-{k}", name="n", scenario="structuring", period_from=NOW, period_to=NOW, created_by="x"),
     "OutboxEvent": lambda k: m.OutboxEvent(event_id=f"ev-{k}", topic="t", key="same key", type="x", payload="{}"),
     "StreamStat": lambda k: m.StreamStat(stream="transactions"),
+    "LineageEvent": lambda k: m.LineageEvent(job="pipeline.same", run_id=f"r-{k}", state="COMPLETE"),
     "ModelUsage": lambda k: ModelUsage(purpose="ask", endpoint="claude", model="claude-opus-5-5", input_tokens=10, output_tokens=2),
     "AccessReview": lambda k: m.AccessReview(id=f"acr-{k}", name="n", started_by="x", due=NOW),
     "InfoShare": lambda k: m.InfoShare(id=f"lea-{k}", reference="same reference", due=NOW, loaded_by="x"),

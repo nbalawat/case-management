@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from ..backbone import topics
 from ..backbone.bus import EventBus, Message, Subscription
 from ..config import settings
+from ..lineage import jobs as lineage_jobs
 from ..observability import metrics
 from .base import HistoryStore
 from .tables import BY_TOPIC, TABLES
@@ -42,6 +43,7 @@ class LakeSink:
         self._sub: Subscription | None = None
         self._pending: list[Message] = []
         self._since = 0.0
+        self.lineage = lineage_jobs.Tally("lake.writer")
 
     def _due(self) -> bool:
         if not self._pending:
@@ -64,6 +66,7 @@ class LakeSink:
             done = self._write(self._pending)
             self._sub.commit()
             self._pending = []
+            lineage_jobs.flush_if_due(self.lineage)
             return done
         except Exception:
             sub, self._sub = self._sub, None  # start again from the last commit; the table's own marks prevent repeats
@@ -96,6 +99,7 @@ class LakeSink:
             out.rows = self.store.append(tenant_id, name, rows, marks)
             if out.rows:
                 metrics.LAKE_ROWS.labels(tenant_id, name).inc(out.rows)
+                lineage_jobs.lake_batch(self.lineage, tenant_id, name, table.topic, out.rows)
             done[(tenant_id, name)] = out
         return done
 

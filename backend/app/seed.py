@@ -842,6 +842,9 @@ def seed_demo() -> dict:
             out[tid]["landed"] = land_core_banking_files(store_for(tid, "landing"), now(), seed=11 + n)
             admin = next(p for p in policy_of(tid).people.values() if p.can("load_data"))
             register_core_banking_sources(s, admin.id)
+            from .lineage import demo as lineage_demo
+
+            out[tid]["lineage_events"] = lineage_demo.seed(s, now(), store_for(tid, "landing").url)
     out["managed_service"] = seed_managed_service()
     out["sample_feed_rows"] = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", now())
     return out

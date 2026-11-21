@@ -974,5 +974,19 @@ class FormSubmission(TenantScoped, Base):
     __table_args__ = (UniqueConstraint("tenant_id", "case_id", "form_id"),)
 
 
+class LineageEvent(TenantScoped, Base):
+    """One OpenLineage run event: a job that read some datasets and wrote others. The whole event is kept as sent."""
+
+    __tablename__ = "lineage_event"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job: Mapped[str] = mapped_column(String(80), index=True)
+    run_id: Mapped[str] = mapped_column(String(40))
+    state: Mapped[str] = mapped_column(String(12))  # COMPLETE | FAIL
+    at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    inputs: Mapped[list] = mapped_column(JSON, default=list)
+    outputs: Mapped[list] = mapped_column(JSON, default=list)
+    event: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox
 from ..ai import usage as _ai_usage  # noqa: E402,F401  registers the model usage table
