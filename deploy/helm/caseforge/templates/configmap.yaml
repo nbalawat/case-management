@@ -14,6 +14,7 @@ data:
   OIDC_OPERATOR_ISSUER: {{ .Values.auth.operatorIssuer | quote }}
   OIDC_OPERATOR_AUDIENCE: {{ .Values.auth.operatorAudience | quote }}
   OIDC_OPERATOR_CLAIM: {{ .Values.auth.operatorClaim | quote }}
+  OIDC_OPERATOR_MFA: {{ ternary "1" "0" .Values.auth.operatorMfa | quote }}
   EVENT_BUS_URL: {{ .Values.eventBus.url | quote }}
   EVENT_TOPIC_PREFIX: {{ .Values.eventBus.topicPrefix | quote }}
   OUTBOX_PUBLISHER: {{ .Values.eventBus.outboxPublisher | quote }}
