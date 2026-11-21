@@ -61,7 +61,12 @@ def problems() -> list[str]:
     found = [f"revision id {rev!r} is used by {len(files)} files: {', '.join(files)}. Give all but one a new id "
              f"(`python -m app.migrate revision` names them by time) and chain them with down_revision."
              for rev, files in seen.items() if len(files) > 1]
-    heads = sorted(scripts().get_heads()) if not found else []
+    if found:
+        return found
+    try:
+        heads = sorted(scripts().get_heads())
+    except Exception as e:  # for example a down_revision naming a revision that is not here
+        return [f"the migrations do not form a chain (a down_revision names a revision that is not here: {e}). Set down_revision to an existing head (`python -m app.migrate heads` on main)."]
     if len(heads) > 1:
         files = {h: scripts().get_revision(h).path.rsplit("/", 1)[-1] for h in heads}
         found.append(f"{len(heads)} migration heads: {', '.join(f'{h} ({files[h]})' for h in heads)}. Two branches each "

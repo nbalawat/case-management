@@ -49,6 +49,11 @@ repeated id or path.
   claim the same id. Older migrations keep their numbers (`0016` to `0019`); nothing renumbers them.
 - Two branches that each add a migration leave two heads once both land. `python -m app.migrate check` (a CI step)
   and `tests/test_registration.py` fail on that, and on a repeated revision id, and name the files.
+- Revision ids only need to be unique; Alembic follows `down_revision`, not the number, so numbered ids (including
+  ones reserved for open pull requests) and time ids live side by side and may land in any order.
+- Immediately before merging, after merging `main`: your first new migration's `down_revision` must be what
+  `python -m app.migrate heads` prints for `main`. `check` also fails when a `down_revision` names a revision
+  that is not there.
 - The fix after merging `main`: in the migration your branch added, set `down_revision` to the other head (the
   one `main` brought in). If your file used a number `main` already has, rename it and its `revision` to a time
   id first. Then run `python -m app.migrate check` again.

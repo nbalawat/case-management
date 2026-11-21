@@ -2,6 +2,7 @@
 
     python -m app.migrate                       upgrade to the newest schema
     python -m app.migrate current               print the revision the database holds
+    python -m app.migrate heads                 print the newest revision(s): a new migration's down_revision is this
     python -m app.migrate check                 exit 1 if the migrations do not form one line, or the models differ from them
     python -m app.migrate revision "message"    write the next migration from the difference
 """
@@ -43,6 +44,9 @@ def main(argv: list[str]) -> int:
 
         with engine.connect() as conn:
             print(migrations.current(conn) or "none (migrations have never run on this database)")
+        return 0
+    if what == "heads":
+        print("\n".join(sorted(migrations.scripts().get_heads())))
         return 0
     if what == "check":
         if broken := migrations.problems():
