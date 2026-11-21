@@ -1,7 +1,7 @@
 """Feed onboarding: profile -> propose mapping -> apply -> reconcile."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -32,12 +32,17 @@ def profile(conn: Connector, proposer: MappingProposer | None = None, sample: in
 
 
 def _parse_ts(v: str) -> datetime:
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y%m%d%H%M%S", "%m/%d/%Y %H:%M", "%Y-%m-%d"):
+    v = v.strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y%m%d%H%M%S", "%m/%d/%Y %H:%M", "%Y-%m-%d", "%Y%m%d", "%m/%d/%Y"):
         try:
-            return datetime.strptime(v.strip(), fmt)
+            return datetime.strptime(v, fmt)
         except ValueError:
             continue
-    raise ValueError(f"unrecognised timestamp {v!r}")
+    try:  # ISO 8601 with fractions or an offset, as Parquet and JSON sources write it
+        parsed = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None) if parsed.tzinfo else parsed
+    except ValueError:
+        raise ValueError(f"unrecognised timestamp {v!r}") from None
 
 
 def transform(row: dict, mapping: dict[str, str | None]) -> dict:

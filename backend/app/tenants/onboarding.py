@@ -94,12 +94,48 @@ def onboard(s: Session, *, tenant_id: str, name: str, template: str, region: str
     plan = preview(template, case_types, access_source)
     tpl = _template(template)
     row = Tenant(id=tenant_id, name=name.strip(), template=template, region=region, deployment=deployment, status="live",
-                 case_types=plan["case_types"], settings=dict(plan["settings"]))
+                 case_types=plan["case_types"], settings=dict(plan["settings"]) | {"storage": [default_storage(tenant_id)]})
     s.add(row)
     s.add(AccessPolicyVersion(tenant_id=tenant_id, version=plan["policy"].version, source=access_source or tpl.access_source,
                               published_by=by, note=f"Created from the '{tpl.title}' template"))
     s.flush()
     return install(TenantRuntime(tenant_id, row.name, plan["policy"], list(row.case_types), row.status, dict(row.settings)))
+
+
+def default_storage(tenant_id: str) -> dict:
+    """Every client starts with one landing location of its own. In the cloud this is its bucket or container."""
+    from ..config import settings
+
+    return {"id": "landing", "label": "Landing zone", "url": f"file://{(settings.lake_dir / tenant_id).resolve()}/", "options": {},
+            "provider": "Local directory"}
+
+
+def set_storage(s: Session, tenant_id: str, roots: list[dict]) -> TenantRuntime:
+    """Replace the storage locations a client's pipelines may read. A location in use by a data source cannot be removed."""
+    from ..ingest.locations import check_root
+    from ..storage import StorageError
+
+    _platform(s)
+    row = s.get(Tenant, tenant_id)
+    if row is None:
+        raise OnboardingError(f"Unknown client '{tenant_id}'")
+    try:
+        cleaned = [check_root(tenant_id, r) for r in roots]
+    except StorageError as e:
+        raise OnboardingError(str(e)) from None
+    if len({r["id"] for r in cleaned}) != len(cleaned):
+        raise OnboardingError("Location ids must be unique")
+    from ..domain.models import DataSource
+
+    used = set(s.scalars(select(DataSource.root).where(DataSource.tenant_id == tenant_id).distinct()))
+    missing = sorted(used - {r["id"] for r in cleaned})
+    if missing:
+        raise OnboardingError(f"Data sources still read from: {', '.join(missing)}")
+    row.settings = dict(row.settings or {}) | {"storage": cleaned}
+    s.flush()
+    rt = runtime(tenant_id)
+    rt.settings = dict(row.settings)
+    return rt
 
 
 def hydrate(s: Session) -> list[TenantRuntime]:

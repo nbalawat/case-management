@@ -41,7 +41,7 @@ class FieldProposal:
 
 
 class MappingProposer(Protocol):
-    def propose(self, columns: list[str], sample_rows: list[dict]) -> list[FieldProposal]: ...
+    def propose(self, columns: list[str], sample_rows: list[dict], fields: dict[str, dict] | None = None) -> list[FieldProposal]: ...
 
 
 def _norm(s: str) -> str:
@@ -51,9 +51,10 @@ def _norm(s: str) -> str:
 class HeuristicProposer:
     """Synonym and similarity matcher. Deterministic, explainable, no network."""
 
-    def propose(self, columns: list[str], sample_rows: list[dict]) -> list[FieldProposal]:
+    def propose(self, columns: list[str], sample_rows: list[dict], fields: dict[str, dict] | None = None) -> list[FieldProposal]:
+        fields = fields or CANONICAL_FIELDS
         scored: list[tuple[float, str, str, str]] = []
-        for target, meta in CANONICAL_FIELDS.items():
+        for target, meta in fields.items():
             for col in columns:
                 n = _norm(col)
                 if n == _norm(target):
@@ -72,7 +73,7 @@ class HeuristicProposer:
             chosen[target] = (col, score, reason)
             taken.add(col)
         out: list[FieldProposal] = []
-        for target, meta in CANONICAL_FIELDS.items():
+        for target, meta in fields.items():
             if target in chosen:
                 col, score, reason = chosen[target]
                 samples = [str(r.get(col, "")) for r in sample_rows[:3]]
@@ -82,5 +83,6 @@ class HeuristicProposer:
         return out
 
 
-def proposals_as_dicts(props: list[FieldProposal]) -> list[dict]:
-    return [asdict(p) | {"desc": CANONICAL_FIELDS[p.target]["desc"]} for p in props]
+def proposals_as_dicts(props: list[FieldProposal], fields: dict[str, dict] | None = None) -> list[dict]:
+    fields = fields or CANONICAL_FIELDS
+    return [asdict(p) | {"desc": fields[p.target]["desc"]} for p in props]

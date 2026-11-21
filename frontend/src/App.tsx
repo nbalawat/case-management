@@ -8,6 +8,7 @@ import Cases from './pages/Cases'
 import CaseWorkspace from './pages/CaseWorkspace'
 import Team from './pages/Team'
 import Onboarding from './pages/Onboarding'
+import Data from './pages/Data'
 import Workflows from './pages/Workflows'
 import Access from './pages/Access'
 import Platform from './pages/Platform'
@@ -30,7 +31,7 @@ export const useNameOf = () => useContext(PeopleContext).nameOf
 
 const NAV = [
   ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/team', 'Team'], ['/workflows', 'Workflows'],
-  ['/access', 'Access'], ['/onboarding', 'Data'], ['/platform', 'Integrations'],
+  ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations'],
 ]
 
 /** Switching client is a clean break: nothing from one client may linger on screen for the next. */
@@ -108,6 +109,7 @@ export default function App() {
           <Route path="/cases" element={<Cases />} />
           <Route path="/cases/:id" element={<CaseWorkspace />} />
           <Route path="/team" element={<Team />} />
+          <Route path="/data" element={<Data />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/workflows" element={<Workflows />} />
           <Route path="/access" element={<Access />} />

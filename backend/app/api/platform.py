@@ -143,3 +143,17 @@ def put_case_types(tenant_id: str, body: CaseTypesIn, s: Session = Depends(platf
     except OnboardingError as e:
         raise HTTPException(422, str(e)) from e
     return _tenant_out(s.get(Tenant, tenant_id))
+
+
+class StorageIn(BaseModel):
+    locations: list[dict]
+
+
+@router.put("/tenants/{tenant_id}/storage")
+def put_storage(tenant_id: str, body: StorageIn, s: Session = Depends(platform_session)):
+    """Register the storage locations a client's pipelines may read. Only platform staff can do this."""
+    try:
+        rt = onboarding.set_storage(s, tenant_id, body.locations)
+    except OnboardingError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"id": tenant_id, "locations": rt.settings["storage"]}

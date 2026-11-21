@@ -1,6 +1,7 @@
 """Application entry point."""
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from .api.access import router as access_router
 from .api.ask import router as ask_router
+from .api.data import router as data_router
 from .api.platform import router as platform_router
 from .api.routes import router
 from .api.work import router as work_router
@@ -28,12 +30,19 @@ async def lifespan(_: FastAPI):
         from .seed import seed_demo
 
         seed_demo()
+    task = None
+    if settings.pipeline_scheduler:
+        from .ingest import scheduler
+
+        task = asyncio.create_task(scheduler.run_forever())
     yield
+    if task:
+        task.cancel()
 
 
-app = FastAPI(title="CaseForge demo API", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="CaseForge demo API", version="0.5.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
-for r in (router, work_router, workflows_router, access_router, platform_router, ask_router):
+for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router):
     app.include_router(r)
 
 DIST = Path(ROOT / "frontend" / "dist")

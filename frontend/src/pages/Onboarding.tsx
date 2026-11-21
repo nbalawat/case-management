@@ -41,7 +41,8 @@ export default function Onboarding() {
 
   return (
     <>
-      <div className="page-h"><h1>Data onboarding</h1><p>Bring a client feed onto the canonical model: profile it, confirm the proposed mapping, load, reconcile and monitor.</p></div>
+      <div className="crumbs"><Link to="/data">Data</Link> / Sample file loader</div>
+      <div className="page-h"><h1>Sample file loader</h1><p>Explore an extract by hand: profile it, confirm the proposed mapping, load and reconcile. For samples only. Production data arrives through <Link to="/data">pipelines from object storage</Link>.</p></div>
       <ol className="stepper"><li className={step > 1 ? 'done' : 'now'}>Connect and profile</li><li className={step > 2 ? 'done' : step === 2 ? 'now' : ''}>Confirm mapping</li><li className={step === 3 ? 'now' : ''}>Load, reconcile, detect</li></ol>
 
       <Card title="1. Connect a source">

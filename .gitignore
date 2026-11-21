@@ -15,3 +15,7 @@ docs/screenshots/*
 !docs/screenshots/08-workflows.png
 !docs/screenshots/14-operator-console.png
 !docs/screenshots/15-ask.png
+data/lake/
+data/quarantine/
+!docs/screenshots/17-data-pipelines.png
+!docs/screenshots/18-data-pipeline-run.png
