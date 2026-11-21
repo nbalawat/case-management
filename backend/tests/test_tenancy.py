@@ -47,6 +47,7 @@ FACTORY = {
     "InfoRequest": lambda k: m.InfoRequest(id=f"rfi-{k}", case_id=f"case-{k}", recipient="customer", question="q", raised_by="x", due=NOW),
     "DecisionVersion": lambda k: m.DecisionVersion(table_id="case_priority", version="9.0", source="x", published_by="x"),
     "WorkflowVersion": lambda k: m.WorkflowVersion(case_type="tm_alert_investigation", version="9.0.0", source="x", published_by="x"),
+    "WorkflowDraft": lambda k: m.WorkflowDraft(id=f"wfd-{k}", case_type="same_key", title="t", design={}, created_by="x", updated_by="x"),
     "AccessPolicyVersion": lambda k: m.AccessPolicyVersion(version="9.0.0", source="x", published_by="x"),
     "DataSource": lambda k: m.DataSource(id=f"src-{k}", name="same name", dataset="transactions", root="lake", created_by="x"),
     "PipelineRun": lambda k: m.PipelineRun(id=f"run-{k}", source_id=f"src-{k}", batch_id="b", started_by="x"),
