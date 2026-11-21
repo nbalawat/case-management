@@ -86,6 +86,56 @@ def test_a_clients_approved_thresholds_are_written_into_its_job():
     assert "between $5,000 and $10,000 within 10 days" in sql
 
 
+def test_rapid_movement_is_rendered_with_the_scenarios_own_settings_and_a_clients():
+    sql = render("rapid_movement", "acme-bank", bootstrap=BROKERS)
+    assert "A.amount >= 20000," in sql and "< 0.8 * A.amount" in sql and "PATTERN (A B* C) WITHIN INTERVAL '48' HOUR" in sql
+    assert "'pipeline.name' = 'caseforge rapid_movement acme-bank'" in sql and "'caseforge-flink-rapid-movement-acme-bank'" in sql
+    assert "'flink-rapid-movement'," in sql and "${" not in sql
+    sql = render("rapid_movement", "acme-bank", {"min_in": 5000, "out_ratio": 0.5, "hours": 12}, BROKERS)
+    assert "A.amount >= 5000," in sql and ">= 0.5 * A.amount" in sql and "INTERVAL '12' HOUR" in sql and "sent out within 12 hours" in sql
+
+
+def test_high_risk_wires_are_rendered_with_the_platforms_country_list_and_a_clients_threshold():
+    from app.detection.scenarios import HIGH_RISK_COUNTRIES
+
+    sql = render("high_risk_geo", "acme-bank", bootstrap=BROKERS)
+    assert "counterparty_country IN ('AF', 'IR', 'KP', 'MM', 'SY')" in sql and sql.count("10000") == 3 and "'flink-high-risk-geo'," in sql
+    assert set(re.findall(r"'([A-Z]{2})'", sql)) == HIGH_RISK_COUNTRIES and "${" not in sql
+    assert "total >= 2500.5 AND total - amount < 2500.5" in render("high_risk_geo", "acme-bank", {"min_total": 2500.5}, BROKERS)
+
+
+@pytest.mark.parametrize(("job", "params"), [
+    ("rapid_movement", {"min_in": "1 OR 1=1"}), ("rapid_movement", {"min_in": 0}), ("rapid_movement", {"out_ratio": 0}), ("rapid_movement", {"out_ratio": 1.5}),
+    ("rapid_movement", {"hours": 0}), ("rapid_movement", {"hours": 9000}), ("rapid_movement", {"hours": "48' HOUR --"}), ("rapid_movement", {"out_ratio": None}),
+    ("rapid_movement", {"min_in": float("inf")}), ("rapid_movement", {"min_in": float("nan")}),
+    ("high_risk_geo", {"min_total": "x"}), ("high_risk_geo", {"min_total": -1}), ("high_risk_geo", {"min_total": float("nan")}), ("high_risk_geo", {"min_total": []})])
+def test_the_other_jobs_refuse_settings_that_are_not_sane_numbers(job, params):
+    with pytest.raises(JobError, match="settings"):
+        render(job, "acme-bank", params, BROKERS)
+
+
+def test_a_country_code_that_could_change_the_sql_is_refused(monkeypatch):
+    from app.streamjobs import jobs
+
+    monkeypatch.setattr(jobs, "HIGH_RISK_COUNTRIES", {"IR", "X') OR ('1'='1"})
+    with pytest.raises(JobError, match="settings"):
+        render("high_risk_geo", "acme-bank", bootstrap=BROKERS)
+
+
+@pytest.mark.parametrize("job", list(JOBS))
+def test_every_job_shares_one_definition_of_the_topics_and_fills_every_placeholder(job):
+    sql = render(job, "acme-bank", bootstrap=BROKERS)
+    assert sql.count("CREATE TEMPORARY TABLE") == 2 and sql.count("INSERT INTO alerts_in") == 1 and "${" not in sql
+    assert "'topic' = 'caseforge.acme-bank.transactions'" in sql and "'topic' = 'caseforge.acme-bank.alerts-in'" in sql
+    assert f"'{JOBS[job].scenario}'," in sql and f"'{JOBS[job].source}'," in sql
+
+
+def test_name_screening_is_not_offered_as_a_stream_job():
+    assert list(JOBS) == ["structuring", "rapid_movement", "high_risk_geo"]
+    with pytest.raises(JobError, match="No stream job called 'sanctions_name'"):
+        render("sanctions_name", "acme-bank", bootstrap=BROKERS)
+
+
 def test_the_topic_prefix_follows_the_platforms():
     old = settings.event_topic_prefix
     object.__setattr__(settings, "event_topic_prefix", "uat")
@@ -231,13 +281,15 @@ def test_with_no_cluster_configured_the_page_says_where_scenarios_run(world):  #
 def test_a_job_that_was_never_submitted_is_reported_as_such(cluster):
     v = flink.status(T)
     assert v["connected"] and v["engine"] == "flink"
-    assert [(j["job"], j["state"], j["since"], j["also_in_application"]) for j in v["jobs"]] == [("structuring", "NOT SUBMITTED", None, False)]
+    assert [(j["job"], j["state"], j["since"], j["also_in_application"]) for j in v["jobs"]] == [
+        ("structuring", "NOT SUBMITTED", None, False), ("rapid_movement", "NOT SUBMITTED", None, False), ("high_risk_geo", "NOT SUBMITTED", None, False)]
     assert cluster.paths == ["/jobs/overview"]
 
 
 def test_a_running_job_is_found_by_its_name(cluster):
     cluster.jobs = [run(job_name("structuring", T))]
-    (j,) = flink.status(T)["jobs"]
+    j, *others = flink.status(T)["jobs"]
+    assert {o["state"] for o in others} == {"NOT SUBMITTED"}
     assert j["state"] == "RUNNING" and j["since"].startswith("2026-") and j["source"] == "flink-structuring"
 
 
