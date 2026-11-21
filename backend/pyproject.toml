@@ -28,7 +28,7 @@ llm = ["anthropic>=1.0"]
 # The event bus on Kafka or anything that speaks its protocol. Without it, events wait in the outbox table.
 kafka = ["confluent-kafka>=2.6"]
 # History in Apache Iceberg tables. The catalog is configuration: a SQL catalog on a laptop, a REST catalog (Polaris, Nessie) in a deployment.
-lake = ["pyiceberg[sql-sqlite,pyiceberg-core]>=0.9"]
+lake = ["pyiceberg[sql-sqlite,pyiceberg-core]>=0.9", "duckdb>=1.3"]
 # Name search on OpenSearch. Without it, names are searched in the database.
 search = ["opensearch-py>=2.6"]
 # Durable stage clocks on Temporal (TEMPORAL_URL).
