@@ -39,5 +39,5 @@ qa:
   dispositions: [false_positive]
   reopen_to: adjudication
 agents:
-  on_create: [data_assembly, sanctions_adjudicator, qa_critic]
+  on_create: [data_assembly, sanctions_adjudicator, adverse_media, qa_critic]
   autonomy: L2

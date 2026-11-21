@@ -6,13 +6,15 @@ import { useNameOf, usePersona } from '../App'
 import { Card, Loading, Pill, Priority, Sla, StageClock } from '../components/ui'
 import type { CaseRow } from './Cases'
 
-type Finding = { text: string; cites: string[] }
+type Finding = { text: string; cites: string[]; sources?: string[] }
+type Answer = { question: string; answer: string; draft?: string; cites: string[]; sources: string[]; intent: string }
+const ASKS = ['Why is this the recommendation?', 'Summarise this case', 'What are the largest transactions?', 'Draft a request to the customer', 'Draft a closure note']
 type Detail = {
   case: CaseRow & { narrative: string; drafted_by: string | null; type_version: string }
   party: { id: string; name: string; kind: string; occupation: string; country: string; risk_rating: string; pep: boolean; onboarded: string; accounts: string[] }
   alerts: { id: string; title: string; version: string; typology: string; score: number; explanation: string; created: string; source: string; txn_ids: string[] }[]
   transactions: { id: string; ts: string; amount: number; direction: string; channel: string; counterparty: string; country: string; alerted: boolean }[]
-  agent_run: null | { provider: string; recommendation: string; confidence: number; steps: { agent: string; title: string; summary: string; findings: Finding[] }[] }
+  agent_run: null | { provider: string; recommendation: string; confidence: number; steps: { agent: string; title: string; summary: string; findings: Finding[]; outcome?: string; level?: string; rejected?: number }[] }
   events: { id: number; ts: string; actor: string; actor_kind: string; kind: string; payload: Record<string, unknown> }[]
   transitions: { to: string; label: string; to_label: string; needs_note: boolean; blocked: string | null; when: string; four_eyes: boolean }[]
   tasks: { id: string; label: string; required: boolean; done: boolean; done_by: string | null; done_at: string | null }[]
@@ -35,6 +37,9 @@ export default function CaseWorkspace() {
   const [onlyAlerted, setOnlyAlerted] = useState(true)
   const [rfi, setRfi] = useState({ recipient: 'customer', question: '', due_days: 5 })
   const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [chat, setChat] = useState<Answer[]>([])
+  const [question, setQuestion] = useState('')
+  const [asking, setAsking] = useState(false)
   const nameOf = useNameOf()
   useEffect(() => { if (data) setNarr(data.case.narrative) }, [data?.case.id, data?.case.narrative]) // eslint-disable-line
   if (!data) return <Loading error={error} />
@@ -43,6 +48,12 @@ export default function CaseWorkspace() {
     try { await fn(); setMsg(ok); setNote(''); reload() } catch (e) { setMsg((e as Error).message) }
   }
   const { access } = data
+  const ask = (q: string) => {
+    if (!q.trim()) return
+    setAsking(true)
+    api.post<Answer>(`/cases/${c.id}/copilot`, { question: q }).then(a => { setChat(x => [a, ...x]); setQuestion('') })
+      .catch(e => setMsg(e.message)).finally(() => setAsking(false))
+  }
   const openStates = data.workflow.states.filter(s => s.kind === 'open' || s.id === c.state && s.kind === 'wait')
   const idx = openStates.findIndex(s => s.id === c.state)
   const txns = data.transactions.filter(t => (focus.length ? focus.includes(t.id) : !onlyAlerted || t.alerted))
@@ -92,14 +103,35 @@ export default function CaseWorkspace() {
               </div>
               {rec && <ul className="signals">{rec.findings.map((f, i) => <li key={i} className={f.text.startsWith('+') ? 'up' : 'down'}>{f.text.slice(2)}</li>)}</ul>}
               <p className="muted small">The agent prepares and recommends. Only a person can move, close or file this case.</p>
-              {run.steps.filter(s => s.agent !== 'orchestrator' && s.agent !== 'narrative_writer').map(s => (
-                <details key={s.agent} open={['typology_analyst', 'sanctions_adjudicator', 'fraud_analyst'].includes(s.agent)}>
+              {run.steps.filter(s => s.agent !== 'orchestrator' && s.agent !== 'narrative_writer').map(s => s.outcome === 'skipped' || s.outcome === 'refused' ? (
+                <p key={s.agent} className="skipped small"><b>{s.title}</b> {s.outcome === 'refused' ? 'was refused: ' : 'did not run: '}{s.summary}</p>) : (
+                <details key={s.agent} open={['typology_analyst', 'sanctions_adjudicator', 'fraud_analyst', 'kyc_refresh'].includes(s.agent)}>
                   <summary><b>{s.title}</b><span className="muted"> {s.summary}</span></summary>
                   <ul className="findings">{s.findings.map((f, i) => (
-                    <li key={i}>{f.text}{f.cites.length > 0 && <button className="cite" onClick={() => setFocus(f.cites)}>{f.cites.length} source{f.cites.length > 1 ? 's' : ''}</button>}</li>))}</ul>
+                    <li key={i}>{f.text}{f.cites.length > 0 && <button className="cite" onClick={() => setFocus(f.cites)}>{f.cites.length} source{f.cites.length > 1 ? 's' : ''}</button>}
+                      {f.sources && f.sources.length > 0 && <span className="srcs">{f.sources.slice(0, 3).join(' · ')}</span>}</li>))}</ul>
+                  {!!s.rejected && <p className="muted small">{s.rejected} statement(s) cited nothing and were dropped.</p>}
                 </details>))}
-              <p className="muted small">Provider: {run.provider}. Every finding is computed from case data.</p>
+              <p className="muted small">Provider: {run.provider}. Every finding names the records it rests on.</p>
             </>}
+          </Card>
+          <Card title="Copilot" className="copilot">
+            <p className="muted small">Ask about this case. It reads the case record, changes nothing, and drafts only for you to edit and send.</p>
+            <div className="inline">{ASKS.map(q => <button key={q} className="ghost" disabled={asking} onClick={() => ask(q)}>{q}</button>)}</div>
+            <form className="inline" onSubmit={e => { e.preventDefault(); ask(question) }}>
+              <input aria-label="Question for the copilot" value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ask about this case" style={{ flex: 1 }} maxLength={500} />
+              <button disabled={asking || !question.trim()}>{asking ? 'Asking…' : 'Ask'}</button>
+            </form>
+            {chat.map((a, i) => (
+              <div className="answer" key={i}>
+                <div className="q">{a.question}</div>
+                <div>{a.answer}</div>
+                {a.draft && <><pre>{a.draft}</pre>
+                  {a.intent === 'draft_request' && access.can_work && <button className="ghost" onClick={() => setRfi(r => ({ ...r, question: a.draft! }))}>Use as an information request</button>}
+                  {a.intent === 'draft_note' && <button className="ghost" onClick={() => setNote(a.draft!)}>Use as my note</button>}</>}
+                <div className="small">{a.cites.length > 0 && <button className="cite" onClick={() => setFocus(a.cites)}>{a.cites.length} transaction{a.cites.length > 1 ? 's' : ''}</button>}
+                  <span className="srcs">{a.sources.slice(0, 4).join(' · ')}</span></div>
+              </div>))}
           </Card>
           <Card title={`Alerts (${data.alerts.length})`}>
             {data.alerts.length === 0 && <p className="empty">No alerts. This case was opened by a schedule, an intake channel or another case.</p>}

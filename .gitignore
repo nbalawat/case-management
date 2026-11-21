@@ -19,3 +19,5 @@ data/lake/
 data/quarantine/
 !docs/screenshots/17-data-pipelines.png
 !docs/screenshots/18-data-pipeline-run.png
+!docs/screenshots/20-agents-acting.png
+!docs/screenshots/21-copilot.png

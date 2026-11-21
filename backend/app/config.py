@@ -20,6 +20,8 @@ class Settings:
     default_tenant: str = os.getenv("DEFAULT_TENANT", "meridian")
     # "Ask anything": auto uses the hosted model when ANTHROPIC_API_KEY is set, otherwise the offline planner.
     ask_provider: str = os.getenv("ASK_PROVIDER", "auto")
+    # rules: specialist agents are rule-based. model: they run as tool loops on the model behind the gateway, with the rules as fallback.
+    agent_mode: str = os.getenv("AGENT_MODE", "rules")
     ask_model: str = os.getenv("ASK_MODEL", "claude-opus-5-5")
     ask_effort: str = os.getenv("ASK_EFFORT", "medium")
     # Demo storage. Each client's files live under lake_dir/<client>/; rejected records go to quarantine_url/<client>/.

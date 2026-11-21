@@ -9,6 +9,7 @@ import CaseWorkspace from './pages/CaseWorkspace'
 import Team from './pages/Team'
 import Onboarding from './pages/Onboarding'
 import Data from './pages/Data'
+import Agents from './pages/Agents'
 import Workflows from './pages/Workflows'
 import Access from './pages/Access'
 import Platform from './pages/Platform'
@@ -30,7 +31,7 @@ export const usePersona = () => useContext(PeopleContext).persona
 export const useNameOf = () => useContext(PeopleContext).nameOf
 
 const NAV = [
-  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/team', 'Team'], ['/workflows', 'Workflows'],
+  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/team', 'Team'], ['/agents', 'Agents'], ['/workflows', 'Workflows'],
   ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations'],
 ]
 
@@ -109,6 +110,7 @@ export default function App() {
           <Route path="/cases" element={<Cases />} />
           <Route path="/cases/:id" element={<CaseWorkspace />} />
           <Route path="/team" element={<Team />} />
+          <Route path="/agents" element={<Agents />} />
           <Route path="/data" element={<Data />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/workflows" element={<Workflows />} />

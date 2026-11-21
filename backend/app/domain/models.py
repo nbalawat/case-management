@@ -98,6 +98,13 @@ class Alert(TenantScoped, Base):
     status: Mapped[str] = mapped_column(String(20), default="new")
     case_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    # The triage agent's reading of the alert: score, reasons, linked alerts and what it did or proposed.
+    triage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Set when an agent closed the alert on its own (status auto_closed). qa_sample marks the ones a person must check.
+    closed_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    qa_sample: Mapped[bool] = mapped_column(Boolean, default=False)
+    qa_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    qa_result: Mapped[str | None] = mapped_column(String(20), nullable=True)  # confirmed | reopened
     party: Mapped[Party] = relationship()
     __table_args__ = (party_fk(), UniqueConstraint("tenant_id", "dedupe_key"))
 
@@ -150,6 +157,10 @@ class AgentRun(TenantScoped, Base):
     recommendation: Mapped[str] = mapped_column(String(40), default="")
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     steps: Mapped[list] = mapped_column(JSON, default=list)
+    policy_version: Mapped[int] = mapped_column(Integer, default=0)  # the client's agent policy in force for this run
+    requested_by: Mapped[str | None] = mapped_column(String(40), nullable=True)  # a person, when run on request
+    # What the challenger profile would have recommended. Recorded for comparison, never shown on the case.
+    shadow: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Feed(TenantScoped, Base):
@@ -296,3 +307,68 @@ class IngestedObject(TenantScoped, Base):
     stats: Mapped[dict] = mapped_column(JSON, default=dict)
     at: Mapped[datetime] = mapped_column(DateTime, default=now)
     __table_args__ = (Index("ux_ingested_object", "tenant_id", "source_id", "key", "fingerprint", unique=True),)
+
+
+class AgentPolicyVersion(TenantScoped, Base):
+    """A client's agent policy as published: which agents run, at what autonomy, inside which limits. The newest row is in force."""
+
+    __tablename__ = "agent_policy_version"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    version: Mapped[int] = mapped_column(Integer)
+    body: Mapped[dict] = mapped_column(JSON, default=dict)
+    published_by: Mapped[str] = mapped_column(String(40))
+    published: Mapped[datetime] = mapped_column(DateTime, default=now)
+    note: Mapped[str] = mapped_column(Text, default="")
+    __table_args__ = (Index("ux_agent_policy_version", "tenant_id", "version", unique=True),)
+
+
+class AgentStep(TenantScoped, Base):
+    """The agent ledger: one row for everything an agent did. Append-only, and each row carries the hash of the one before."""
+
+    __tablename__ = "agent_step"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=now)
+    run_id: Mapped[str] = mapped_column(String(40), index=True)
+    case_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    alert_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    agent: Mapped[str] = mapped_column(String(40), index=True)
+    agent_version: Mapped[str] = mapped_column(String(20))
+    level: Mapped[str] = mapped_column(String(4))
+    policy_version: Mapped[int] = mapped_column(Integer, default=0)
+    model: Mapped[str] = mapped_column(String(80), default="")
+    prompt_sha: Mapped[str] = mapped_column(String(64), default="")
+    outcome: Mapped[str] = mapped_column(String(20), default="done")  # done | skipped | refused | acted
+    summary: Mapped[str] = mapped_column(Text, default="")
+    tools: Mapped[list] = mapped_column(JSON, default=list)
+    findings: Mapped[list] = mapped_column(JSON, default=list)
+    rejected: Mapped[list] = mapped_column(JSON, default=list)  # claims dropped because they cited nothing
+    shadow: Mapped[bool] = mapped_column(Boolean, default=False)
+    prev_hash: Mapped[str] = mapped_column(String(64), default="")
+    hash: Mapped[str] = mapped_column(String(64), default="")
+
+
+class AgentJob(TenantScoped, Base):
+    """A piece of agent work over many items: an evaluation, a lookback, a tuning review."""
+
+    __tablename__ = "agent_job"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)  # evaluation | lookback | tuning
+    status: Mapped[str] = mapped_column(String(20), default="done")
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_by: Mapped[str] = mapped_column(String(40))
+    started: Mapped[datetime] = mapped_column(DateTime, default=now)
+    finished: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MediaItem(TenantScoped, Base):
+    """An article or registry entry about a customer, as fetched. Outside content: agents read it only through the extractor."""
+
+    __tablename__ = "media_item"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    source: Mapped[str] = mapped_column(String(80))
+    published: Mapped[datetime] = mapped_column(DateTime, default=now)
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    __table_args__ = (party_fk(),)

@@ -19,8 +19,16 @@ def priority_for(score: float, n_alerts: int = 1) -> str:
     return PRIORITY_ORDER[min(base + (1 if n_alerts >= 3 else 0), 3)]
 
 
-def route_alerts(s: Session, alerts: list[Alert]) -> list[Case]:
-    """Attach each alert to the party's open case of the right type, or open a new case."""
+def route_alerts(s: Session, alerts: list[Alert], screened: bool = False) -> list[Case]:
+    """Attach each alert to the party's open case of the right type, or open a new case.
+
+    Alerts pass the triage gate first, where an agent may close one if the client's policy lets it. `screened` skips
+    the gate for an alert a person has just reopened.
+    """
+    if not screened:
+        from ..agents.triage import gate
+
+        alerts = gate(s, alerts)
     touched: dict[str, Case] = {}
     tenant = tenant_of(s)
     types = load_case_types(tenant)
@@ -63,4 +71,4 @@ def ingest_external_alert(s: Session, *, source: str, external_id: str, scenario
                   party_id=party_id, score=round(max(0.0, min(score, 1.0)), 2), explanation=explanation, txn_ids=txn_ids or [], created=created or now())
     s.add(alert)
     s.flush()
-    return alert, route_alerts(s, [alert])[0]
+    return alert, next(iter(route_alerts(s, [alert])), None)  # no case when an agent closed the alert inside policy

@@ -12,6 +12,7 @@ This is a demo build. It is meant to be shown, not deployed. All data is synthet
 ![My work](docs/screenshots/01-my-work.png)
 ![Ask anything](docs/screenshots/15-ask.png)
 ![Data pipelines](docs/screenshots/18-data-pipeline-run.png)
+![Agents](docs/screenshots/20-agents-acting.png)
 ![Workflow designer](docs/screenshots/08-workflows.png)
 ![Operator console](docs/screenshots/14-operator-console.png)
 
@@ -134,11 +135,18 @@ The full API reference is at <http://localhost:8000/docs>.
 | People and access | Each client's own versioned policy: roles, permissions, queues, people (who may hold several roles), read-only roles. Edited and published from the UI with checks: a change is refused if it would strand a workflow or lock everyone out. Every person at every kind of client is tested against every workflow step. | SSO and people from the client's identity provider, attribute-based rules (for example by customer segment or country), a form-based editor |
 | Clients | Shared database with every row keyed by client. Isolation is enforced in the data layer: queries are filtered and writes stamped automatically, and statements that cannot be filtered are refused. Per-client case types and workflow versions. Templates, one-step onboarding, suspend, and an operator console that shows counts only. | Postgres row-level security as a second layer, dedicated databases or stamps per client (the choice is recorded, not acted on), per-client encryption keys, usage metering, offboarding and data export |
 | Information requests | Requests to customer, branch or relationship manager with due dates and overdue flags | Actually sending them (email, portal, secure message) |
-| Agents | Multi-step investigation with cited findings, recommendation and draft narrative. Agents never move a case. | A language model. The provider is an offline rule-and-template implementation behind the `LLMProvider` interface, so the demo runs with no keys and no data leaving the laptop. |
+| Agents | Thirteen agents declared in `backend/agents/catalog.yaml` (goal, tools, highest autonomy, the one thing each may do alone). Each client sets autonomy per agent and case type (off, assist, prepare, act within policy) in a versioned policy, with limits, a kill switch per agent and a challenger that runs in shadow. Agents use only declared tools; filing, closing, moving, approving and exiting are not tools at any level. Findings that cite no record are dropped. News reaches the adverse media agent only as typed fields from a tool-less extractor. Every step goes to a hash-chained ledger. At L3, triage may close a low-risk alert and the sanctions adjudicator may discount a weak hit, only under settings whose evaluation on the client's own history passed, with a sampled human check and reopening. Evaluation, lookback, tuning advisor, case copilot, agreement rates per reviewer and a documentation pack for model risk. | The specialists are rule-based by default. `AGENT_MODE=model` runs them as tool loops on the model behind the gateway with the rules as fallback; that path is tested only against a scripted stand-in, never a live model. The extractor and the copilot are pattern-based, not language models, so the extractor's removal of manipulative text is a keyword filter backed by the structure (typed fields only), not a guarantee. Golden sets are the client's own closed cases, which in the demo are a few dozen synthetic ones. The orchestrator is in-process, not Temporal; tools are Python functions, not MCP servers. The ledger is tamper-evident, not tamper-proof: it lives in the same database. |
 | Ask anything | Plain-language questions answered through a fixed vocabulary of 31 fields and 9 measures, never SQL. Answers are limited to the asker's client, team workload follows the client's own access policy, cited cases are verified, and every question is recorded. Hosted-model provider with tool use, plus an offline planner so the demo needs no key. | The hosted-model path has only been run against a stand-in client here, never a live model: its request shape and reply handling are tested, answer quality is not. Checking figures in an answer (only case ids are checked). Streaming. Per-role limits on which cases a person may see (everyone at a client sees all of its cases, as on the Cases page). Questions about transactions outside alerted activity. Spend limits. |
 | Filing | A hashed JSON filing record | FinCEN BSA XML, goAML |
 | Identity | Client and person pickers (no login). Anyone can pick any client or the operator console. | SSO; the client and person come from the token |
 | Scale | Measured single-process throughput on your machine | Anything distributed. Do not quote the laptop figure as a production figure. |
+
+14. **Agents, as Omar Haddad at Meridian.** Open Agents. Every agent prepares and recommends; none acts alone. Set the
+    sanctions adjudicator to L3 on screening hits and try to publish: refused until those settings are evaluated.
+    Set the discount limit to 0.95 and evaluate the draft: it fails, because it would have discounted a true match.
+    At 0.9 it passes; publish. Run the lookback and the tuning review. Switch an agent off with a reason and re-run
+    a briefing: the step is gone and says why. Download the documentation pack. Then open a case as Ivan and ask
+    the copilot why the recommendation is what it is, and to draft a request to the customer.
 
 ## How the code is laid out
 
@@ -152,7 +160,8 @@ backend/app/
   alerts/      alert hub: dedupe, group into cases, prioritise
   cases/       case type registry, transition guards, conditions, tasks, assignment,
                information requests, timers, QA sampling, publishing
-  agents/      provider interface, investigation steps, orchestrator
+  agents/      catalog, per-client policy, runtime, toolbox and extractor, ledger, alert triage, evaluation,
+               copilot, lookback and tuning, oversight, model-backed mode
   ask/         ask anything: query vocabulary, read-only tools, model gateway and providers,
                answer loop with citation checks and the question record
   reporting/   dashboard metrics
@@ -160,6 +169,7 @@ backend/app/
   tenants/     client registry, templates, onboarding, access policy administration
   api/         HTTP routes (the UI uses only these)
 backend/case_types/   the workflow library: one YAML file per case type
+backend/agents/       the agent catalog: one declaration per agent
 backend/access/       starting access policies: permissions, roles, queues, people
 backend/templates/    client templates: a starting policy plus a set of case types
 frontend/src/         React + TypeScript UI
@@ -189,10 +199,14 @@ pipelines in dependency order, saved mappings per source, data-quality gates, qu
 upload remains only for samples. Still to come here: a first run against real cloud accounts, an orchestrator
 for schedules, streaming and CDC.
 
-**6. Enterprise breadth.** Entity resolution and a network view, search, regulatory filing formats, lookback
+**6. Agent layer (done).** The full roster, the autonomy dial per client, agents that act inside evaluated limits,
+the ledger, evaluation against the client's own decisions, challenger in shadow, copilot, lookback, tuning and
+oversight. Still to come here: a run against a live model, Temporal for durability, tools as MCP servers.
+
+**7. Enterprise breadth.** Entity resolution and a network view, search, regulatory filing formats, lookback
 projects, management reporting, SSO.
 
-**7. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
+**8. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
 architecture: per-client stamps and the SaaS, dedicated, client-cloud and air-gapped deployment modes.
 
 ## Screenshots

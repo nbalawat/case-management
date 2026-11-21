@@ -138,7 +138,7 @@ def post_narrative(case_id: str, body: NarrativeIn, s: Session = Depends(get_ses
 def post_agent_run(case_id: str, s: Session = Depends(get_session), p: Persona = Depends(require("work"))):
     c = _get_case(s, case_id)
     record(s, c.id, p.id, "human", "agent.requested", {})
-    run = investigate(s, c)
+    run = investigate(s, c, requested_by=p.id)
     return {"ok": True, "run_id": run.id}
 
 
@@ -206,10 +206,12 @@ class AlertIn(BaseModel):
 @router.post("/alerts", status_code=201)
 def post_alert(body: AlertIn, s: Session = Depends(get_session)):
     """Overlay mode: an incumbent monitoring engine pushes its alerts here; the hub groups them into cases."""
+    key = f"ext:{body.source}:{body.external_id}"
+    duplicate = s.scalars(select(Alert.id).where(Alert.dedupe_key == key)).first() is not None
     alert, case = ingest_external_alert(s, **body.model_dump())
     if case is not None:
         investigate(s, case)
-    return {"alert_id": alert.id, "case_id": alert.case_id, "duplicate": case is None}
+    return {"alert_id": alert.id, "case_id": alert.case_id, "duplicate": duplicate, "status": alert.status}
 
 
 @router.get("/integrations")

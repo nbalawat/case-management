@@ -1,0 +1,120 @@
+# The agent roster. Each agent is declared like a case type: its goal, the tools it may call, the highest
+# autonomy a client may give it, what it may do on its own at that level, and the set it is evaluated on.
+#
+# kind:  case_step  runs inside a case briefing, in the order the case type lists it
+#        alert      runs on each alert before it reaches a case
+#        on_request runs when a person asks (the copilot)
+#        batch      runs over many items and produces a report for people to act on
+# max_level: L1 assist, L2 prepare, L3 act within policy. Nothing here can reach L4: filing a report, closing a
+# case, approving a step and exiting a customer are human actions and are not tools.
+# acts: the single thing the agent may do unprompted at L3. Everything else it produces is a recommendation.
+catalog: 1.0.0
+
+agents:
+  triage:
+    title: Triage
+    version: 1.0.0
+    kind: alert
+    goal: Score and route every alert, link related alerts, and propose closing an alert only where policy allows.
+    tools: [alert_history, customer_profile, prior_cases]
+    max_level: L3
+    acts: close_alert
+    evaluation: alert_outcomes
+  data_assembly:
+    title: Data assembly
+    version: 1.1.0
+    kind: case_step
+    goal: Pull the customer profile, accounts, recent activity and prior cases into a cited case file.
+    tools: [customer_profile, transactions, prior_cases]
+    max_level: L2
+    evaluation: case_dispositions
+  entity_research:
+    title: Entity research
+    version: 1.1.0
+    kind: case_step
+    goal: Review counterparties and geography, and flag first-time and high-risk relationships.
+    tools: [transactions, counterparty_history, country_risk]
+    max_level: L2
+    evaluation: case_dispositions
+  adverse_media:
+    title: Adverse media
+    version: 1.0.0
+    kind: case_step
+    goal: Search news and registries for the subject and summarise what is relevant. Reads outside content only through the extractor.
+    tools: [media_search, extractor]
+    untrusted_input: true
+    max_level: L2
+    evaluation: case_dispositions
+  typology_analyst:
+    title: Typology analyst
+    version: 1.1.0
+    kind: case_step
+    goal: Map activity to money-laundering typologies and the client's own red flags.
+    tools: [transactions, typology_library]
+    max_level: L2
+    evaluation: case_dispositions
+  fraud_analyst:
+    title: Fraud analyst
+    version: 1.1.0
+    kind: case_step
+    goal: Compare disputed payments with the customer's normal behaviour.
+    tools: [transactions, counterparty_history]
+    max_level: L2
+    evaluation: case_dispositions
+  sanctions_adjudicator:
+    title: Sanctions adjudicator
+    version: 1.1.0
+    kind: case_step
+    goal: Explain how strong a screening match is and recommend discounting or escalating it.
+    tools: [transactions, watchlist]
+    max_level: L3
+    acts: discount_hit
+    evaluation: screening_outcomes
+  kyc_refresh:
+    title: KYC refresh
+    version: 1.0.0
+    kind: case_step
+    goal: Review the customer's profile against their activity, list what is out of date, and draft the request to the customer.
+    tools: [customer_profile, transactions, prior_cases]
+    max_level: L2
+    evaluation: case_dispositions
+  narrative_writer:
+    title: Narrative writer
+    version: 1.1.0
+    kind: case_step
+    goal: Draft the report narrative or closure rationale from the cited findings. A person reviews and saves it.
+    tools: [case_findings, model_gateway]
+    max_level: L2
+    evaluation: case_dispositions
+  qa_critic:
+    title: QA critic
+    version: 1.1.0
+    kind: case_step
+    goal: Check completeness, citation coverage and consistency before a person reviews the case.
+    tools: [case_findings]
+    max_level: L2
+    evaluation: case_dispositions
+  investigator_copilot:
+    title: Investigator copilot
+    version: 1.0.0
+    kind: on_request
+    goal: Answer questions about one case, explain the recommendation, and draft notes and information requests.
+    tools: [case_findings, transactions, customer_profile]
+    max_level: L1
+    evaluation: copilot_questions
+  lookback_batch:
+    title: Lookback batch
+    version: 1.0.0
+    kind: batch
+    goal: Re-research closed items in a period with today's agents and list the ones a person should look at again.
+    tools: [closed_cases, case_pipeline]
+    max_level: L2
+    evaluation: case_dispositions
+  tuning_advisor:
+    title: Tuning advisor
+    version: 1.0.0
+    kind: batch
+    goal: Find noisy scenarios and propose score thresholds, with a backtest of what each would have cost.
+    tools: [alert_history, case_outcomes]
+    max_level: L2
+    evaluation: alert_outcomes
