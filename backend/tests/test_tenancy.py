@@ -37,6 +37,7 @@ FACTORY = {
     "Hold": lambda k: m.Hold(id=f"hld-{k}", case_id=f"case-{k}", party_id="P1", target="card", reason_code="suspected_fraud", placed_by="x"),
     "Dispute": lambda k: m.Dispute(id=f"dsp-{k}", case_id=f"case-{k}", party_id="P1", amount=1.0, rail="card", reason_code="unauthorised", opened_by="x"),
     "ScenarioVersion": lambda k: m.ScenarioVersion(id=f"scv-{k}", scenario="structuring", number=1, proposed_by="x"),
+    "StreamJobRun": lambda k: m.StreamJobRun(id=f"sjr-{k}", job="structuring", action="started", by="x"),
     "Lookback": lambda k: m.Lookback(id=f"lbk-{k}", name="n", scenario="structuring", period_from=NOW, period_to=NOW, created_by="x"),
     "OutboxEvent": lambda k: m.OutboxEvent(event_id=f"ev-{k}", topic="t", key="same key", type="x", payload="{}"),
     "StreamStat": lambda k: m.StreamStat(stream="transactions"),

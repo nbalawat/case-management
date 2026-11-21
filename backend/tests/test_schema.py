@@ -29,9 +29,10 @@ def keep_a_row(eng):
 
 
 def legacy(eng, version):
-    """A database as the application made them before migrations: every table, and a version number."""
-    Base.metadata.create_all(eng)
+    """A database as the application made them before migrations: the baseline's tables, and a version number."""
+    migrations.upgrade(eng, migrations.BASELINE)
     with eng.begin() as c:
+        c.execute(text("DROP TABLE alembic_version"))
         c.execute(text("CREATE TABLE schema_version (version INTEGER NOT NULL)"))
         c.execute(text("INSERT INTO schema_version (version) VALUES (:v)"), {"v": version})
     keep_a_row(eng)
@@ -126,11 +127,11 @@ def test_the_demo_default_rebuilds_an_older_database(eng):
 def test_a_database_that_is_behind_is_migrated_at_start_or_refused_when_told_to_wait(eng, monkeypatch):
     ensure_schema(eng)
     keep_a_row(eng)
-    ran = []
+    ran, here = [], at(eng)
     monkeypatch.setattr(migrations, "head", lambda: "0099")  # as if this code were newer than the database
     monkeypatch.setattr(migrations, "upgrade", lambda e, to="head": ran.append(to))
     object.__setattr__(settings, "migrate_on_start", False)
-    with pytest.raises(SchemaMismatch, match="is at migration 0016 and the application expects 0099. Nothing was changed. Run `python -m app.migrate`"):
+    with pytest.raises(SchemaMismatch, match=f"is at migration {here} and the application expects 0099. Nothing was changed. Run `python -m app.migrate`"):
         ensure_schema(eng)
     assert ran == [] and tenants(eng) == ["kept"]
     object.__setattr__(settings, "migrate_on_start", True)

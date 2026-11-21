@@ -17,11 +17,11 @@ full:            ## Docker: the demo with Kafka, the Iceberg lake, OpenSearch, t
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 docker compose --profile backbone --profile search --profile graph --profile durable up --build
 
 streaming:       ## Docker: everything in `full`, plus an Apache Flink cluster for stream detection (console on http://localhost:8081)
-	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 FLINK_URL=http://flink-jobmanager:8081 docker compose --profile backbone --profile search --profile graph --profile durable --profile streaming up --build
+	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 FLINK_URL=http://flink-jobmanager:8081 FLINK_GATEWAY_URL=http://flink-sql-gateway:8083 docker compose --profile backbone --profile search --profile graph --profile durable --profile streaming up --build
 
 CLIENT ?= meridian
 JOB ?= structuring
-flink-job:       ## Docker, with `make streaming` running: render and submit one client's job. make flink-job CLIENT=meridian JOB=rapid_movement
+flink-job:       ## Docker, with `make streaming` running: render and submit one client's job by hand (the Integrations page does the same). make flink-job CLIENT=meridian JOB=rapid_movement
 	mkdir -p deploy/flink/jobs
 	docker compose exec -T app uv run --no-dev python -m app.streamjobs $(JOB) $(CLIENT) --bootstrap kafka:9092 > deploy/flink/jobs/$(CLIENT)-$(JOB).sql
 	docker compose exec flink-jobmanager ./bin/sql-client.sh -f /jobs/$(CLIENT)-$(JOB).sql
