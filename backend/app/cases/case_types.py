@@ -6,6 +6,9 @@ the version it was opened under.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
 
@@ -14,7 +17,7 @@ import yaml
 from ..config import settings
 from ..domain.access import AccessPolicy
 from ..tenants.registry import runtime
-from . import conditions
+from . import conditions, effects
 
 REQUIREMENTS = {
     "note": "A rationale note",
@@ -50,6 +53,10 @@ def validate(ct, origin: str = "definition") -> dict:
             fail(f"state '{sid}' needs a label")
         if st.get("kind", "open") not in STATE_KINDS:
             fail(f"state '{sid}' kind must be one of {', '.join(STATE_KINDS)}")
+        try:
+            effects.validate(st.get("on_enter"), f"state '{sid}'")
+        except effects.EffectError as e:
+            fail(str(e))
         seen = set()
         for task in st.get("tasks", []):
             if not isinstance(task, dict) or "id" not in task or "label" not in task:
@@ -153,8 +160,25 @@ def load_case_types(tenant_id: str) -> dict[str, dict]:
     return out
 
 
+# Definitions visible only to the code running inside `trying(...)`: a draft under trial, never seen by anyone else.
+_TRIAL: ContextVar[dict[tuple[str, str], dict] | None] = ContextVar("trial_definitions", default=None)
+
+
+@contextmanager
+def trying(ct: dict) -> Iterator[None]:
+    """Make an unpublished definition resolvable for the duration of a trial run in this context only."""
+    token = _TRIAL.set({**(_TRIAL.get() or {}), (ct["case_type"], ct["version"]): ct})
+    try:
+        yield
+    finally:
+        _TRIAL.reset(token)
+
+
 def get_definition(tenant_id: str, case_type: str, version: str | None = None) -> dict:
     """The definition a case runs on: its own version where still known, else the client's active one."""
+    trial = _TRIAL.get()
+    if trial and (case_type, version) in trial:
+        return trial[(case_type, version)]
     rt = runtime(tenant_id)
     if version and (case_type, version) in rt.published:
         return rt.published[(case_type, version)]

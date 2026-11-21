@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import operator
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 
 OPS = {"==": operator.eq, "!=": operator.ne, ">=": operator.ge, "<=": operator.le, ">": operator.gt, "<": operator.lt}
-_PATTERN = re.compile(r"^\s*([a-z_]+)\s*(==|!=|>=|<=|>|<)\s*([\w.'\"-]+)\s*$")
+_PATTERN = re.compile(r"^\s*([a-z_][a-z0-9_]*)\s*(==|!=|>=|<=|>|<)\s*([\w.'\"-]+)\s*$")
 FACTS = {
     "alerted_amount": "Total value of alerted transactions",
     "alerts": "Number of alerts on the case",
@@ -18,6 +20,52 @@ FACTS = {
     "priority": "Case priority: low, medium, high or critical",
     "agent_recommendation": "Agent recommendation: escalate or close",
 }
+
+
+# What the designer needs to offer a fact in a condition builder: its type and, for a choice, the values it takes.
+KINDS = {
+    "alerted_amount": ("number", ()),
+    "alerts": ("number", ()),
+    "risk_rating": ("choice", ("low", "medium", "high")),
+    "pep": ("bool", ()),
+    "priority": ("choice", ("low", "medium", "high", "critical")),
+    "agent_recommendation": ("choice", ("escalate", "close")),
+}
+
+
+@dataclass(frozen=True)
+class FactProvider:
+    """A fact another module adds to the condition language, such as a decision table's output or a screening result.
+
+    `read(session, case)` returns the value for one case; None means "not known", which never satisfies a condition.
+    """
+
+    name: str
+    label: str
+    read: Callable
+    kind: str = "text"  # number | bool | choice | text
+    values: tuple[str, ...] = ()
+
+
+PROVIDERS: dict[str, FactProvider] = {}
+
+
+def register_fact(name: str, label: str, read: Callable, kind: str = "text", values: tuple[str, ...] | list[str] = ()) -> FactProvider:
+    """Add a fact that transition conditions and the workflow designer's decisions can test."""
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", name):
+        raise ValueError(f"Fact names are lower_snake_case: '{name}'")
+    if kind not in ("number", "bool", "choice", "text"):
+        raise ValueError(f"Unknown fact kind '{kind}'")
+    provider = FactProvider(name, label, read, kind, tuple(values))
+    PROVIDERS[name] = provider
+    FACTS[name] = label
+    KINDS[name] = (kind, tuple(values))
+    return provider
+
+
+def catalog() -> list[dict]:
+    """Every fact a condition may test, with what a condition builder needs to offer it."""
+    return [{"id": k, "label": v, "kind": KINDS.get(k, ("text", ()))[0], "values": list(KINDS.get(k, ("text", ()))[1])} for k, v in FACTS.items()]
 
 
 class ConditionError(ValueError):
