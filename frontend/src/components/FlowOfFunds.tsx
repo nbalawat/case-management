@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { fmtDate, fmtMoney, words } from '../api'
 import { useApi } from '../useApi'
 import { Card, Kpi, Pill } from './ui'
-import { FLAG_LABEL } from './NetworkGraph'
+import { FLAG_LABEL } from './networkFlags'
 
 type Side = { name: string; entity_id: string | null; amount: number; txns: number; flags: string[]; countries: string[]; abroad: boolean; other?: boolean }
 type Flow = {

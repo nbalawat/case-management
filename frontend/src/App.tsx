@@ -1,22 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
-import { api, getPersonaId, getTenantId, isOperator, OPERATOR, setPersonaId, setTenantId, type Persona } from './api'
+import { api, getPersonaId, getTenantId, isOperator, OPERATOR, setPersonaId, type Persona } from './api'
 import { authMode, signOut } from './auth'
 import Clients from './pages/Clients'
 import AppShell from './shell/AppShell'
 import IdentityMenu, { type Client } from './shell/IdentityMenu'
 import { makePeople, PeopleContext } from './shell/people'
-
-// Pages import these from here; they live in the shell now.
-export { useNameOf, usePeople, usePersona } from './shell/people'
+import { switchClient } from './shell/switchClient'
 
 type Meta = { tenant: { id: string; name: string }; personas: Persona[]; default_person: string; sample_data: boolean }
-
-/** Switching client is a clean break: nothing from one client may linger on screen for the next. */
-export function switchClient(id: string) {
-  setTenantId(id)
-  window.location.assign('/')
-}
 
 function ClientPicker({ clients }: { clients: Client[] }) {
   return (

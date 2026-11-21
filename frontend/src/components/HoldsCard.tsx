@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDateTime, fmtMoney, hoursUntil, words } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf, usePeople } from '../App'
+import { useNameOf, usePeople } from '../shell/people'
+import { holdWhat } from './holdWhat'
 import { Card, Pill } from './ui'
 
 export type Hold = {
@@ -19,7 +20,6 @@ type View = {
 }
 const TONE: Record<string, string> = { active: 'warning', released: 'good', blocked: 'critical', rejected: 'serious' }
 const OUTCOME: Record<string, string> = { release: 'Release', block: 'Block', reject: 'Reject and send back' }
-export const holdWhat = (h: Hold) => `${h.target_label}${h.target_id ? ` ${h.target_id}` : h.target === 'payment' ? '' : ' (all accounts)'}`
 
 /** One hold with everything that can be done to it by this person now. */
 export function HoldRow({ h, view, onChange, report }: { h: Hold; view: Pick<View, 'can_work' | 'can_decide' | 'me' | 'methods'>; onChange: (m: string) => void; report?: boolean }) {

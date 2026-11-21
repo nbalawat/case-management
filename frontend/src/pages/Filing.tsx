@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtDateTime, fmtMoney } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf } from '../App'
+import { useNameOf } from '../shell/people'
 import { Card, Loading } from '../components/ui'
 import { Status, type FilingRow } from './Filings'
 

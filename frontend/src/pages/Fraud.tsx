@@ -4,7 +4,8 @@ import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
 import PageTabs from '../components/layout/PageTabs'
 import { Clock, type Dispute } from '../components/DisputesCard'
-import { holdWhat, type Hold } from '../components/HoldsCard'
+import { type Hold } from '../components/HoldsCard'
+import { holdWhat } from '../components/holdWhat'
 
 type Reason = { reason: string; claims: number; claimed: number; recovered: number; loss: number }
 type Desk = {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api, fmtDate, fmtDateTime } from '../../api'
-import { useNameOf, usePeople } from '../../App'
+import { useNameOf, usePeople } from '../../shell/people'
 import { Card, Pill } from '../ui'
 import { BAND, type Risk } from './types'
 

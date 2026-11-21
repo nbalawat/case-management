@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDate, fmtDateTime, words } from '../../api'
-import { useNameOf } from '../../App'
+import { useNameOf } from '../../shell/people'
 import { Card, Pill } from '../ui'
 import type { Doc, EvidenceView, Trigger } from './types'
 import { OUTCOME } from './types'

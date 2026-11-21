@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, fmtDateTime, words } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf, usePeople } from '../App'
+import { useNameOf, usePeople } from '../shell/people'
 import { Card, Loading, Pill } from '../components/ui'
 import WorkflowDiagram from '../components/WorkflowDiagram'
 

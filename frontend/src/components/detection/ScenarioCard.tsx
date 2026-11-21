@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api, fmtDate } from '../../api'
-import { useNameOf } from '../../App'
+import { useNameOf } from '../../shell/people'
 import { Pill } from '../ui'
 import BacktestView from './BacktestView'
 import { show, type Backtest, type Desk, type Scenario, type Version } from './types'

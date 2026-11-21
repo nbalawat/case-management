@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fmtMoney } from '../api'
+import { FLAG_LABEL } from './networkFlags'
 
 export type NetNode = { id: string; kind: 'customer' | 'counterparty'; label: string; party_id: string | null; flags: string[]; customers: number; open_cases: number; focus: boolean }
 export type NetEdge = { source: string; target: string; txns: number; sent: number; received: number; total: number; channels: string[] }
@@ -8,7 +9,6 @@ export type Network = { focus: string; nodes: NetNode[]; edges: NetEdge[]; hidde
 
 const W = 920, H = 520, CX = W / 2, CY = H / 2
 const flagged = (n: NetNode) => n.flags.some(f => f !== 'common')
-export const FLAG_LABEL: Record<string, string> = { watchlist: 'Watchlist name', high_risk_country: 'High-risk country', common: 'Everyday merchant' }
 
 const short = (label: string) => (label.length > 26 ? `${label.slice(0, 25)}…` : label)
 
