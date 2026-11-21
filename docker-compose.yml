@@ -4,6 +4,7 @@
 # With the event backbone (Kafka, the outbox relay and the stream consumers):  make backbone
 # With Debezium publishing the outbox instead of the relay:                    make backbone-cdc
 # Everything: Kafka, the lake and OpenSearch:                                  make full
+# Everything plus stream detection on Apache Flink:                            make streaming
 services:
   db:
     image: postgres:17-alpine
@@ -26,6 +27,7 @@ services:
       OUTBOX_PUBLISHER: ${OUTBOX_PUBLISHER:-relay}
       SEARCH_URL: ${SEARCH_URL:-}                # empty: names are searched in the database
       LAKE_CATALOG: ${LAKE_CATALOG:-}            # empty: no lake; make backbone sets an Iceberg catalog in Postgres
+      FLINK_URL: ${FLINK_URL:-}                  # empty: no stream processor; scenarios run in the stream consumer
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
     depends_on:
@@ -85,6 +87,28 @@ services:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health > /dev/null"]
       interval: 5s
       retries: 40
+
+  # ---- stream detection on Apache Flink: docker compose --profile streaming, with FLINK_URL=http://flink-jobmanager:8081
+  # A client's job is rendered and submitted with:  make flink-job CLIENT=meridian   (see deploy/flink/README.md)
+  flink-jobmanager:
+    profiles: [streaming]
+    build: ./deploy/flink
+    command: jobmanager
+    environment: &flink-env
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 8
+        rest.bind-address: 0.0.0.0
+    ports: ["8081:8081"]  # Flink's own console
+    volumes: ["./deploy/flink/jobs:/jobs"]  # rendered jobs, one file per client
+    depends_on:
+      kafka: {condition: service_healthy}
+  flink-taskmanager:
+    profiles: [streaming]
+    build: ./deploy/flink
+    command: taskmanager
+    environment: *flink-env
+    depends_on: [flink-jobmanager]
 
   # ---- Debezium publishes the outbox instead of the relay: add --profile cdc and OUTBOX_PUBLISHER=debezium
   connect:

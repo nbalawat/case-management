@@ -83,7 +83,7 @@ def _yaml(source: str):
 def onboard(s: Session, *, tenant_id: str, name: str, template: str, region: str = "us-east", deployment: str = "pooled",
             case_types: list[str] | None = None, access_source: str | None = None, by: str = "platform") -> TenantRuntime:
     _platform(s)
-    if not SLUG.match(tenant_id or "") or tenant_id in RESERVED:
+    if not SLUG.fullmatch(tenant_id or "") or tenant_id in RESERVED:
         raise OnboardingError("Client id must be 3 to 31 characters: lower-case letters, digits and hyphens, starting with a letter")
     if not (name or "").strip():
         raise OnboardingError("Client name is required")

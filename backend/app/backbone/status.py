@@ -26,6 +26,7 @@ def view(s: Session) -> dict:
     return {
         "lake": lake(tenant),
         "search": search_engine(tenant),
+        "stream_jobs": stream_jobs(s, tenant),
         "bus": {"kind": kind, "note": note, "workers": settings.backbone_workers},
         "publisher": "debezium" if cdc else "relay",
         # Under change data capture rows are never marked here, so "waiting" would mislead: report only the total.
@@ -70,3 +71,13 @@ def search_engine(tenant_id: str) -> dict:
         return {"engine": "opensearch", "names": search.current().count(tenant_id), "note": "OpenSearch, one index per client, rebuilt after each entity resolution."}
     except Exception:  # noqa: BLE001
         return {"engine": "database", "names": None, "note": "The search engine did not answer, so names are being searched in the database."}
+
+
+def stream_jobs(s: Session, tenant_id: str) -> dict:
+    """This client's jobs on the stream processor, and whether the application is raising the same rule as well."""
+    from ..detection import tuning
+    from ..streamjobs import flink
+    from ..streamjobs.jobs import JOBS
+
+    on = {j.scenario: tuning.current(s, j.scenario)[1] for j in JOBS.values()} if settings.flink_url else {}
+    return flink.status(tenant_id, on)

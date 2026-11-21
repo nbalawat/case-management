@@ -89,4 +89,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose --profile backbone --profile cdc config -q
+      - run: docker compose --profile backbone --profile cdc --profile search --profile streaming config -q
