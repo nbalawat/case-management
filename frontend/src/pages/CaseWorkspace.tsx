@@ -65,7 +65,7 @@ export default function CaseWorkspace() {
       <div className="case-h">
         <div>
           <h1>{party.name}</h1>
-          <p>{c.type_title} <span className="muted">v{c.type_version}</span> · opened {fmtDateTime(c.created)}</p>
+          <p>{c.type_title} <span className="muted">v{c.type_version}</span> · opened {fmtDateTime(c.created)} · <Link to={`/customers/${party.id}`}>Customer profile and network</Link></p>
         </div>
         <div className="case-meta">
           <Priority p={c.priority} />

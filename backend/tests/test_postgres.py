@@ -27,9 +27,11 @@ with TestClient(app) as c:  # startup creates the schema and seeds every demo cl
     for t in c.get('/api/tenants').json():
         h = {'X-Tenant': t['id'], 'X-Persona': t['default_person']}
         cases = c.get('/api/cases?status=all', headers=h)
-        work = c.get('/api/work', headers=h)
+        desk = c.get('/api/entities', headers=h)
+        hit = c.get('/api/search?q=a', headers=h)
         first = c.get(f"/api/cases/{cases.json()[0]['id']}", headers=h)
-        out[t['id']] = {'cases': len(cases.json()), 'codes': [cases.status_code, work.status_code, first.status_code]}
+        out[t['id']] = {'cases': len(cases.json()), 'counterparties': desk.json()['counts']['counterparties'],
+                        'codes': [cases.status_code, desk.status_code, hit.status_code, first.status_code]}
 print('RESULT ' + json.dumps(out))
 """
 
@@ -41,5 +43,5 @@ def test_the_demo_starts_and_answers_on_postgres():
     out = json.loads(next(line for line in run.stdout.splitlines() if line.startswith("RESULT ")).removeprefix("RESULT "))
     assert set(out) == {"meridian", "kestrel", "alder"}
     for tenant, got in out.items():
-        assert got["codes"] == [200, 200, 200], (tenant, got)
-        assert got["cases"] > 0, (tenant, got)
+        assert got["codes"] == [200, 200, 200, 200], (tenant, got)
+        assert got["cases"] > 0 and got["counterparties"] > 0, (tenant, got)

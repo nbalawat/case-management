@@ -376,3 +376,55 @@ class MediaItem(TenantScoped, Base):
     title: Mapped[str] = mapped_column(String(300))
     body: Mapped[str] = mapped_column(Text)
     __table_args__ = (party_fk(),)
+
+
+class Entity(TenantKeyed, Base):
+    """One real-world party as the platform understands it: a customer, or a counterparty seen in their payments."""
+
+    __tablename__ = "entity"
+    id: Mapped[str] = mapped_column(String(60), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)  # customer | counterparty
+    name: Mapped[str] = mapped_column(String(200))  # the spelling seen most
+    key: Mapped[str] = mapped_column(String(200), index=True)  # normalised name
+    party_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)  # set for a customer
+    countries: Mapped[list] = mapped_column(JSON, default=list)
+    aliases: Mapped[list] = mapped_column(JSON, default=list)  # [{name, count, how, score}]
+    flags: Mapped[list] = mapped_column(JSON, default=list)  # watchlist | high_risk_country | common
+    customers: Mapped[int] = mapped_column(Integer, default=0)  # how many customers transact with it
+    txns: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class EntityEdge(TenantScoped, Base):
+    """Money between a customer and a counterparty, summed. The network view is drawn from these."""
+
+    __tablename__ = "entity_edge"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    entity_id: Mapped[str] = mapped_column(String(60), index=True)
+    txns: Mapped[int] = mapped_column(Integer, default=0)
+    sent: Mapped[float] = mapped_column(Float, default=0.0)
+    received: Mapped[float] = mapped_column(Float, default=0.0)
+    first: Mapped[datetime] = mapped_column(DateTime)
+    last: Mapped[datetime] = mapped_column(DateTime)
+    channels: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class MatchCandidate(TenantKeyed, Base):
+    """Two records that may be the same party. A person decides; the decision survives every later run."""
+
+    __tablename__ = "match_candidate"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30), index=True)  # counterparty_variant | duplicate_customer | customer_as_counterparty
+    left_key: Mapped[str] = mapped_column(String(220))  # stable keys, not entity ids, so decisions outlive a rebuild
+    right_key: Mapped[str] = mapped_column(String(220))
+    left_name: Mapped[str] = mapped_column(String(200))
+    right_name: Mapped[str] = mapped_column(String(200))
+    score: Mapped[float] = mapped_column(Float)
+    reasons: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(12), default="open", index=True)  # open | same | different
+    decided_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    __table_args__ = (UniqueConstraint("tenant_id", "left_key", "right_key"),)

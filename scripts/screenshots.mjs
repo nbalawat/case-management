@@ -105,6 +105,26 @@ await page.getByRole('button', { name: 'Cancel' }).click()
 await as('ana')
 await go('/'); await page.getByText('You can see:').waitFor()
 await go('/cases'); await shot('24-cases-as-analyst')
+// Entities: one customer's whole picture, the network around them, a counterparty under all its spellings, the desk, and search.
+const H = { 'X-Tenant': 'meridian', 'X-Persona': 'audra' }
+const desk = await (await fetch(`${base}/api/entities`, { headers: H })).json()
+// The most telling subject: a customer of a flagged firm who already has an open case, at the firm most customers share.
+let firm = desk.flagged[0], subject = null
+for (const f of desk.flagged) {
+  const d = await (await fetch(`${base}/api/counterparties/${f.id}`, { headers: H })).json()
+  for (const c of d.customers) {
+    if (!subject || c.open_cases > subject.open_cases || (c.open_cases === subject.open_cases && f.customers > firm.customers)) { subject = c; firm = f }
+  }
+}
+await as('ivan')
+await go(`/customers/${subject.party_id}`); await page.locator('.net svg').waitFor(); await shot('28-customer-360')
+await page.locator('.net-node.flagged rect').first().hover(); await page.locator('.net').screenshot({ path: `${out}29-payment-network.png` })
+await go(`/counterparties/${firm.id}`); await shot('30-counterparty')
+await go('/entities'); await page.getByRole('button', { name: 'Same' }).first().click()
+await page.getByText('Decisions on record').waitFor(); await shot('31-entities-desk')
+await page.getByLabel('Search customers, counterparties, cases').fill('volkof')
+await page.locator('.search-pop button').first().waitFor(); await page.screenshot({ path: `${out}32-search.png` })
+await page.keyboard.press('Escape')
 // A second client: different people, roles and workloads, and its own access policy to edit.
 await as('joy', 'kestrel')
 await go('/'); await shot('12-second-client-my-work')

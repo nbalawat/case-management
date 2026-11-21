@@ -37,6 +37,10 @@ FACTORY = {
     "AgentStep": lambda k: m.AgentStep(run_id=f"run-{k}", agent="triage", agent_version="1", level="L2"),
     "AgentJob": lambda k: m.AgentJob(id=f"job-{k}", kind="evaluation", started_by="x"),
     "MediaItem": lambda k: m.MediaItem(id=f"med-{k}", party_id="P1", source="s", title="t", body="b"),
+    "Entity": lambda k: m.Entity(id=f"ent-{k}", kind="counterparty", name="Acme", key="acme"),
+    "EntityEdge": lambda k: m.EntityEdge(party_id="P1", entity_id=f"ent-{k}", first=NOW, last=NOW),
+    "MatchCandidate": lambda k: m.MatchCandidate(id=f"mc-{k}", kind="counterparty_variant", left_key="same a", right_key="same b",
+                                                 left_name="A", right_name="B", score=0.9),
     "AskLog": lambda k: m.AskLog(id=f"q-{k}", conversation_id=f"ask-{k}", asked_by="x", role="analyst", question="q"),
 }
 ORDER = ["Party", "Account", "Transaction", "Case", "Alert"]  # parents first; the rest in any order

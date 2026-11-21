@@ -14,6 +14,7 @@ permissions:
   manage_agents: Manage agents - set autonomy, switch agents off, run evaluations and batch reviews
   view_restricted: See restricted cases - matters hidden from everyone else, whatever their role
   restrict_case: Restrict a case, or lift a restriction
+  resolve_entities: Resolve entities - decide whether two records are the same customer or counterparty
 
 queues:
   fraud: Fraud claims
@@ -31,12 +32,12 @@ queues:
 roles:
   fraud_analyst:     {title: Fraud analyst, permissions: [work], sees: {scope: all, case_types: [fraud_claim]}}
   analyst:           {title: Alert analyst, permissions: [work], sees: {scope: queues}}
-  investigator:      {title: Investigator, permissions: [work, reassign], sees: {scope: all, case_types: [tm_alert_investigation]}}
+  investigator:      {title: Investigator, permissions: [work, reassign, resolve_entities], sees: {scope: all, case_types: [tm_alert_investigation]}}
   sanctions_officer: {title: Sanctions officer, permissions: [work], sees: {scope: all, case_types: [sanctions_hit]}}
-  team_lead:         {title: Operations lead, permissions: [work, view_team, reassign, run_timers]}
+  team_lead:         {title: Operations lead, permissions: [work, view_team, reassign, run_timers, resolve_entities]}
   mlro:              {title: MLRO, permissions: [work, view_team, view_restricted, restrict_case]}
-  head_fiu:          {title: Chief risk officer, permissions: [work, view_team, manage_agents, view_restricted, restrict_case]}
-  admin:             {title: Operations engineer, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents]}
+  head_fiu:          {title: Chief risk officer, permissions: [work, view_team, manage_agents, view_restricted, restrict_case, resolve_entities]}
+  admin:             {title: Operations engineer, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents, resolve_entities]}
   restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
   auditor:           {title: External auditor, permissions: [view_team, view_restricted], read_only: true}
 

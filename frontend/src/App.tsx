@@ -15,6 +15,10 @@ import Workflows from './pages/Workflows'
 import Access from './pages/Access'
 import Platform from './pages/Platform'
 import Clients from './pages/Clients'
+import Customer from './pages/Customer'
+import Counterparty from './pages/Counterparty'
+import Entities from './pages/Entities'
+import Search from './components/Search'
 
 type Meta = { tenant: { id: string; name: string }; personas: Persona[]; default_person: string; sample_data: boolean }
 type Client = { id: string; name: string; status: string }
@@ -32,7 +36,7 @@ export const usePersona = () => useContext(PeopleContext).persona
 export const useNameOf = () => useContext(PeopleContext).nameOf
 
 const NAV = [
-  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/team', 'Team'], ['/agents', 'Agents'], ['/workflows', 'Workflows'],
+  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/entities', 'Entities'], ['/team', 'Team'], ['/agents', 'Agents'], ['/workflows', 'Workflows'],
   ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations'],
 ]
 
@@ -96,6 +100,7 @@ export default function App() {
       <header className="top">
         <div className="brand"><span className="mark" aria-hidden />CaseForge</div>
         <nav>{NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}</nav>
+        {meta && people.persona && <Search key={pid} />}
         {sso ? <>
           <span className="persona"><span>{meta?.tenant.name}</span><b>{people.persona ? `${people.persona.name} · ${people.persona.title}` : ''}</b></span>
           <button className="link signout" onClick={signOut}>Sign out</button>
@@ -119,6 +124,9 @@ export default function App() {
           <Route path="/overview" element={<Overview />} />
           <Route path="/cases" element={<Cases />} />
           <Route path="/cases/:id" element={<CaseWorkspace />} />
+          <Route path="/entities" element={<Entities />} />
+          <Route path="/customers/:id" element={<Customer />} />
+          <Route path="/counterparties/:id" element={<Counterparty />} />
           <Route path="/team" element={<Team />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/data" element={<Data />} />

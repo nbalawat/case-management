@@ -408,6 +408,10 @@ def run_many(s: Session, sources: list[DataSource], by: str, trigger: str = "man
                 if run.status == "failed":
                     failed.add(dataset)
             runs.append(run)
+    if any((r.stats or {}).get("loaded") for r in runs):  # new names and payments: bring entities and the network up to date
+        from ..entities import resolution
+
+        resolution.resolve(s)
     return runs
 
 

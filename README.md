@@ -13,6 +13,7 @@ This is a demo build. It is meant to be shown, not deployed. All data is synthet
 ![Ask anything](docs/screenshots/15-ask.png)
 ![Data pipelines](docs/screenshots/18-data-pipeline-run.png)
 ![Agents](docs/screenshots/20-agents-acting.png)
+![Customer profile and network](docs/screenshots/28-customer-360.png)
 ![Workflow designer](docs/screenshots/08-workflows.png)
 ![Operator console](docs/screenshots/14-operator-console.png)
 
@@ -148,6 +149,7 @@ The full API reference is at <http://localhost:8000/docs>.
 | Information requests | Requests to customer, branch or relationship manager with due dates and overdue flags | Actually sending them (email, portal, secure message) |
 | Agents | Thirteen agents declared in `backend/agents/catalog.yaml` (goal, tools, highest autonomy, the one thing each may do alone). Each client sets autonomy per agent and case type (off, assist, prepare, act within policy) in a versioned policy, with limits, a kill switch per agent and a challenger that runs in shadow. Agents use only declared tools; filing, closing, moving, approving and exiting are not tools at any level. Findings that cite no record are dropped. News reaches the adverse media agent only as typed fields from a tool-less extractor. Every step goes to a hash-chained ledger. At L3, triage may close a low-risk alert and the sanctions adjudicator may discount a weak hit, only under settings whose evaluation on the client's own history passed, with a sampled human check and reopening. Evaluation, lookback, tuning advisor, case copilot, agreement rates per reviewer and a documentation pack for model risk. | The specialists are rule-based by default. `AGENT_MODE=model` runs them as tool loops on the model behind the gateway with the rules as fallback; that path is tested only against a scripted stand-in, never a live model. The extractor and the copilot are pattern-based, not language models, so the extractor's removal of manipulative text is a keyword filter backed by the structure (typed fields only), not a guarantee. Golden sets are the client's own closed cases, which in the demo are a few dozen synthetic ones. The orchestrator is in-process, not Temporal; tools are Python functions, not MCP servers. The ledger is tamper-evident, not tamper-proof: it lives in the same database. |
 | Ask anything | Plain-language questions answered through a fixed vocabulary of 31 fields and 9 measures, never SQL. Answers are limited to the asker's client and to the cases the asker may see, team workload follows the client's own access policy, cited cases are verified, and every question is recorded. Hosted-model provider with tool use, plus an offline planner so the demo needs no key. | The hosted-model path has only been run against a stand-in client here, never a live model: its request shape and reply handling are tested, answer quality is not. Checking figures in an answer (only case ids are checked). Streaming. Questions about transactions outside alerted activity. Spend limits. |
+| Entities, network and search | Counterparty names on payments are resolved into firms: legal forms, case, accents and punctuation are ignored, spellings at least 96% alike merge, look-alikes down to 82% wait for a person, and whether a payee is one of the client's own customers or two customer records are one person is always a person's decision. Decisions are kept by name and survive every rebuild. Thresholds are per client. A customer profile with totals, counterparties, connected customers, cases and a two-hop network graph; a counterparty page; shortest path between two customers. One search box over customers, counterparties under any spelling, cases, alerts and transactions, typo-tolerant, cut to what the asker may see. | Matching uses names only: no date of birth, address, identifier or document matching, no transliteration or nickname tables, no learned model. Resolution is a full rebuild per client after each load (a third of a second for 34,000 payments here), not incremental. The network lives in relational tables and search in the database, behind interfaces meant for a graph store and OpenSearch. No beneficial-ownership structures, no merge of duplicate customer records (they are linked with a warning), no graph analytics (communities, cycles), no screening-list management. |
 | Filing | A hashed JSON filing record | FinCEN BSA XML, goAML |
 | Identity | Two modes. Demo (default): client and person pickers, no login, anyone can pick anything. `AUTH_MODE=oidc`: OpenID Connect. Each client registers its own identity provider, the client is decided by which provider signed the token, the person by a claim in it, and request headers are ignored. Only asymmetric signatures are accepted; issuer, audience, expiry and key are checked; someone signed in but absent from the client's policy gets nothing. Platform staff sign in through a separate provider and cannot reach client data. The browser uses the authorization-code flow with PKCE. A built-in development provider (`DEV_IDP=1`) makes this demonstrable without Docker. | Never run against Keycloak, Entra ID or Okta: the verifier is tested against a stand-in provider with real keys and tokens, and the browser flow against the built-in one. No UI for registering a provider (API only). SAML, SCIM, group-to-role mapping from claims, refresh tokens and silent renewal (a session lasts as long as the token), sign-out at the provider, service accounts for machine callers (in sign-in mode `POST /api/alerts` accepts any valid token from the client's provider), MFA policy. The token is kept in the browser's session storage, not an HTTP-only cookie behind a backend-for-frontend. |
 | Scale | Measured single-process throughput on your machine | Anything distributed. Do not quote the laptop figure as a production figure. |
@@ -175,6 +177,7 @@ backend/app/
                copilot, lookback and tuning, oversight, model-backed mode
   ask/         ask anything: query vocabulary, read-only tools, model gateway and providers,
                answer loop with citation checks and the question record
+  entities/    name comparison, entity resolution and its human desk, the payment network, profiles, search
   reporting/   dashboard metrics
   tenancy.py   client isolation: session binding, automatic filtering and stamping
   visibility.py  which cases a person may see: the same kind of filter, per person, with an escape for platform work
@@ -188,7 +191,7 @@ backend/templates/    client templates: a starting policy plus a set of case typ
 frontend/src/         React + TypeScript UI
 ```
 
-Each replaceable part sits behind a small interface (`ObjectStore`, `Connector`, `MappingProposer`, `LLMProvider`, the scenario
+Each replaceable part sits behind a small interface (`ObjectStore`, `SearchIndex`, `Connector`, `MappingProposer`, `LLMProvider`, the scenario
 registry, and `ChatModel` for the model that answers questions), so later milestones swap implementations without touching callers. The database is chosen by
 `DATABASE_URL`; nothing in the code is tied to a cloud.
 
@@ -198,6 +201,13 @@ registry, and `ChatModel` for the model that answers questions), so later milest
     reason. Switch to Ivan: the case is gone from his lists, his numbers and his answers, and its address says
     "not found". Lena Fischer, who is cleared for restricted matters, can claim it and carry on. Open Access as
     Omar to see what each role sees, then change a role's `sees` rule and check the draft.
+
+16. **Who is who, as Ivan at Meridian.** Type "volkof" in the search box (or press `/`): the misspelling still finds
+    Volkov Maritime Trading, which payments spell two ways. Open Entities: spellings merged without a person,
+    look-alikes waiting for one, and "is this payee one of our own customers?" questions. Press Same on one and it
+    moves to the record. Open a customer from a case ("Customer profile and network"): money in and out, every
+    counterparty under one name, the customers connected through the uncommon ones, and the network drawn two
+    hops out. Click a flagged firm to see every customer who deals with it and why its spellings were matched.
 
 ## Milestones
 
@@ -226,10 +236,13 @@ oversight. Still to come here: a run against a live model, Temporal for durabili
 **7. Case visibility and sign-in (done).** What each role can see, restricted cases, and single sign-on through
 each client's own identity provider. Still to come here: a run against a real provider, SCIM, break-glass.
 
-**8. Enterprise breadth.** Entity resolution and a network view, search, regulatory filing formats, lookback
-projects, management reporting.
+**8. Entities, network and search (done).** Entity resolution with a human desk for the uncertain matches, a
+customer profile and network graph, counterparty pages and one search box.
 
-**9. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
+**9. Enterprise breadth.** Regulatory filing formats, lookback projects, management reporting and the remaining
+case-management modules.
+
+**10. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
 architecture: per-client stamps and the SaaS, dedicated, client-cloud and air-gapped deployment modes.
 
 ## Screenshots

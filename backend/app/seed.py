@@ -40,6 +40,9 @@ JOBS = ["teacher", "nurse", "software engineer", "electrician", "accountant", "s
 MERCHANTS = ["Harbor Grocers", "Citywide Utilities", "Maple Street Pharmacy", "Northline Transit", "Orchard Rent Co",
              "Brightwave Telecom", "Summit Insurance", "Corner Cafe", "Lakeside Fitness", "Atlas Fuel"]
 EMPLOYERS = ["Kestrel Logistics Payroll", "Bluefin Health Payroll", "Ridgeway Schools Payroll", "Tessera Software Payroll"]
+# Near names that may or may not be the same firm: a person has to say.
+SHELL_NEAR = {"Bluepeak Holdings SA": "Bluepeak Holding Group SA", "Meridian Trade Partners": "Meridian Trading Partners Intl",
+              "Orion Global Consulting Ltd": "Orion Global Consultants", "Sable Ridge Imports": "Sable Ridge Import Export"}
 SHELLS = ["Orion Global Consulting Ltd", "Bluepeak Holdings SA", "Meridian Trade Partners", "Sable Ridge Imports", "Quanta Ventures LLC"]
 
 
@@ -47,6 +50,21 @@ class Gen:
     def __init__(self, s: Session, seed: int = 7, end: datetime | None = None):
         self.s, self.r, self.end, self.n = s, random.Random(seed), end or now(), 0
         self.txns: list[Transaction] = []
+        self.v = random.Random(seed + 1000)  # its own stream, so spelling variety does not disturb the planted patterns
+
+    def shell(self) -> str:
+        """A shell company's name the way payment messages really carry it: mostly clean, sometimes not."""
+        name = self.r.choice(SHELLS)
+        roll = self.v.random()
+        if roll < 0.12:
+            return name.upper()
+        if roll < 0.22:
+            return name.rsplit(" ", 1)[0] if name.split()[-1] in ("Ltd", "SA", "LLC") else f"{name} Ltd"
+        if roll < 0.30:
+            return name.replace(" Ltd", ", Ltd.").replace(" LLC", " L.L.C.").replace(" SA", " S.A.")
+        if roll < 0.48:
+            return SHELL_NEAR.get(name, name)
+        return name
 
     def party(self, occupation: str | None = None, risk: str = "low", pep: bool = False) -> Party:
         self.n += 1
@@ -104,7 +122,7 @@ class Gen:
             self.txn(p, start, amt, "in", "wire", "Halcyon Brokerage Services")
             self.txn(p, start + timedelta(hours=20), amt * 0.97, "out", "wire", "First National Title & Escrow")
         else:
-            self.txn(p, start, amt, "in", "wire", self.r.choice(SHELLS), self.r.choice(["CY", "AE", "HK", "US"]))
+            self.txn(p, start, amt, "in", "wire", self.shell(), self.r.choice(["CY", "AE", "HK", "US"]))
             left, k = amt * self.r.uniform(0.88, 0.98), self.r.randint(2, 4)
             for i in range(k):
                 self.txn(p, start + timedelta(hours=4 + i * 9), left / k, "out", self.r.choice(["wire", "p2p"]),
@@ -117,7 +135,7 @@ class Gen:
         start = self.when(lo, hi).replace(day=min(self.when(lo, hi).day, 20))
         for i in range(self.r.randint(2, 4)):
             self.txn(p, start + timedelta(days=i), self.r.uniform(6000, 24000), "out", "wire",
-                     self.r.choice(SHELLS), self.r.choice(["IR", "SY", "MM"]))
+                     self.shell(), self.r.choice(["IR", "SY", "MM"]))
         return p
 
     def sanctions(self, lo: int, hi: int, name: str, country: str) -> Party:
@@ -611,10 +629,13 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     if "qa_review" in types:
         _work_qa(desk)
     _restrict_one(s, g.end)
+    from .entities import resolution
+
+    resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))
     return {"parties": g.n, "transactions": len(g.txns), "alerts": len(alerts) + len(planted), "cases": total,
-            "stage_breaches": sweep["stage_breaches"]}
+            "stage_breaches": sweep["stage_breaches"], "entities": resolved}
 
 
 def _restrict_one(s: Session, at: datetime) -> None:

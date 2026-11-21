@@ -13,6 +13,7 @@ from ..cases.requests import RECIPIENTS
 from ..cases.service import TransitionError, allowed_transitions, definition, facts, record, save_narrative, stage_tasks, transition
 from ..config import settings
 from ..detection.engine import run_detection
+from ..entities import resolution
 from ..detection.scenarios import REGISTRY, describe
 from ..domain.models import AgentRun, Alert, Case, CaseEvent, Feed, Filing, InfoRequest, Party, Transaction
 from ..domain.personas import Persona
@@ -192,6 +193,7 @@ def post_run(body: FeedIn, s: Session = Depends(get_session), p: Persona = Depen
     cases = route_alerts(s, alerts)
     for c in cases:
         investigate(s, c)
+    resolution.resolve(s)
     return {"feed": {"id": feed.id, "name": feed.name, "status": feed.status, "stats": feed.stats},
             "new_parties": len(set(s.scalars(select(Party.id))) - before), "alerts": len(alerts),
             "cases": [{"id": c.id, "party_name": c.party.name, "priority": c.priority} for c in cases], "run_by": p.id}
