@@ -9,12 +9,13 @@ import RiskCard from '../components/kyc/RiskCard'
 import OwnershipCard from '../components/kyc/OwnershipCard'
 import EvidenceCard, { Triggers } from '../components/kyc/EvidenceCard'
 import type { Kyc } from '../components/kyc/types'
+import IdentityCard, { type Identity } from '../components/customer/IdentityCard'
 
 type Counterparty = { entity_id: string; name: string; kind: string; party_id: string | null; flags: string[]; countries: string[]; txns: number; sent: number; received: number; last: string; spellings: number }
 type CaseRef = { id: string; type_title: string; state_label: string; open: boolean; priority: string; created: string; disposition: string | null; restricted: boolean; queue_label: string }
 type Related = { party_id: string; name: string; risk_rating: string; open_cases: number; direct: boolean; shared: string[]; flagged: boolean }
 type Profile = {
-  party: { id: string; name: string; kind: string; occupation: string; country: string; risk_rating: string; pep: boolean; onboarded: string; accounts: { id: string; product: string; status: string }[] }
+  party: { id: string; name: string; kind: string; occupation: string; country: string; risk_rating: string; pep: boolean; onboarded: string; accounts: { id: string; product: string; status: string }[]; identity: Identity }
   totals: { txns: number; in: number; out: number; first: string | null; last: string | null; counterparties: number; alerts: number; open_cases: number; cases: number }
   activity: { month: string; in: number; out: number; txns: number }[]
   channels: { channel: string; txns: number; total: number }[]
@@ -70,6 +71,7 @@ export default function Customer() {
         <Kpi label="Alerts" value={t.alerts} />
         <Kpi label="Cases" value={t.cases} sub={`${t.open_cases} open`} bad={t.open_cases > 0} />
       </div>
+      <IdentityCard partyId={p.id} kind={p.kind} identity={p.identity} onChange={reload} />
       {kyc.data && <>
         <div className="cols-2">
           <RiskCard partyId={p.id} risk={kyc.data.risk} onChange={refresh} />

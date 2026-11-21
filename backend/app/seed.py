@@ -26,6 +26,7 @@ from .config import settings
 from .db import Base, engine, ensure_schema, session_scope
 from .detection.engine import run_detection
 from .domain.access import Persona
+from .customers import demo as customers_demo
 from .domain.models import Account, Case, MediaItem, Party, Transaction, now, repeatable_ids, side_ids
 from .domain.personas import policy_of
 from .tenancy import tenant_of
@@ -502,7 +503,18 @@ def land_core_banking_files(store, end: datetime, seed: int = 11) -> dict:
                   "OCCUP": r.choice(["teacher", "engineer", "retired", "nurse", "shop owner", "driver", "consultant"]),
                   "RISK_CD": r.choice(["L"] * 6 + ["M"] * 3 + ["H"]), "PEP_FLAG": "Y" if i == 7 else "N",
                   "OPEN_DT": (end - timedelta(days=r.randint(200, 3000))).strftime("%Y%m%d")} for i, c in enumerate(LEGACY_CUSTOMERS)]
+    who = random.Random(seed + 500)  # its own stream, so the columns added later do not change the ones above
+    for c in customers:
+        city, state, zip3 = who.choice(customers_demo.US_CITIES)
+        c |= {"DOB": f"{who.randint(1950, 2003)}{who.randint(1, 12):02d}{who.randint(1, 28):02d}", "NATL_CD": c["RES_CNTRY"],
+              "ADDR1": f"{who.randint(2, 900)} {who.choice(customers_demo.STREETS)}", "CITY": city, "STATE_CD": state,
+              "ZIP": f"{zip3}{who.randint(0, 99):02d}", "SEG_CD": "RTL"}
     customers.append(customers[0] | {"CUST_NO": "LC-79999", "CUST_NM": "Test Record Do Not Use", "RISK_CD": "?"})  # a code the list does not know
+    ids = [{"CUST_NO": c["CUST_NO"], "ID_TYP_CD": "SSN" if c["RES_CNTRY"] == "US" else "PP",
+            "ID_NO": f"9{who.randint(10, 99)}-{who.randint(10, 49)}-{who.randint(1000, 9999)}" if c["RES_CNTRY"] == "US" else f"X{who.randint(10**7, 10**8 - 1)}",
+            "ISSUING_CNTRY": c["RES_CNTRY"], "EXPIRY_DT": "" if c["RES_CNTRY"] == "US" else f"{end.year + who.randint(1, 8)}-06-30"} for c in customers[:-1]]
+    ids.append({"CUST_NO": customers[1]["CUST_NO"], "ID_TYP_CD": "SSN", "ID_NO": "12-34", "ISSUING_CNTRY": "US", "EXPIRY_DT": ""})  # too short to be an SSN
+    store.write(f"core-banking/customer-ids/ids_{end:%Y%m%d}.jsonl", "\n".join(json.dumps(x) for x in ids).encode())
     store.write(f"core-banking/customers/customers_{end:%Y%m%d}.csv", _csv_bytes(customers))
     accounts = [{"ACCT_NBR": f"ACC-{c[3:]}", "CUST_NO": c, "PROD_CD": r.choice(["checking", "savings"]), "ACCT_STAT": "O"} for c in LEGACY_CUSTOMERS]
     buf = io.BytesIO()
@@ -530,7 +542,7 @@ def land_core_banking_files(store, end: datetime, seed: int = 11) -> dict:
     bad = [x | {"TXN_REF": f"LX{n:07d}", "TXN_DT": x["TXN_DT"].strftime("%Y%m%d%H%M%S"), "TXN_AMT": "" if n % 3 == 0 else x["TXN_AMT"],
                 "CHNL": "???" if n % 4 == 0 else x["CHNL"]} for n, x in enumerate(by_day[busiest][:40])]
     store.write(f"core-banking/transactions/dt={days[-1]}/part-0001.csv", _csv_bytes(bad))
-    return {"customers": len(customers), "accounts": len(accounts), "transaction_files": len(days) + 1}
+    return {"customers": len(customers), "identifiers": len(ids), "accounts": len(accounts), "transaction_files": len(days) + 1}
 
 
 def register_core_banking_sources(s: Session, by: str) -> list:
@@ -540,6 +552,7 @@ def register_core_banking_sources(s: Session, by: str) -> list:
     out = []
     for name, dataset, prefix, pattern, schedule, rules in [
         ("Core banking customers", "customers", "core-banking/customers", "*.csv", 1440, {"max_age_hours": 48}),
+        ("Core banking customer identifiers", "identifiers", "core-banking/customer-ids", "*.jsonl", 1440, {}),
         ("Core banking accounts", "accounts", "core-banking/accounts", "*.parquet", 1440, {}),
         ("Core banking transactions", "transactions", "core-banking/transactions", "**/part-*", 60, {"max_age_hours": 36}),
     ]:
@@ -646,6 +659,7 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     # Fraud is planted after settling, so "35 minutes ago" stays 35 minutes ago.
     planted = _plant_fraud(g, g.r.sample(ordinary, profile.fraud)) if "fraud_claim" in types else []
     s.flush()
+    customers_demo.seed(s, g.end)  # complete records before reports are written from them; run again at the end for later customers
     alerts = run_detection(s)
     cases = route_alerts(s, alerts)
     for c in cases:
@@ -680,6 +694,7 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     from .governance import demo as governance_demo
 
     governance_demo.seed(s, g.end)
+    customers_demo.seed(s, g.end)  # again, for the customers the steps above added; it never overwrites
     resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))
@@ -771,7 +786,7 @@ DEMO_FILING = {
         "name": "Kestrel Payments Inc", "tax_id": "98-7654321", "address": "40 Mission Row", "city": "San Francisco", "state": "CA",
         "postal_code": "94105", "country": "US", "regulator_code": "9", "contact_office": "Compliance", "contact_phone": "415-555-0190"}},
     "alder": {"regime": "goaml", "channel": "outbox", "institution": {
-        "name": "Alder Private Bank SA", "tax_id": "LU12345678", "reporting_entity_id": "4471", "address": "12 Rue de l'Eau", "city": "Luxembourg",
+        "name": "Alder Private Bank SA", "tax_id": "LU12345678", "reporting_entity_id": "4471", "swift": "ALDRLULL", "address": "12 Rue de l'Eau", "city": "Luxembourg",
         "country": "LU", "contact_office": "Financial Crime Compliance", "contact_phone": "+352 555 0117"}},
 }
 

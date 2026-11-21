@@ -67,6 +67,10 @@ def transform(row: dict, mapping: dict[str, str | None]) -> dict:
     out.setdefault("currency", "USD")
     out.setdefault("counterparty", "")
     out.setdefault("counterparty_country", "US")
+    out["counterparty_country"] = out["counterparty_country"].upper()
+    out["counterparty_account"] = out.get("counterparty_account", "").replace(" ", "").upper()[:64]  # IBANs are printed in groups of four
+    out["counterparty_institution"] = out.get("counterparty_institution", "")[:120]
+    out["purpose"] = out.get("purpose", "").upper()[:40]
     return out
 
 
@@ -102,7 +106,9 @@ def run_feed(s: Session, conn: Connector, mapping: dict[str, str | None], source
             known_accounts.add(t["account_id"])
         s.add(Transaction(id=t["txn_id"], account_id=t["account_id"], party_id=t["party_id"], ts=t["ts"],
                           amount=t["amount"], currency=t["currency"], direction=t["direction"], channel=t["channel"],
-                          counterparty=t["counterparty"], counterparty_country=t["counterparty_country"], feed_id=feed.id))
+                          counterparty=t["counterparty"], counterparty_country=t["counterparty_country"],
+                          counterparty_account=t["counterparty_account"], counterparty_institution=t["counterparty_institution"],
+                          purpose=t["purpose"], feed_id=feed.id))
         known_txns.add(t["txn_id"])
         loaded += 1
         loaded_total += t["amount"]
