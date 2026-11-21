@@ -31,6 +31,7 @@ from .api.data import router as data_router
 from .api.decisions import router as decisions_router
 from .api.forms import router as forms_router
 from .api.lake import router as lake_router
+from .backup.api import router as backup_router
 from .api.navigation import router as navigation_router
 from .api.case_list import router as case_list_router
 from .api.managed import router as managed_router
@@ -91,6 +92,7 @@ for r in (router, work_router, workflows_router, access_router, platform_router,
 app.include_router(managed_router, dependencies=[Depends(signed_in)])  # on its own line: the tuple above is a merge hotspot
 app.include_router(ai_router, dependencies=[Depends(signed_in)])  # the model gateway's set-up and usage
 app.include_router(auth_router)
+app.include_router(backup_router)  # platform staff only: each route checks the operator
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1
 observability.install(app)  # /healthz, /readyz, /metrics, request ids, structured logs, traces when configured
 

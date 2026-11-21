@@ -34,6 +34,9 @@ data:
   {{- with .Values.storage.quarantineUrl }}
   QUARANTINE_URL: {{ . | quote }}
   {{- end }}
+  {{- with .Values.backup.url }}
+  BACKUP_URL: {{ . | quote }}
+  {{- end }}
   METRICS_PORT: {{ .Values.observability.metricsPort | quote }}
   LOG_FORMAT: {{ .Values.observability.logFormat | quote }}
   {{- with .Values.observability.otlpEndpoint }}

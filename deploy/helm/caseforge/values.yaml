@@ -119,6 +119,14 @@ networkPolicy:
   ingressNamespace: ingress-nginx
   monitoringNamespace: ""  # when set, Prometheus in this namespace may also scrape the metrics port
 
+backup:
+  enabled: false        # nightly backups and a weekly restore drill, written by the application to object storage
+  url: ""               # s3://bucket/prefix, abfs://container@account.dfs.core.windows.net/prefix, gs://bucket/prefix
+  schedule: "15 2 * * *"
+  drillSchedule: "45 3 * * 0"  # restores the latest backup into a scratch database and compares every table; empty: no drill
+  timeoutSeconds: 3600
+  resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {memory: 2Gi}}
+
 observability:
   metricsPort: 9100     # every pod serves Prometheus metrics here, a port no ingress routes to
   scrapeAnnotations: true  # prometheus.io/scrape, port and path on the pods, for Prometheus set to discover them

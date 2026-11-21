@@ -1,4 +1,4 @@
-.PHONY: observability load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
+.PHONY: backup backup-drill observability load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -35,6 +35,12 @@ lake-backfill:   ## Docker, with `make full` running: copy a client's file-loade
 load-test:       ## Docker, with `make backbone` or `make full` running: transactions through Kafka, the stream consumers and the lake, timed. make load-test N=200000
 	docker compose exec -T app uv run --no-dev python -m app.loadtest run --transactions $(or $(N),20000) --api http://localhost:8000
 	mkdir -p data/loadtest && docker compose cp app:/app/data/loadtest/. data/loadtest/
+
+backup:          ## Docker: back up the whole platform (or CLIENT=meridian) to BACKUP_URL, data/backups by default
+	docker compose exec -T app uv run --no-dev python -m app.backup create $(if $(CLIENT),--client $(CLIENT))
+
+backup-drill:    ## Docker: back up, restore into a scratch database, and compare every table
+	docker compose exec -T app uv run --no-dev python -m app.backup drill
 
 build:           ## Build the UI so the API can serve it
 	cd frontend && npm install && npm run build

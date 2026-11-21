@@ -112,6 +112,12 @@ policy says what they may do.
 | `LAKE_FLUSH_ROWS`, `LAKE_FLUSH_SECONDS` | `20000`, `5` | The lake writer gathers this many messages, or waits this long, before writing: fewer, larger files |
 | `DETECTION_HISTORY` | `operational` | `lake`: backtests and lookbacks read history from the lake (falls back when there is none) |
 
+### Backups
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BACKUP_URL` | `data/backups` | Where `python -m app.backup` writes and reads backups: any object store URL. Helm sets it from `backup.url` and schedules a nightly backup and a weekly restore drill |
+
 ### Observability
 
 | Variable | Default | Meaning |
