@@ -17,8 +17,14 @@ downstream knows which engine raised an alert.
 | `rapid_movement` | A large payment in that is not cash, followed within a number of hours by payments out adding up to a set share of it. The alert is raised at the payment that reaches the share and lists the payments out up to then. The application reads the whole window afterwards and lists every payment out in it. | `flink-rapid-movement` |
 | `high_risk_geo` | One customer's outbound wires to the platform's high-risk countries reaching a monthly total. The alert is raised once per customer and calendar month, at the wire that crosses the total, and lists the wires up to then. The application lists the whole month. | `flink-high-risk-geo` |
 
-The fourth scenario, watchlist name matching, stays in the application. It scores how alike two names are, and Flink
-SQL has no such function without custom Java code, which this project does not ship.
+| `sanctions_name` | A payment whose counterparty is alike enough to a name or alias on the client's watchlists in force, unless a person has ruled that pair out. The same lists, exemptions, threshold and score as the application's `sanctions_name` scenario. One alert per payment. | `flink-sanctions-name` |
+
+Name screening needs something Flink SQL does not have: a score for how alike two names are. It comes from a small
+function, `WATCH_MATCH`, in `udf/` here (Java, no dependencies beyond Flink), built into the Flink image by the
+`Dockerfile`. It is the application's measure (Python's `difflib` ratio) ported step for step, and
+`backend/tests/test_name_similarity_java.py` compiles it and holds it to the Python on several thousand pairs of
+names, on every change. The client's list is written into the job when it is rendered, every name as Unicode
+numbers so that nothing on a list can change the SQL.
 
 One job per client and rule, like the topics. Its name on the cluster is `caseforge <job> <client>`. The jobs share one definition of the two topics (`backend/app/streamjobs/common.sql`).
 
@@ -45,10 +51,12 @@ that client has approved under Detection, and refuses any value that could chang
 
 `--bootstrap` is the brokers as the Flink cluster reaches them; without it they come from `EVENT_BUS_URL`.
 `--defaults` uses the scenario's shipped thresholds and opens no database. The cluster needs
-`flink-sql-connector-kafka` in its `lib` directory (the `Dockerfile` here adds it to the official image).
+`flink-sql-connector-kafka` in its `lib` directory, and for name screening `caseforge-udf.jar` as well (the
+`Dockerfile` here adds both to the official image). A cluster that is not built from this image needs the jar on
+the job manager, the task managers and the SQL Gateway: `javac --release 17 -cp "$FLINK_HOME/lib/*" -d out deploy/flink/udf/caseforge/*.java && jar cf caseforge-udf.jar -C out .`
 
 With Docker: `make streaming` starts the demo with Kafka, the lake, OpenSearch and a Flink cluster, and
-`make flink-job CLIENT=meridian` renders and submits that client's structuring job (`JOB=rapid_movement` or `JOB=high_risk_geo` for the others). Flink's own console is on
+`make flink-job CLIENT=meridian` renders and submits that client's structuring job (`JOB=rapid_movement`, `JOB=high_risk_geo` or `JOB=sanctions_name` for the others). Flink's own console is on
 http://localhost:8081.
 
 Set `FLINK_URL` (the cluster's REST address) on the application and the Integrations page shows each client whether
@@ -60,8 +68,16 @@ its job is running, and says so when the application is raising the same rule as
   double work, not double cases (both alerts join the customer's one case), but the alert counts are inflated.
   It is switched off under Detection, as a governed change with a second approver. Switching it off also stops it
   for file loads, so a client that loads files and streams should think about which it wants.
-- **A change to the thresholds does not reach a running job.** Render again, cancel the old job and submit the new.
-  Nothing does this for you yet.
+- **A change to the thresholds does not reach a running job.** Restart it from the Integrations page, which says
+  when a job is behind its client's settings, or render again, cancel the old job and submit the new.
+- **Name screening runs on the list it was started with.** A new list version, a new exemption or a new threshold
+  reaches the job at its next restart, and the page flags the job until then. An exemption that runs out keeps
+  holding in the job until a restart, and the flag does not come up for that on its own. The application's own
+  scenario always reads the lists as they are.
+- **A list is written into its job, so a job has a largest list: 5,000 names and aliases.** Rendering refuses more.
+  A full published sanctions list with its aliases is larger than that and would need the list delivered to Flink
+  as a stream of its own, which is not built. Every payment is compared against every name of similar length, so
+  the cost grows with the list.
 - **Event time moves only when traffic does.** An alert is released once a later transaction, an hour or more
   after the last deposit, has arrived on the topic. On a busy topic that is immediate; on a silent one it waits.
 - **A payment that arrives after event time has passed it by more than an hour is not counted by the job.** The
@@ -78,12 +94,17 @@ its job is running, and says so when the application is raising the same rule as
 
 ## What has and has not been run
 
-Run for real: the rendered job on a local Flink 2.1.3 cluster with the Kafka connector 5.0.0-2.1 against an Apache
-Kafka 3.9.1 broker, through to an open case (`backend/tests/test_flink.py`, seven tests, set `TEST_KAFKA_URL`,
-`TEST_FLINK_URL` and `TEST_FLINK_HOME`).
+Run for real: all four rendered jobs on a local Flink 2.1.3 cluster with the Kafka connector 5.0.0-2.1 against an
+Apache Kafka 3.9.1 broker (`backend/tests/test_flink.py`, 15 tests, set `TEST_KAFKA_URL`, `TEST_FLINK_URL` and
+`TEST_FLINK_HOME`, and `TEST_FLINK_GATEWAY_URL` for the two that go through the SQL Gateway). For name screening
+that includes a listed name full of quotes, semicolons and comment markers, a ruled-out pair, and a start from the
+product on a client's own lists. A 5,000-name job has been submitted and run by hand on the same cluster.
 
 Run once, on a MacBook under Docker: the image and Compose services here (`make streaming`, then
 `make flink-job CLIENT=meridian`), with three test deposits through to one Flink alert in a case.
+
+Never run under Docker: the name screening job, and the image now that it compiles the function (CI builds the
+image and checks the function answers in it, on every change).
 
 Never run: Flink on Kubernetes, a managed Flink service, checkpoints
 to object storage, recovery from a failure, or any volume beyond a handful of records. These tests are not in the

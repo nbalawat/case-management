@@ -1,14 +1,14 @@
 """model usage
 
-Revision: 0019
-Follows: 0018
+Revision: 0020
+Follows: 0019
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = '0019'
-down_revision = '0018'
+revision = '0020'
+down_revision = '0019'
 branch_labels = None
 depends_on = None
 

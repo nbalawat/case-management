@@ -1,0 +1,21 @@
+id: fraud_claim_intake
+title: Fraud claim intake
+version: "1.0"
+description: The customer's account of what happened, taken at first contact. Card and payment scheme rules depend on these answers.
+case_types: [fraud_claim]
+sections:
+  - title: The claim
+    fields:
+      - {key: claim_type, label: What happened, type: choice, required: true,
+         options: [card_not_present, lost_or_stolen_card, account_takeover, authorised_push_payment_scam, identity_theft]}
+      - {key: customer_authorised, label: Customer made or authorised the payment, type: boolean, required: true}
+      - {key: scam_type, label: Kind of scam, type: choice, required: true, visible_when: "claim_type == authorised_push_payment_scam",
+         options: [purchase, investment, romance, impersonation, invoice]}
+      - {key: first_noticed, label: When the customer first noticed, type: date, required: true}
+      - {key: amount_claimed, label: Amount claimed, type: money, required: true, minimum: 0}
+      - {key: contact_email, label: Email for updates, type: email}
+  - title: Account security
+    fields:
+      - {key: card_in_possession, label: Card still in the customer's possession, type: boolean}
+      - {key: credentials_shared, label: Customer shared a password or code, type: boolean, required: true}
+      - {key: account_secured, label: Account secured (cards blocked, credentials reset), type: boolean, required: true}

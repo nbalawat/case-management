@@ -36,3 +36,47 @@
 .dt-bars{display:flex;flex-direction:column;gap:4px;margin:8px 0}
 .dt-bar{display:grid;grid-template-columns:90px 1fr 48px;align-items:center;gap:8px;font-size:12.5px}
 .dt-bar i{display:block;height:10px;border-radius:5px;background:var(--brand)}.dt-bar b{text-align:right}
+
+/* Forms: the renderer (used on cases and in the builder preview) */
+.fm{display:flex;flex-direction:column;gap:14px}
+.fm-section{border:1px solid var(--line);border-radius:10px;padding:12px 16px 14px;margin:0}
+.fm-section legend{font-weight:600;padding:0 6px}
+.fm-field{display:flex;flex-direction:column;gap:5px;padding:8px 0}
+.fm-field>label{font-weight:500;font-size:13.5px}.fm-req{color:var(--crit);margin-left:3px}
+.fm-help{margin:0;color:var(--muted);font-size:12.5px}
+.fm-field input[type=text],.fm-field input[type=email],.fm-field input[type=number],.fm-field input[type=date],.fm-field select{min-height:36px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);max-width:420px}
+.fm-field textarea{margin:0;max-width:680px}
+.fm-money{position:relative;display:inline-block}.fm-money::before{content:"$";position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted)}.fm-money input{padding-left:22px!important}
+.fm-seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:max-content;max-width:100%}
+.fm-seg button{border:0;border-radius:0;border-right:1px solid var(--line);min-height:34px}.fm-seg button:last-child{border-right:0}
+.fm-seg button[aria-checked=true]{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.fm-checks{display:flex;flex-wrap:wrap;gap:6px 16px}.fm-checks label{display:inline-flex;gap:6px;align-items:center;font-size:13px}
+.fm-field.bad input,.fm-field.bad textarea,.fm-field.bad select,.fm-field.bad .fm-seg{border-color:var(--crit)}
+.fm-err{margin:0;color:var(--crit);font-size:12.5px}
+
+/* Forms: the builder */
+.fb-split{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;margin-top:10px}@media(max-width:1200px){.fb-split{grid-template-columns:1fr}}
+.fb{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}@media(max-width:900px){.fb{grid-template-columns:1fr}}
+.fb-section{border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:10px}
+.fb-section-h{display:flex;gap:6px}.fb-section-h input{flex:1;font-weight:600;border:0;background:transparent;padding:6px}
+.fb-section-h button{border:0;background:transparent;min-height:0}
+.fb-section ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.fb-section li{display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.fb-section li[aria-current=true]{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+.fb-item{flex:1;display:flex;flex-direction:column;align-items:flex-start;border:0;background:transparent;text-align:left;padding:6px 10px;min-height:0;height:auto}
+.fb-item span{color:var(--muted);font-size:11.5px}
+.fb-row-act{display:flex}.fb-row-act button{border:0;background:transparent;min-height:0;height:26px;width:24px;padding:0;display:grid;place-items:center}
+.fb-palette{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.fb-palette button{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;min-height:26px;padding:2px 8px;border-style:dashed}
+.fb-addsec{display:inline-flex;align-items:center;gap:6px}
+.fb-side{border-left:1px solid var(--line);padding-left:14px}
+.fb-props{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fb-props label{display:flex;flex-direction:column;gap:4px;font-size:12.5px}.fb-props label>span{color:var(--muted)}
+.fb-props input,.fb-props select{min-height:34px;padding:5px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface)}
+.fb-props textarea{margin:0;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+.fb-wide{grid-column:1/-1}.fb-check{flex-direction:row!important;align-items:center;gap:8px!important;align-self:end}
+.fb-when{display:flex;gap:6px;flex-wrap:wrap}
+.fb-chips{display:flex;flex-wrap:wrap;gap:6px}
+.fb-chips button{min-height:28px;padding:2px 10px;font-size:12.5px;border-radius:14px}
+.fb-chips button[aria-pressed=true]{background:var(--brand-soft);color:var(--brand);border-color:var(--brand)}
+.fb-preview{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--bg-2)}
