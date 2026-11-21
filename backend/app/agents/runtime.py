@@ -127,7 +127,7 @@ def assess(s: Session, case: Case, pol: policies.Policy | None = None, *, reques
            decision: dict | None = None, chat: ChatModel | None = None) -> Assessment:
     """Work out the briefing for a case under a policy. Reads only. `chat` overrides the configured model for the specialists."""
     pol = pol or policies.current(s)
-    chat = chat or model_mode.chat_model()
+    chat = chat or model_mode.chat_model(s, ref=case.id)
     provider = provider or get_provider()
     ct = definition(case)
     declared = [a for a in ct.get("agents", {}).get("on_create", []) if a in catalog()]

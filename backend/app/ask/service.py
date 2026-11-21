@@ -17,7 +17,8 @@ from ..tenancy import tenant_of
 from ..visibility import find_case
 from ..tenants.registry import runtime
 from . import semantic, tools
-from .gateway import ChatModel, ModelUnavailable, ToolOutput, ToolSpec, get_model
+from ..ai import gateway as ai
+from .gateway import ChatModel, ModelUnavailable, ToolOutput, ToolSpec
 
 MAX_ROUNDS = 8  # tool rounds per question, so a confused model cannot loop forever
 MAX_QUESTION = 1000
@@ -87,7 +88,7 @@ def ask(s: Session, asker: Persona, question: str, conversation_id: str | None =
     usage = {"input_tokens": 0, "output_tokens": 0}
     status, answer, provider = "answered", "", ""
     try:
-        model = model or get_model()
+        model = model or ai.model_for(s, "ask", actor=asker.id, ref=conversation_id)
         provider = model.name
         offered = tools.available(asker)
         conv = model.start(instructions=INSTRUCTIONS, tools=[ToolSpec(t.name, t.description, t.schema) for t in offered],
@@ -97,7 +98,7 @@ def ask(s: Session, asker: Persona, question: str, conversation_id: str | None =
         while True:
             for k in usage:
                 usage[k] += int(turn.usage.get(k, 0))
-            if ":" in model.name and turn.model:  # a hosted turn names the model that actually served it
+            if ":" in model.name and turn.model:  # a hosted turn names the model that actually served it (a fallback may differ)
                 provider = f"{model.name.split(':')[0]}:{turn.model}"
             if turn.stop != "tools":
                 break
