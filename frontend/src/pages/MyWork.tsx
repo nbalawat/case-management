@@ -5,7 +5,8 @@ import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill, Priority, Rec, Sla, StageClock } from '../components/ui'
 import type { CaseRow } from './Cases'
 
-type Me = { id: string; name: string; title: string; about: string; read_only: boolean; queues: { id: string; label: string }[]; permissions: string[] }
+type Me = { id: string; name: string; title: string; about: string; read_only: boolean; queues: { id: string; label: string }[]; permissions: string[]
+  sees?: { everything: boolean; views: string[]; restricted: boolean; note: string } }
 type Work = {
   persona: Me; mine: CaseRow[]
   queues: { id: string; label: string; cases: CaseRow[]; assigned: number }[]
@@ -20,7 +21,7 @@ function WorkTable({ rows, onClaim }: { rows: CaseRow[]; onClaim?: (id: string) 
       <tbody>{rows.map(c => (
         <tr key={c.id} tabIndex={0} onClick={() => nav(`/cases/${c.id}`)} onKeyDown={e => e.key === 'Enter' && nav(`/cases/${c.id}`)}>
           <td><Priority p={c.priority} /></td>
-          <td><b>{c.party_name}</b><div className="muted small">{c.id}</div></td>
+          <td><b>{c.party_name}</b>{c.restricted && <Pill tone="critical">Restricted</Pill>}<div className="muted small">{c.id}</div></td>
           <td>{c.type_title}</td>
           <td>{c.state_label}{c.state_kind === 'wait' && <Pill tone="warning">waiting</Pill>}</td>
           <td><StageClock hours={hoursUntil(c.stage_due)} /></td>
@@ -45,6 +46,7 @@ export default function MyWork() {
         <h1>{me.name}</h1>
         <p>{me.title}. {me.about}</p>
         <div className="chips">{me.queues.map(q => <Pill key={q.id} tone="human">{q.label}</Pill>)}{me.read_only && <Pill tone="warning">Read-only</Pill>}</div>
+        {me.sees && <p className="muted small sees">You can see: {me.sees.views.join('; ').toLowerCase().replaceAll('their own', 'your own').replaceAll('they own', 'you own')}{me.sees.restricted ? ', including restricted cases' : ''}.{me.sees.note && ' That always includes cases you own or have worked on.'}</p>}
       </div>
       {!worksCases ? (
         <Card title="This role does not work cases">

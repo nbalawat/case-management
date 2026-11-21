@@ -149,3 +149,12 @@ button.danger{color:var(--crit);border-color:#f0c4c4}button.danger:hover:not(:di
 .checkout{margin-top:10px}.checkout ul{margin:6px 0;padding-left:18px}.ok{color:var(--good,#18794e);font-weight:600}
 .copilot .answer{background:var(--bg);border-radius:10px;padding:10px 12px;margin:8px 0;font-size:13.5px}.copilot pre{white-space:pre-wrap;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0 4px}
 .copilot .q{font-weight:600}.srcs{color:var(--muted);font-size:12px;margin-left:6px}.skipped{color:var(--muted);font-style:italic}
+
+.restricted{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:9px 12px;border:1px solid #f1c4c4;background:#fdf3f3;border-radius:10px;font-size:13px}.restricted b{color:#a11d1d}.restricted button{margin-left:auto}
+.restrict-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.restrict-form label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--soft);flex:1;min-width:280px}.restrict-form input{min-height:36px;padding:6px 10px;border-radius:8px;border:1px solid var(--line)}
+.sees{margin:8px 0 0}
+.signin{min-height:100vh;display:grid;place-items:center;padding:24px}.signin .card{width:420px;max-width:100%;padding:28px 30px;display:flex;flex-direction:column;gap:12px;margin:0}
+.signin h1{margin:6px 0 0;font-size:22px}.signin p{margin:0}.signin label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--soft)}
+.signin input{min-height:40px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);font-size:15px}.signin .error{color:#a11d1d}.signin .hint{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+button.link{border:0;background:none;color:var(--brand);padding:0;min-height:0;text-align:left}button.link:hover{text-decoration:underline}button.signout{white-space:nowrap}

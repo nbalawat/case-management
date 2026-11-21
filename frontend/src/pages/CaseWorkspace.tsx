@@ -20,7 +20,7 @@ type Detail = {
   tasks: { id: string; label: string; required: boolean; done: boolean; done_by: string | null; done_at: string | null }[]
   requests: { id: string; recipient_label: string; question: string; status: string; raised_by: string; created: string; due: string; response: string; answered: string | null; answered_by: string | null }[]
   workflow: { states: { id: string; label: string; kind: string }[]; autonomy: string; recipients: Record<string, string> }
-  access: { can_work: boolean; can_claim: boolean; can_reassign: boolean; read_only: boolean; queue_members: { id: string; name: string }[]; queue_label: string }
+  access: { can_work: boolean; can_claim: boolean; can_reassign: boolean; read_only: boolean; can_restrict: boolean; restricted_reason: string; queue_members: { id: string; name: string }[]; queue_label: string }
   parent: CaseRow | null; children: CaseRow[]
   filing: null | { id: string; filed_by: string; filed_at: string; sha256: string }
   other_cases: CaseRow[]
@@ -31,6 +31,7 @@ export default function CaseWorkspace() {
   const persona = usePersona()
   const { data, error, reload } = useApi<Detail>(`/cases/${id}`, [persona?.id])
   const [note, setNote] = useState('')
+  const [restricting, setRestricting] = useState<null | 'restrict' | 'lift'>(null)
   const [narr, setNarr] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [focus, setFocus] = useState<string[]>([])
@@ -72,6 +73,10 @@ export default function CaseWorkspace() {
           {c.open && <span>Stage clock: <StageClock hours={hoursUntil(c.stage_due)} kind={c.state_kind} /></span>}
         </div>
       </div>
+      {c.restricted && <div className="restricted" role="note">
+        <b>Restricted case.</b> Only people cleared for restricted matters can see it. <span className="muted">{access.restricted_reason}</span>
+        {access.can_restrict && <button onClick={() => setRestricting('lift')}>Lift restriction…</button>}
+      </div>}
       {c.open && <div className="ownerbar">
         <span>Queue: <b>{access.queue_label || '–'}</b></span>
         <span>Owner: <b>{c.owner ? nameOf(c.owner) : 'Unassigned'}</b></span>
@@ -79,6 +84,8 @@ export default function CaseWorkspace() {
         {c.owner === persona?.id && <button onClick={() => act(() => api.post(`/cases/${c.id}/release`), 'Released back to the queue.')}>Release to queue</button>}
         {access.can_reassign && <select value="" aria-label="Reassign" onChange={e => e.target.value && act(() => api.post(`/cases/${c.id}/reassign`, { owner: e.target.value, reason: 'Reassigned by lead' }), 'Reassigned.')}>
           <option value="">Reassign to…</option>{access.queue_members.filter(m => m.id !== c.owner).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>}
+        {access.can_restrict && !c.restricted && <button className="ghost" title="Hide this case from everyone who is not cleared for restricted matters"
+          onClick={() => setRestricting('restrict')}>Restrict…</button>}
         {access.read_only && <Pill tone="warning">Read-only access</Pill>}
         {data.parent && <span>Reviewing <Link to={`/cases/${data.parent.id}`}>{data.parent.type_title} {data.parent.id}</Link></span>}
         {data.children.map(k => <span key={k.id}><Link to={`/cases/${k.id}`}>{k.type_title}</Link> <Pill tone={k.disposition === 'qa_failed' ? 'critical' : k.disposition === 'qa_passed' ? 'good' : 'neutral'}>{k.state_label}</Pill></span>)}
@@ -87,6 +94,17 @@ export default function CaseWorkspace() {
         {data.parent && <span>Reviewing <Link to={`/cases/${data.parent.id}`}>{data.parent.type_title} {data.parent.id}</Link></span>}
         {data.children.map(k => <span key={k.id}><Link to={`/cases/${k.id}`}>{k.type_title}</Link> <Pill tone={k.disposition === 'qa_failed' ? 'critical' : k.disposition === 'qa_passed' ? 'good' : 'neutral'}>{k.state_label}</Pill></span>)}
       </div>}
+      {restricting && <form className="restrict-form" onSubmit={e => {
+        e.preventDefault()
+        const why = new FormData(e.currentTarget).get('why') as string, on = restricting === 'restrict'
+        act(() => api.post(`/cases/${c.id}/restrict`, { restricted: on, reason: why }), on ? 'Case restricted. People who are not cleared can no longer see it.' : 'Restriction lifted.')
+        setRestricting(null)
+      }}>
+        <label>{restricting === 'restrict' ? 'Why is this case restricted?' : 'Why is the restriction being lifted?'}
+          <input name="why" required autoFocus placeholder={restricting === 'restrict' ? 'For example: the subject is a member of staff' : 'For example: the connection was disproved'} /></label>
+        <button className="primary">{restricting === 'restrict' ? 'Restrict case' : 'Lift restriction'}</button><button type="button" onClick={() => setRestricting(null)}>Cancel</button>
+        <span className="muted small">{restricting === 'restrict' ? 'The owner is released if they are not cleared. ' : ''}The reason is kept on the audit trail.</span>
+      </form>}
       <ol className="stepper" aria-label="Workflow stage">
         {openStates.map((s, i) => <li key={s.id} className={!c.open || i < idx ? 'done' : i === idx ? 'now' : ''}>{s.label}</li>)}
         <li className={c.open ? '' : 'now end'}>{c.open ? 'Decision' : c.state_label}</li>

@@ -36,6 +36,8 @@ def _txn(t: Transaction, alerted: set[str]) -> dict:
 @router.get("/tenants")
 def list_tenants():
     """Demo only: the client switcher. A signed-in user belongs to one client and never sees this list."""
+    if settings.auth_mode == "oidc":
+        raise HTTPException(404, "Not available when sign-in is on")
     return [{"id": rt.id, "name": rt.name, "status": rt.status, "default_person": rt.policy.default_person} for rt in all_runtimes()]
 
 

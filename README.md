@@ -40,6 +40,13 @@ Docker) restores that starting point before each demo. `make test` runs the back
 
 For development, run `make dev-api` and `make dev-ui` in two terminals and open <http://localhost:5173>.
 
+**Sign-in.** By default there is no login: pickers at the top right choose the client and the person. To see
+single sign-on instead, start the API with `AUTH_MODE=oidc DEV_IDP=1` (for example
+`cd backend && AUTH_MODE=oidc DEV_IDP=1 uv run uvicorn app.main:app --port 8000`). The pickers disappear, every
+request needs a signed token, and "signing in" sends you through a small built-in identity provider that stands
+in for each client's own. To use a real provider (Keycloak, Entra ID, Okta), leave `DEV_IDP` off and register
+each client's issuer: `PUT /api/platform/tenants/{id}/identity`.
+
 ## A fifteen-minute demo
 
 The client and person pickers at the top right are the whole login. Steps 1 to 9 are at Meridian Retail Bank;
@@ -119,8 +126,9 @@ curl -X POST localhost:8000/api/alerts -H 'content-type: application/json' -d '{
   "party_id": "P10005", "score": 0.82, "explanation": "Vendor rule 12: funds in and out within 24h"}'
 ```
 
-API calls are for one client. This demo reads it from an `X-Tenant` header (Meridian if absent) and the person
-from `X-Persona`; a real deployment takes both from the sign-in token.
+API calls are for one client. In demo mode it is read from an `X-Tenant` header (Meridian if absent) and the
+person from `X-Persona`. With `AUTH_MODE=oidc` both come from the sign-in token and those headers are ignored.
+`POST /api/alerts` is a system calling in, so it has no person's view: it sees every case of the client.
 
 The full API reference is at <http://localhost:8000/docs>.
 
@@ -132,13 +140,14 @@ The full API reference is at <http://localhost:8000/docs>.
 | Detection | Four scenarios (structuring, rapid movement, high-risk geography, watchlist name match), versioned and idempotent | Stream processing, ML models, a real sanctions list (the watchlist is fictional) |
 | Alert intake | `POST /api/alerts` for outside engines, deduplicated, grouped per customer | Vendor-specific adapters |
 | Workflows | Six case types as versioned YAML: stages, queues, stage tasks, conditional steps, waiting stages, four-eyes, stage clocks with escalation, QA sampling with reopen. Checked and published from the UI. | Durable workflow engine (timers are swept, not scheduled), parallel branches, a drag-and-drop designer |
-| People and access | Each client's own versioned policy: roles, permissions, queues, people (who may hold several roles), read-only roles. Edited and published from the UI with checks: a change is refused if it would strand a workflow or lock everyone out. Every person at every kind of client is tested against every workflow step. | SSO and people from the client's identity provider, attribute-based rules (for example by customer segment or country), a form-based editor |
+| People and access | Each client's own versioned policy: roles, permissions, queues, people (who may hold several roles), read-only roles. Edited and published from the UI with checks: a change is refused if it would strand a workflow or lock everyone out. Every person at every kind of client is tested against every workflow step. | People and group membership synced from the client's identity provider (SCIM); today the provider proves who someone is and the policy on the Access page says what they may do. A form-based editor. |
+| Case visibility | Each role can be limited to its own queues, its own cases, or some case types; people keep cases they own or have worked on, and someone with several roles sees what any of them shows. Restricted cases are hidden from everyone not cleared, including their former owner, team leads and administrators, and cases opened from a restricted case inherit it. Enforced in the data layer, so lists, case pages, actions, the event feed, dashboards, the agent ledger and Ask all follow it; a hidden case answers "not found". Tested by signing in as every person at every client and checking every case against an independent statement of the rule. | Customers and transactions are not hidden by this rule, only cases and what hangs off them, so the Data pages and a customer lookup in Ask still show a customer whose case is restricted. Alerts closed by an agent before any case existed are visible to all. Rules by customer attribute (segment, country, relationship manager's own book). Break-glass access with a reason. Postgres row-level security as a second layer. A restricted case stays in its workflow, so someone cleared must also hold the role for the next step. |
 | Clients | Shared database with every row keyed by client. Isolation is enforced in the data layer: queries are filtered and writes stamped automatically, and statements that cannot be filtered are refused. Per-client case types and workflow versions. Templates, one-step onboarding, suspend, and an operator console that shows counts only. | Postgres row-level security as a second layer, dedicated databases or stamps per client (the choice is recorded, not acted on), per-client encryption keys, usage metering, offboarding and data export |
 | Information requests | Requests to customer, branch or relationship manager with due dates and overdue flags | Actually sending them (email, portal, secure message) |
 | Agents | Thirteen agents declared in `backend/agents/catalog.yaml` (goal, tools, highest autonomy, the one thing each may do alone). Each client sets autonomy per agent and case type (off, assist, prepare, act within policy) in a versioned policy, with limits, a kill switch per agent and a challenger that runs in shadow. Agents use only declared tools; filing, closing, moving, approving and exiting are not tools at any level. Findings that cite no record are dropped. News reaches the adverse media agent only as typed fields from a tool-less extractor. Every step goes to a hash-chained ledger. At L3, triage may close a low-risk alert and the sanctions adjudicator may discount a weak hit, only under settings whose evaluation on the client's own history passed, with a sampled human check and reopening. Evaluation, lookback, tuning advisor, case copilot, agreement rates per reviewer and a documentation pack for model risk. | The specialists are rule-based by default. `AGENT_MODE=model` runs them as tool loops on the model behind the gateway with the rules as fallback; that path is tested only against a scripted stand-in, never a live model. The extractor and the copilot are pattern-based, not language models, so the extractor's removal of manipulative text is a keyword filter backed by the structure (typed fields only), not a guarantee. Golden sets are the client's own closed cases, which in the demo are a few dozen synthetic ones. The orchestrator is in-process, not Temporal; tools are Python functions, not MCP servers. The ledger is tamper-evident, not tamper-proof: it lives in the same database. |
-| Ask anything | Plain-language questions answered through a fixed vocabulary of 31 fields and 9 measures, never SQL. Answers are limited to the asker's client, team workload follows the client's own access policy, cited cases are verified, and every question is recorded. Hosted-model provider with tool use, plus an offline planner so the demo needs no key. | The hosted-model path has only been run against a stand-in client here, never a live model: its request shape and reply handling are tested, answer quality is not. Checking figures in an answer (only case ids are checked). Streaming. Per-role limits on which cases a person may see (everyone at a client sees all of its cases, as on the Cases page). Questions about transactions outside alerted activity. Spend limits. |
+| Ask anything | Plain-language questions answered through a fixed vocabulary of 31 fields and 9 measures, never SQL. Answers are limited to the asker's client and to the cases the asker may see, team workload follows the client's own access policy, cited cases are verified, and every question is recorded. Hosted-model provider with tool use, plus an offline planner so the demo needs no key. | The hosted-model path has only been run against a stand-in client here, never a live model: its request shape and reply handling are tested, answer quality is not. Checking figures in an answer (only case ids are checked). Streaming. Questions about transactions outside alerted activity. Spend limits. |
 | Filing | A hashed JSON filing record | FinCEN BSA XML, goAML |
-| Identity | Client and person pickers (no login). Anyone can pick any client or the operator console. | SSO; the client and person come from the token |
+| Identity | Two modes. Demo (default): client and person pickers, no login, anyone can pick anything. `AUTH_MODE=oidc`: OpenID Connect. Each client registers its own identity provider, the client is decided by which provider signed the token, the person by a claim in it, and request headers are ignored. Only asymmetric signatures are accepted; issuer, audience, expiry and key are checked; someone signed in but absent from the client's policy gets nothing. Platform staff sign in through a separate provider and cannot reach client data. The browser uses the authorization-code flow with PKCE. A built-in development provider (`DEV_IDP=1`) makes this demonstrable without Docker. | Never run against Keycloak, Entra ID or Okta: the verifier is tested against a stand-in provider with real keys and tokens, and the browser flow against the built-in one. No UI for registering a provider (API only). SAML, SCIM, group-to-role mapping from claims, refresh tokens and silent renewal (a session lasts as long as the token), sign-out at the provider, service accounts for machine callers (in sign-in mode `POST /api/alerts` accepts any valid token from the client's provider), MFA policy. The token is kept in the browser's session storage, not an HTTP-only cookie behind a backend-for-frontend. |
 | Scale | Measured single-process throughput on your machine | Anything distributed. Do not quote the laptop figure as a production figure. |
 
 14. **Agents, as Omar Haddad at Meridian.** Open Agents. Every agent prepares and recommends; none acts alone. Set the
@@ -166,6 +175,8 @@ backend/app/
                answer loop with citation checks and the question record
   reporting/   dashboard metrics
   tenancy.py   client isolation: session binding, automatic filtering and stamping
+  visibility.py  which cases a person may see: the same kind of filter, per person, with an escape for platform work
+  auth/        sign-in: OIDC token verification, each client's identity provider, a development provider
   tenants/     client registry, templates, onboarding, access policy administration
   api/         HTTP routes (the UI uses only these)
 backend/case_types/   the workflow library: one YAML file per case type
@@ -178,6 +189,13 @@ frontend/src/         React + TypeScript UI
 Each replaceable part sits behind a small interface (`ObjectStore`, `Connector`, `MappingProposer`, `LLMProvider`, the scenario
 registry, and `ChatModel` for the model that answers questions), so later milestones swap implementations without touching callers. The database is chosen by
 `DATABASE_URL`; nothing in the code is tied to a cloud.
+
+15. **Who sees what, at Meridian.** As Ana Ruiz, open Cases: only her two queues. As Ivan Petrov: every monitoring
+    case and nothing else. Ask "how many cases are there in total" as each and the answers differ, because the
+    filter sits under everything. As Maya Chen, open one of Ivan's investigations and press Restrict with a
+    reason. Switch to Ivan: the case is gone from his lists, his numbers and his answers, and its address says
+    "not found". Lena Fischer, who is cleared for restricted matters, can claim it and carry on. Open Access as
+    Omar to see what each role sees, then change a role's `sees` rule and check the draft.
 
 ## Milestones
 
@@ -203,12 +221,16 @@ for schedules, streaming and CDC.
 the ledger, evaluation against the client's own decisions, challenger in shadow, copilot, lookback, tuning and
 oversight. Still to come here: a run against a live model, Temporal for durability, tools as MCP servers.
 
-**7. Enterprise breadth.** Entity resolution and a network view, search, regulatory filing formats, lookback
-projects, management reporting, SSO.
+**7. Case visibility and sign-in (done).** What each role can see, restricted cases, and single sign-on through
+each client's own identity provider. Still to come here: a run against a real provider, SCIM, break-glass.
 
-**8. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
+**8. Enterprise breadth.** Entity resolution and a network view, search, regulatory filing formats, lookback
+projects, management reporting.
+
+**9. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
 architecture: per-client stamps and the SaaS, dedicated, client-cloud and air-gapped deployment modes.
 
 ## Screenshots
 
 `node scripts/screenshots.mjs` regenerates `docs/screenshots/` from a running app (needs Playwright).
+`node scripts/screenshots-sso.mjs` walks sign-in the same way, against an app started with `AUTH_MODE=oidc DEV_IDP=1`.

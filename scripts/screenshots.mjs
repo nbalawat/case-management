@@ -16,7 +16,8 @@ const as = async (who, client = 'meridian') => {
   await page.goto(base + '/')
   await page.evaluate(([w, c]) => { localStorage.setItem('tenant', c); if (w) localStorage.setItem(`persona:${c}`, w) }, [who, client])
 }
-const cases = await (await fetch(`${base}/api/cases?status=all`, { headers: { 'X-Tenant': 'meridian' } })).json()
+// Read as the auditor, who sees every case; most people now see only part of the book.
+const cases = await (await fetch(`${base}/api/cases?status=all`, { headers: { 'X-Tenant': 'meridian', 'X-Persona': 'audra' } })).json()
 const find = fn => cases.find(fn) ?? cases[0]
 
 await as('ivan')
@@ -87,6 +88,23 @@ for (const q of ['Draft a request to the customer', 'Why is this the recommendat
 }
 await page.locator('section.copilot').scrollIntoViewIfNeeded(); await page.waitForTimeout(300)
 await page.locator('section.copilot').screenshot({ path: `${out}21-copilot.png` })
+// Who sees what: a restricted case as someone cleared for it, restricting another, and an analyst's narrower view.
+const secret = find(c => c.restricted && c.open)
+await as('lena')
+await go(`/cases/${secret.id}`); await page.getByText('Restricted case.').waitFor(); await shot('22-restricted-case')
+await as('ivan')
+const before = errors.length
+await go(`/cases/${secret.id}`); await page.getByText('Case not found').waitFor()
+errors.length = before // the 404 is the point: for him the case does not exist
+await as('maya')
+await go(`/cases/${find(c => c.state === 'investigation' && c.owner === 'ivan').id}`)
+await page.getByRole('button', { name: 'Restrict…' }).click()
+await page.getByLabel('Why is this case restricted?').fill('The subject is related to a board member')
+await page.locator('.restrict-form').scrollIntoViewIfNeeded(); await page.screenshot({ path: `${out}23-restricting-a-case.png` })
+await page.getByRole('button', { name: 'Cancel' }).click()
+await as('ana')
+await go('/'); await page.getByText('You can see:').waitFor()
+await go('/cases'); await shot('24-cases-as-analyst')
 // A second client: different people, roles and workloads, and its own access policy to edit.
 await as('joy', 'kestrel')
 await go('/'); await shot('12-second-client-my-work')
