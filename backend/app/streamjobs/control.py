@@ -17,7 +17,7 @@ from ..domain.models import StreamJobRun, new_id, now
 from ..domain.personas import Persona
 from ..tenancy import tenant_of
 from . import flink, gateway
-from .jobs import JOBS, render
+from .jobs import JOBS, in_force, render
 
 PERMISSION = tuning.APPROVE
 
@@ -62,10 +62,10 @@ def _record(s: Session, job: str, action: str, persona: Persona, engine_job_id: 
 def _submit(s: Session, job: str, persona: Persona) -> StreamJobRun:
     """Render the job from the client's settings in force, make sure its topics exist, and hand it to the cluster."""
     tenant = tenant_of(s)
-    params, _on, _revision = tuning.current(s, JOBS[job].scenario)
+    params, _on = in_force(s, job)
     sql = render(job, tenant, params, settings.flink_kafka_bootstrap or None)
     _ensure_topics(tenant)
-    return _record(s, job, "started", persona, gateway.submit(sql), params)
+    return _record(s, job, "started", persona, gateway.submit(sql), JOBS[job].summary(params))
 
 
 def _ensure_topics(tenant_id: str) -> None:
@@ -131,7 +131,7 @@ def describe(s: Session, jobs: list[dict]) -> list[dict]:
     for j in jobs:
         run = starts.get(j["job"])
         ours = bool(run and j["engine_job_id"] and run.engine_job_id == j["engine_job_id"])
-        current = tuning.current(s, j["scenario"])[0] if ours else None
+        current = JOBS[j["job"]].summary(in_force(s, j["job"])[0]) if ours else None
         out.append(j | {"started_by": run.by if ours else None,
                         "settings_changed": bool(ours and current != run.params)})
     return out

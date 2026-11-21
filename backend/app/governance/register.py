@@ -14,12 +14,12 @@ from sqlalchemy.orm import Session
 
 from ..cases.case_types import library, load_case_types
 from ..detection.scenarios import describe
-from ..domain.models import (AccessPolicyVersion, AccessReview, AgentPolicyVersion, CodeList, Lookback, ScenarioVersion, ScreeningExemption, Watchlist,
-                             WorkflowVersion)
+from ..domain.models import (AccessPolicyVersion, AccessReview, AgentPolicyVersion, CodeList, DecisionVersion, FormVersion, Lookback, ScenarioVersion,
+                             ScreeningExemption, Watchlist, WorkflowVersion)
 from ..tenancy import tenant_of
 from ..visibility import system_work
 
-AREAS = ("Workflows", "Access", "Agents", "Detection", "Screening", "Reference lists")
+AREAS = ("Workflows", "Decisions", "Forms", "Access", "Agents", "Detection", "Screening", "Reference lists")
 
 
 def _entry(at: datetime, area: str, subject: str, what: str, by: str, second: str | None = None, note: str = "", link: str = "") -> dict:
@@ -33,6 +33,10 @@ def entries(s: Session, area: str | None = None, since: datetime | None = None) 
     out: list[dict] = []
     for w in s.scalars(select(WorkflowVersion)):
         out.append(_entry(w.published, "Workflows", types.get(w.case_type, {}).get("title", w.case_type), f"Version {w.version} published", w.published_by, note=w.note, link="/workflows"))
+    for d in s.scalars(select(DecisionVersion)):
+        out.append(_entry(d.published, "Decisions", d.table_id.replace("_", " ").capitalize(), f"Version {d.version} published", d.published_by, note=d.note, link="/decisions"))
+    for fv in s.scalars(select(FormVersion)):
+        out.append(_entry(fv.published, "Forms", fv.form_id.replace("_", " ").capitalize(), f"Version {fv.version} published", fv.published_by, note=fv.note, link="/forms"))
     for a in s.scalars(select(AccessPolicyVersion)):
         out.append(_entry(a.published, "Access", "Access policy", f"Version {a.version} published", a.published_by, note=a.note, link="/access"))
     for r in s.scalars(select(AccessReview)):
