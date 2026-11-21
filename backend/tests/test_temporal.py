@@ -501,22 +501,28 @@ def test_a_new_cases_briefing_runs_after_commit_on_a_worker(world):
 
 # ---- schedules
 
-def test_each_clients_sweep_and_pipelines_run_from_schedules(world):
+def test_each_clients_sweep_pipelines_and_regulator_answers_run_from_schedules(world):
     cid = new_case(world, "A", -5)
+    every = timedelta(seconds=2)
 
     async def go():
         base, (client,) = await clients(T)
-        assert await temporal.ensure_schedules(client, T, sweep_every=timedelta(seconds=2), pipelines_every=timedelta(seconds=2)) == {"sweep": True, "pipelines": True}
-        assert await temporal.ensure_schedules(client, T) == {"sweep": False, "pipelines": False}
+        made = await temporal.ensure_schedules(client, T, sweep_every=every, pipelines_every=every, answers_every=every)
+        assert made == {"sweep": True, "pipelines": True, "answers": True}
+        assert await temporal.ensure_schedules(client, T) == {"sweep": False, "pipelines": False, "answers": False}
         try:
             async with working(base, T):
                 await until(lambda: breach_count(world, cid))
 
-                async def pipelines_started() -> bool:
-                    return (await client.get_schedule_handle(temporal.pipelines_id(T)).describe()).info.num_actions >= 1
-                await until(pipelines_started)
+                async def ran(sid) -> bool:
+                    return (await client.get_schedule_handle(sid).describe()).info.num_actions >= 1
+                await until(lambda: ran(temporal.pipelines_id(T)))
+                await until(lambda: ran(temporal.answers_id(T)))
+                last = (await client.get_schedule_handle(temporal.answers_id(T)).describe()).info.recent_actions[-1].action
+                answered = await client.get_workflow_handle(last.workflow_id, run_id=last.first_execution_run_id).result()
+                assert "files" in answered or "skipped" in answered  # the inbox was read, or the reason it could not be
         finally:
-            for sid in (temporal.sweep_id(T), temporal.pipelines_id(T)):
+            for sid in (temporal.sweep_id(T), temporal.pipelines_id(T), temporal.answers_id(T)):
                 await client.get_schedule_handle(sid).delete()
     asyncio.run(go())
     assert breach_count(world, cid) == 1
@@ -537,13 +543,13 @@ def test_the_worker_adopts_cases_opened_anywhere_and_runs_steps_on_them(world):
             view = await asyncio.to_thread(step, world, cid, escalate(cid))
             assert view.state == "investigation"
             sched = [s.id async for s in await client.list_schedules()]
-            assert temporal.sweep_id(T) in sched and temporal.pipelines_id(T) in sched
+            assert {temporal.sweep_id(T), temporal.pipelines_id(T), temporal.answers_id(T)} <= set(sched)
         finally:
             stop.set()
             await asyncio.wait_for(task, timeout=30)
             for t in (T, OTHER):
                 c = await temporal.client_for(base, t)
-                for sid in (temporal.sweep_id(t), temporal.pipelines_id(t)):
+                for sid in (temporal.sweep_id(t), temporal.pipelines_id(t), temporal.answers_id(t)):
                     try:
                         await c.get_schedule_handle(sid).delete()
                     except Exception:  # noqa: BLE001
