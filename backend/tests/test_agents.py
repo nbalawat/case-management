@@ -665,9 +665,11 @@ def test_model_mode_is_off_unless_asked_for_and_never_used_for_seeding(client, m
     monkeypatch.setenv("AGENT_MODE", "model")
     monkeypatch.setenv("ASK_PROVIDER", "offline")
     assert model_mode.chat_model() is None  # asked for, but there is no model: rules
-    monkeypatch.setattr(model_mode, "resolve_provider", lambda: "anthropic")
-    monkeypatch.setattr(model_mode, "get_model", lambda: Scripted([]))
-    assert model_mode.chat_model().name == "scripted-model"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")  # configured, though nothing is called here
+    from app.ai import endpoints
+
+    endpoints.reload()
+    assert model_mode.chat_model().name == "anthropic:claude-opus-5-5"
     with model_mode.suspended():
         assert model_mode.chat_model() is None
     assert model_mode.chat_model() is not None
