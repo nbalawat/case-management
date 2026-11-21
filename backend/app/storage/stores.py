@@ -131,6 +131,18 @@ class FsspecStore:
             raise StorageError(f"Could not reach {self.url}: {_plain(e)}") from None
 
 
+    def delete(self, key: str) -> None:
+        path = self._path(key)
+        if not safe_key(key):
+            raise StorageError("An object needs a name")
+        try:
+            if self._fs.exists(path):
+                self._fs.rm(path)
+            self._fs.invalidate_cache(path.rsplit("/", 1)[0])
+        except Exception as e:
+            raise StorageError(f"Could not delete {self.url}{safe_key(key)}: {_plain(e)}") from None
+
+
 def _plain(e: Exception) -> str:
     text = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
     return text[:200]

@@ -824,6 +824,27 @@ class StreamStat(TenantScoped, Base):
     __table_args__ = (UniqueConstraint("tenant_id", "stream"),)
 
 
+class Offboarding(Base):
+    """What remains of a client after it leaves: who closed it, when, and the fingerprint of the export it was given.
+
+    A platform record, not tenant-scoped: the client's own rows are gone, and this is the provider's proof that they
+    were handed over and then removed.
+    """
+
+    __tablename__ = "offboarding"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    by: Mapped[str] = mapped_column(String(60))
+    at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    export_key: Mapped[str] = mapped_column(String(300))  # where the bundle was written, in the export store
+    export_sha256: Mapped[str] = mapped_column(String(64))
+    export_bytes: Mapped[int] = mapped_column(Integer)
+    rows_deleted: Mapped[dict] = mapped_column(JSON, default=dict)  # table -> rows
+    documents: Mapped[int] = mapped_column(Integer, default=0)  # documents made unreadable by destroying the key
+    key: Mapped[str] = mapped_column(String(200), default="")  # what happened to the client's key
+
+
 class ProviderStaff(Base):
     """A member of the platform provider's own staff. Not client data, so not tenant-scoped: it is the provider's directory.
 

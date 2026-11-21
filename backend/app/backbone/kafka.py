@@ -94,6 +94,24 @@ class KafkaBus:
         except ck.KafkaException as e:
             raise BusError(f"Kafka at {self._servers} cannot be reached: {e.args[0].str()}") from None
 
+    def delete_topics(self, names: Iterable[str]) -> int:
+        names = list(names)
+        if not names:
+            return 0
+        try:
+            futures = self._admin().delete_topics(names, operation_timeout=30)
+        except ck.KafkaException as e:
+            raise BusError(f"Kafka at {self._servers} cannot be reached: {e.args[0].str()}") from None
+        gone = 0
+        for name, fut in futures.items():
+            try:
+                fut.result(30)
+                gone += 1
+            except ck.KafkaException as e:
+                if e.args[0].code() != ck.KafkaError.UNKNOWN_TOPIC_OR_PART:
+                    raise BusError(f"Could not delete topic {name}: {e.args[0].str()}") from None
+        return gone
+
     def group_members(self, group: str) -> int | None:
         """How many consumers are in a group now, or None if the broker will not say."""
         try:

@@ -26,6 +26,9 @@ class SealedStore:
     def exists(self, key: str) -> bool:
         return self.inner.exists(key)
 
+    def delete(self, key: str) -> None:
+        self.inner.delete(key)
+
     def write(self, key: str, data: bytes) -> ObjectInfo:
         k = safe_key(key)
         return self.inner.write(k, keys.seal(self.keys, self.tenant, k, data))
