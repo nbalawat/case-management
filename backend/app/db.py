@@ -49,10 +49,16 @@ def init_db(eng=None) -> None:
 SCHEMA_VERSION = 16
 
 
-def ensure_schema(eng=None) -> None:
-    """Demo-grade migration: if the stored schema is older than the code, rebuild it. The seed then refills it.
+class SchemaMismatch(RuntimeError):
+    """The database was made by a different version of the application, and rebuilding it was not allowed."""
 
-    A real deployment uses versioned migrations; a demo database holds nothing worth migrating.
+
+def ensure_schema(eng=None) -> None:
+    """Demo-grade migration: if the stored schema differs from the code's, rebuild it. The seed then refills it.
+
+    That drops every table, so it only happens when SCHEMA_ON_MISMATCH=rebuild (the default, for demos). With
+    SCHEMA_ON_MISMATCH=refuse the application stops instead and the data is left alone. A real deployment needs
+    versioned migrations; there are none yet.
     """
     from sqlalchemy import inspect, text
 
@@ -61,6 +67,10 @@ def ensure_schema(eng=None) -> None:
         tables = inspect(conn).get_table_names()
         current = conn.execute(text("SELECT version FROM schema_version")).scalar() if "schema_version" in tables else None
         if tables and current != SCHEMA_VERSION:
+            if settings.schema_on_mismatch != "rebuild":
+                raise SchemaMismatch(
+                    f"This database holds schema version {current} and the application expects {SCHEMA_VERSION}. Nothing was changed. "
+                    "There are no in-place migrations yet: move the data, or set SCHEMA_ON_MISMATCH=rebuild to drop every table (demos only).")
             from .domain import models  # noqa: F401
 
             Base.metadata.drop_all(conn)

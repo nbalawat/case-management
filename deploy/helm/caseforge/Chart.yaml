@@ -1,0 +1,6 @@
+apiVersion: v2
+name: caseforge
+description: The CaseForge application tier (API and UI, backbone worker, durable worker) for one stamp. Data services are not included.
+type: application
+version: 0.1.0
+appVersion: "0.21.0"

@@ -1,0 +1,13 @@
+# Client cloud: the same stamp inside the client's own AWS, Azure or GCP account. Nothing here names a cloud:
+# storage is a URL, identity is the service account annotation the client's platform team supplies, and the image
+# comes from the client's registry.
+#   --set image.repository=<client registry>/caseforge
+#   --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=...        (AWS)
+#   --set serviceAccount.annotations."azure\.workload\.identity/client-id"=... (Azure)
+#   --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"=...    (GCP)
+api:
+  replicas: 2
+ingress:
+  enabled: true
+networkPolicy:
+  enabled: true

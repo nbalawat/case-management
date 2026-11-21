@@ -1,0 +1,114 @@
+# One release is one stamp: the application tier for one client (dedicated) or a pool of clients (SaaS).
+# The chart deploys the application only. Postgres, Kafka, OpenSearch, Temporal, Flink and object storage are
+# addressed by URL: run them with their own operators or use managed services. See README.md and modes/.
+
+image:
+  repository: caseforge
+  tag: ""            # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Secrets are never written into values. Name an existing Secret; every key in it becomes an environment variable.
+# It must hold DATABASE_URL, and may hold ANTHROPIC_API_KEY, KAFKA_CONFIG, SEARCH_CONFIG, GRAPH_URL, LAKE_CATALOG.
+existingSecret: ""
+
+publicUrl: http://localhost:8000
+
+api:
+  replicas: 2
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+# What a database holding an older schema does to a starting pod. `refuse` stops the pod with an explanation.
+# `rebuild` drops every table and starts again: it exists for demos and must never be used with real data.
+schemaOnMismatch: refuse
+
+# Demo clients and their synthetic data. Off for anything but a demo.
+demoTenants: false
+
+auth:
+  mode: oidc            # oidc | demo. Demo mode lets anyone pick any person; never expose it.
+  operatorIssuer: ""
+  operatorAudience: caseforge
+  operatorClaim: preferred_username
+
+eventBus:
+  url: ""               # kafka://broker:9092,broker2:9092. Empty: events wait in the outbox and no worker is deployed.
+  topicPrefix: caseforge
+  outboxPublisher: relay   # relay | debezium
+  worker:
+    replicas: 1
+    resources:
+      requests: {cpu: 250m, memory: 384Mi}
+      limits: {memory: 768Mi}
+
+search:
+  url: ""               # opensearch://host:9200. Empty: names are searched in the database.
+
+temporal:
+  url: ""               # temporal://host:7233. Empty: stage clocks are checked by the sweep and no worker is deployed.
+  namespace: default
+  taskQueue: caseforge
+  worker:
+    replicas: 2
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {memory: 512Mi}
+
+flink:
+  url: ""               # http://flink-jobmanager:8081. Read-only: shows job status on the Integrations page.
+
+storage:
+  evidenceUrl: ""       # s3://bucket/prefix, abfss://..., gs://... Required: pods keep nothing on local disk.
+  quarantineUrl: ""
+
+llm:
+  agentMode: rules      # rules | model
+  askProvider: auto
+  askModel: ""
+
+# Extra environment variables, as a map. For anything the chart has no value for.
+extraEnv: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}       # workload identity: eks.amazonaws.com/role-arn, azure.workload.identity/client-id, iam.gke.io/gcp-service-account
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  tlsSecretName: ""
+
+networkPolicy:
+  enabled: false        # when on: pods accept traffic only from the ingress namespace below, and only on the API port
+  ingressNamespace: ingress-nginx
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities: {drop: [ALL]}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -100,3 +100,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose --profile backbone --profile cdc --profile search --profile graph --profile durable --profile streaming config -q
+
+  helm:
+    name: Helm chart renders in every deployment mode
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint and render
+        working-directory: deploy/helm/caseforge
+        run: |
+          set -euo pipefail
+          ARGS="--set existingSecret=caseforge-secrets --set storage.evidenceUrl=s3://bucket/evidence --set ingress.host=cases.example.com"
+          helm lint . $ARGS
+          for mode in saas dedicated client-cloud air-gapped; do
+            helm template stamp . -f modes/$mode.yaml $ARGS --set eventBus.url=kafka://kafka:9092 --set temporal.url=temporal://temporal:7233 > /tmp/$mode.yaml
+            grep -c '^kind:' /tmp/$mode.yaml
+          done
+          # What the chart must refuse
+          refuse() { if helm template stamp . "$@" > /dev/null 2>&1; then echo "should have refused: $*"; exit 1; fi; }
+          refuse --set storage.evidenceUrl=s3://b/e
+          refuse --set existingSecret=s
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set schemaOnMismatch=rebuild
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set auth.mode=demo --set ingress.enabled=true --set ingress.host=h
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true
+          # And the least it must accept
+          helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e > /dev/null
+          helm template demo . --set existingSecret=s --set demoTenants=true --set schemaOnMismatch=rebuild --set auth.mode=demo > /dev/null

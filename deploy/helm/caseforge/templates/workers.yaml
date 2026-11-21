@@ -1,0 +1,53 @@
+{{- if .Values.eventBus.url }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "caseforge.name" . }}-worker
+  labels: {{- include "caseforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.eventBus.worker.replicas }}
+  selector:
+    matchLabels: {{- include "caseforge.selector" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels: {{- include "caseforge.labels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+      annotations:
+        checksum/env: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- include "caseforge.pod" . | nindent 6 }}
+      containers:
+        - name: worker
+          {{- include "caseforge.container" . | nindent 10 }}
+          command: ["uv", "run", "--no-dev", "python", "-m", "app.backbone.worker"]
+          resources: {{- toYaml .Values.eventBus.worker.resources | nindent 12 }}
+{{- end }}
+{{- if .Values.temporal.url }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "caseforge.name" . }}-durable
+  labels: {{- include "caseforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: durable
+spec:
+  replicas: {{ .Values.temporal.worker.replicas }}
+  selector:
+    matchLabels: {{- include "caseforge.selector" . | nindent 6 }}
+      app.kubernetes.io/component: durable
+  template:
+    metadata:
+      labels: {{- include "caseforge.labels" . | nindent 8 }}
+        app.kubernetes.io/component: durable
+      annotations:
+        checksum/env: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- include "caseforge.pod" . | nindent 6 }}
+      containers:
+        - name: durable
+          {{- include "caseforge.container" . | nindent 10 }}
+          command: ["uv", "run", "--no-dev", "python", "-m", "app.durable.worker"]
+          resources: {{- toYaml .Values.temporal.worker.resources | nindent 12 }}
+{{- end }}
