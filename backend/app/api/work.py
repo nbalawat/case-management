@@ -12,7 +12,8 @@ from ..cases import assignments, requests, restriction
 from ..cases.case_types import load_case_types
 from ..domain.access import RESTRICT, RESTRICTED_VIEW
 from ..cases.qa import QA_CASE_TYPE
-from ..cases.service import TransitionError, set_task
+from ..cases.service import TransitionError
+from ..workflow import Action, engine
 from ..cases.timers import run_timers
 from ..domain.models import Case, InfoRequest, now
 from ..domain.personas import Persona
@@ -139,7 +140,7 @@ class TaskIn(BaseModel):
 
 @router.post("/cases/{case_id}/tasks/{task_id}")
 def post_task(case_id: str, task_id: str, body: TaskIn, s: Session = Depends(get_session), p: Persona = Depends(require("work"))):
-    _guard(set_task, s, get_case_or_404(s, case_id), task_id, p, body.done)
+    _guard(engine().perform, s, get_case_or_404(s, case_id), p, Action("task", p.id, task_id=task_id, done=body.done))
     return {"ok": True}
 
 

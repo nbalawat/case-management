@@ -70,6 +70,14 @@ def clocks_by_client() -> dict[str, list[Clock]]:
     return out
 
 
+def sweep_one(tenant_id: str) -> dict:
+    """The periodic sweep for one client, in one transaction."""
+    from ..db import session_scope
+
+    with session_scope(tenant_id) as s:
+        return run_timers(s)
+
+
 def sweep_all() -> dict[str, dict]:
     """The whole periodic sweep for every live client, one transaction per client."""
     from ..db import session_scope

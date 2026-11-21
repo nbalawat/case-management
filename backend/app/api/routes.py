@@ -10,7 +10,8 @@ from ..agents.investigator import investigate
 from ..alerts.hub import ingest_external_alert, route_alerts
 from ..cases.assignments import can_claim
 from ..cases.requests import RECIPIENTS
-from ..cases.service import TransitionError, allowed_transitions, definition, facts, record, save_narrative, stage_tasks, transition
+from ..workflow import Action, engine
+from ..cases.service import TransitionError, allowed_transitions, definition, facts, record, save_narrative, stage_tasks
 from ..config import settings
 from ..db import session_scope
 from ..detection.engine import run_detection
@@ -139,10 +140,10 @@ class TransitionIn(BaseModel):
 def post_transition(case_id: str, body: TransitionIn, s: Session = Depends(get_session), p: Persona = Depends(actor)):
     c = _get_case(s, case_id)
     try:
-        transition(s, c, body.to, p, body.note, reason=body.reason)
+        view = engine().perform(s, c, p, Action("transition", p.id, to=body.to, note=body.note, reason=body.reason))
     except TransitionError as e:
         raise HTTPException(409, str(e)) from e
-    return {"ok": True, "state": c.state}
+    return {"ok": True, "state": view.state}
 
 
 class NarrativeIn(BaseModel):
