@@ -21,7 +21,7 @@ def test_every_client_starts_with_its_own_sources_and_files_waiting(client):
     seen = set()
     for t in CLIENTS:
         o = _overview(client, t)
-        assert [x["dataset"] for x in o["sources"]] == ["customers", "accounts", "transactions"]  # dependency order
+        assert [x["dataset"] for x in o["sources"]] == ["customers", "identifiers", "accounts", "transactions"]  # dependency order
         assert all(x["reachable"] and x["waiting"] > 0 and x["waiting"] == x["objects"] for x in o["sources"])
         assert o["runs"] == [] and [loc["id"] for loc in o["locations"]] == ["landing"]
         assert all(str(settings.lake_dir / t) in x["location"] for x in o["sources"])
@@ -81,7 +81,9 @@ def test_running_the_batch_loads_one_client_and_leaves_the_others_untouched(clie
     assert all(r["started_by"] == next(p["name"] for p in PEOPLE[tenant]["people"] if p["id"] == who) for r in runs)
 
     after = _overview(client, tenant)
-    assert len(after["runs"]) == 3
+    assert len(after["runs"]) == 4
+    ids = by["Core banking customer identifiers"]["stats"]
+    assert ids["loaded"] == 40 and ids["rejected"] == 1  # the SSN with too few digits
     assert sum(x["waiting"] for x in after["sources"]) == 0  # the held file is not retried until it is replaced
     for other in (t for t in CLIENTS if t != tenant):
         o = _overview(client, other)
