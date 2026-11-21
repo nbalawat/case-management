@@ -6,5 +6,9 @@
 *.tfplan
 tfplan
 crash.log
-# Lock files are committed for root stacks only, once generated with `make infra-lock`.
+# Lock files belong in git for the root stacks only, generated with `make infra-lock` against the OpenTofu registry.
+# Until that has been run from a machine that reaches the registry, the stacks' lock files are ignored too: one
+# written from a local provider mirror records checksums the registry's packages do not match. Then delete the
+# second line below and commit them.
 modules/**/.terraform.lock.hcl
+stacks/**/.terraform.lock.hcl
