@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { fmtMoney } from '../api'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
+import PageTabs from '../components/layout/PageTabs'
 import { Clock, type Dispute } from '../components/DisputesCard'
 import { holdWhat, type Hold } from '../components/HoldsCard'
 
@@ -55,19 +56,8 @@ export default function Fraud() {
         <Kpi label="Recovery not yet sent" value={s.recovery_open} sub="with a network deadline running" bad={s.recovery_open > 0} />
         <Kpi label="Losses on closed disputes" value={fmtMoney(s.loss)} sub={s.recovery_rate === null ? 'nothing closed yet' : `${Math.round(s.recovery_rate * 100)}% of credits recovered`} />
       </div>
-      <div className="cols-2">
-        <Card title="Where the money went, by cause">{s.by_reason.length === 0 ? <p className="empty">No disputes yet.</p> : <ByReason rows={s.by_reason} />}</Card>
-        <Card title={`Frozen now (${data.holds.length})`}>
-          {data.holds.length === 0 ? <p className="empty">Nothing is on hold for fraud.</p> : (
-            <table><thead><tr><th>What</th><th>Why</th><th>Step-up check</th><th>Case</th></tr></thead>
-              <tbody>{data.holds.map(h => <tr key={h.id}>
-                <td><b>{holdWhat(h)}</b><div className="muted small"><Link to={`/customers/${h.party_id}`}>{h.party_id}</Link></div></td>
-                <td>{h.reason}{h.overdue && <Pill tone="critical">Review overdue</Pill>}</td>
-                <td>{h.challenge ? <Pill tone={h.challenge.status === 'passed' ? 'good' : h.challenge.status === 'failed' ? 'critical' : 'warning'}>{h.challenge.status === 'sent' ? 'Waiting for the customer' : h.challenge.status === 'passed' ? 'Passed' : 'Failed'}</Pill> : <span className="muted">Not sent</span>}</td>
-                <td><Link to={`/cases/${h.case_id}`}>{h.case_id}</Link></td>
-              </tr>)}</tbody></table>)}
-        </Card>
-      </div>
+      <PageTabs label="Fraud desk" tabs={[
+        { id: 'open', label: 'Open disputes', count: open.length, alert: s.credit_overdue > 0, content: <>
       <Card title={`Open disputes (${open.length})`}>
         {open.length === 0 ? <p className="empty">None open.</p> : (
           <div className="scroll"><table><thead><tr><th>Dispute</th><th>Stage</th><th>Customer credit</th><th>Recovery</th><th>Resolution</th><th>Case</th></tr></thead>
@@ -80,6 +70,20 @@ export default function Fraud() {
               <td><Link to={`/cases/${d.case_id}`}>{d.case_id}</Link></td>
             </tr>)}</tbody></table></div>)}
       </Card>
+        </> },
+        { id: 'frozen', label: 'Frozen accounts', count: data.holds.length, alert: data.holds.some(h => h.overdue), content: <>
+        <Card title={`Frozen now (${data.holds.length})`}>
+          {data.holds.length === 0 ? <p className="empty">Nothing is on hold for fraud.</p> : (
+            <table><thead><tr><th>What</th><th>Why</th><th>Step-up check</th><th>Case</th></tr></thead>
+              <tbody>{data.holds.map(h => <tr key={h.id}>
+                <td><b>{holdWhat(h)}</b><div className="muted small"><Link to={`/customers/${h.party_id}`}>{h.party_id}</Link></div></td>
+                <td>{h.reason}{h.overdue && <Pill tone="critical">Review overdue</Pill>}</td>
+                <td>{h.challenge ? <Pill tone={h.challenge.status === 'passed' ? 'good' : h.challenge.status === 'failed' ? 'critical' : 'warning'}>{h.challenge.status === 'sent' ? 'Waiting for the customer' : h.challenge.status === 'passed' ? 'Passed' : 'Failed'}</Pill> : <span className="muted">Not sent</span>}</td>
+                <td><Link to={`/cases/${h.case_id}`}>{h.case_id}</Link></td>
+              </tr>)}</tbody></table>)}
+        </Card>
+        </> },
+        { id: 'closed', label: 'Closed disputes', count: closed.length, content: <>
       <Card title={`Closed disputes (${closed.length})`}>
         {closed.length === 0 ? <p className="empty">None closed.</p> : (
           <div className="scroll"><table><thead><tr><th>Dispute</th><th>Outcome</th><th className="num">Credited</th><th className="num">Recovered</th><th className="num">Loss</th><th>Case</th></tr></thead>
@@ -90,6 +94,11 @@ export default function Fraud() {
               <td><Link to={`/cases/${d.case_id}`}>{d.case_id}</Link></td>
             </tr>)}</tbody></table></div>)}
       </Card>
+        </> },
+        { id: 'losses', label: 'Losses by cause', content: <>
+        <Card title="Where the money went, by cause">{s.by_reason.length === 0 ? <p className="empty">No disputes yet.</p> : <ByReason rows={s.by_reason} />}</Card>
+        </> },
+      ]} />
     </>
   )
 }

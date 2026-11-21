@@ -4,6 +4,7 @@ import { api, fmtDateTime, fmtMoney } from '../api'
 import { useApi } from '../useApi'
 import { useNameOf, usePeople } from '../App'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
+import PageTabs from '../components/layout/PageTabs'
 import { Flags } from './Customer'
 
 type Ref = { kind: 'customer' | 'counterparty'; id: string }
@@ -50,6 +51,8 @@ export default function Entities() {
         <Kpi label="Waiting for a decision" value={c.open} bad={c.open > 0} />
         <Kpi label="Decided by people" value={c.decided} />
       </div>
+      <PageTabs label="Entities" tabs={[
+        { id: 'questions', label: 'Questions for a person', count: c.open, alert: c.open > 0, content: <>
       <Card title="Questions for a person" action={
         <select value={kind} onChange={e => setKind(e.target.value)} aria-label="Kind of question">
           <option value="all">All questions</option>{kinds.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
@@ -70,25 +73,31 @@ export default function Entities() {
               </tr>))}</tbody>
           </table></div>)}
       </Card>
-      <div className="cols-2">
+        </> },
+        { id: 'merged', label: 'Merged automatically', count: data.merged.length, content: <>
         <Card title="Merged without a person">
           <table><thead><tr><th>Counterparty</th><th>Spellings found on payments</th><th className="num">Customers</th></tr></thead>
             <tbody>{data.merged.map(m => <tr key={m.id}><td><Link to={`/counterparties/${m.id}`}><b>{m.name}</b></Link><div><Flags flags={m.flags} /></div></td>
               <td>{m.aliases.map(a => <div key={a.name}>{a.name} <span className="muted small">{a.how === 'main spelling' ? '' : a.how}</span></div>)}</td><td className="num">{m.customers}</td></tr>)}</tbody></table>
         </Card>
+        </> },
+        { id: 'flagged', label: 'Flagged counterparties', count: data.flagged.length, content: <>
         <Card title="Flagged counterparties">
           <table><thead><tr><th>Counterparty</th><th>Countries</th><th className="num">Customers</th><th className="num">Total value</th></tr></thead>
             <tbody>{data.flagged.map(f => <tr key={f.id}><td><Link to={`/counterparties/${f.id}`}><b>{f.name}</b></Link><div><Flags flags={f.flags} /></div></td>
               <td>{f.countries.join(', ')}</td><td className="num">{f.customers}</td><td className="num">{fmtMoney(f.total)}</td></tr>)}</tbody></table>
         </Card>
-      </div>
-      {data.decided.length > 0 && <Card title="Decisions on record">
+        </> },
+        { id: 'decided', label: 'Decisions on record', count: data.decided.length, content: <>
+      <Card title="Decisions on record">{data.decided.length === 0 && <p className="empty">No decisions yet.</p>}
         <table><thead><tr><th>Question</th><th>This</th><th>And this</th><th>Decision</th><th>By</th><th>When</th></tr></thead>
           <tbody>{data.decided.map(q => <tr key={q.id}><td>{q.question}</td><td>{q.left}</td><td>{q.right}</td>
             <td><Pill tone={q.status === 'same' ? 'good' : 'neutral'}>{q.status === 'same' ? 'Same' : 'Different'}</Pill>{q.note}</td>
             <td>{nameOf(q.decided_by)}</td><td>{q.decided_at ? fmtDateTime(q.decided_at) : ''}</td></tr>)}</tbody></table>
         <p className="muted small">A decision is remembered by name, so it holds when new data arrives and the network is rebuilt.</p>
-      </Card>}
+      </Card>
+        </> },
+      ]} />
     </>
   )
 }

@@ -95,6 +95,12 @@ filters the API understands). The filters a dashboard set show as chips on the l
 management report does the same for months. Charts are drawn with Apache ECharts, coloured from the page's own
 tokens so they follow light and dark, and each has its figures as a table underneath.
 
+**Desks.** KYC, Sanctions, Fraud, Entities and Detection tuning are split into tabs, each with a count and a red
+mark when something there is overdue or waiting on a second person; the tab is in the address (`/kyc?tab=approvals`)
+and the headline tiles open the matching tab. Loading sanctions list versions and editing the client's own list
+moved from the Sanctions desk to Administration, under Screening lists; the desk keeps a read-only view of the
+lists in force.
+
 1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
    his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
 2. **An investigation, still as Ivan.** Open a case in *Investigation*. The agent briefing is on the left with

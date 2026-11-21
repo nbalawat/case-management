@@ -56,3 +56,4 @@
 
 textarea.narrative { width: 100%; font-size: 14px; line-height: 1.55; }
 .decision-rail .actions { margin-top: 12px; }
+.page-tabs > [role=tablist] { margin-bottom: 14px; }
