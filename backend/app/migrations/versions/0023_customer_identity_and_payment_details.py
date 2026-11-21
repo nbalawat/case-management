@@ -1,13 +1,13 @@
 """customer identity and payment details
 
-Revision: 0022
+Revision: 0023
 Follows: 0021
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = '0022'
+revision = '0023'
 down_revision = '0021'
 branch_labels = None
 depends_on = None
