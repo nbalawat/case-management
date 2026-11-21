@@ -237,7 +237,7 @@ def test_each_person_is_decided_by_someone_else_with_reasons_where_it_matters(s)
 
 def test_a_review_closes_only_when_everyone_is_decided(s):
     review = recert.start(s, MAYA, "Second quarter review")
-    with pytest.raises(RecertError, match=r"12 people are not yet decided: .*…"):
+    with pytest.raises(RecertError, match=r"14 people are not yet decided: .*…"):
         recert.close(s, review.id, MAYA)
     for i in review.items:
         recert.decide(s, review.id, i["person"], "keep", "Checked with the line manager.", HUGO if i["person"] == "maya" else MAYA)
@@ -260,7 +260,7 @@ def test_what_a_review_asked_for_stays_outstanding_until_the_policy_shows_it(s, 
         recert.decide(s, review.id, i["person"], decision, "Checked with the line manager; see the ticket.", who)
     recert.close(s, review.id, MAYA)
     row = recert.row(s, review)
-    assert (row["people"], row["decided"], row["changes"], row["outstanding"]) == (12, 12, 2, 2)
+    assert (row["people"], row["decided"], row["changes"], row["outstanding"]) == (14, 14, 2, 2)
     done = {i["person"]: i["done"] for i in row["items"]}
     assert done["ivan"] is False and done["fran"] is False and done["ana"] is None
     from dataclasses import replace
@@ -273,7 +273,7 @@ def test_what_a_review_asked_for_stays_outstanding_until_the_policy_shows_it(s, 
 
 def test_the_view_says_what_a_new_review_would_find(s):
     view = recert.view(s, MAYA)
-    assert view["reviews"] == [] and view["can_certify"] and view["current"]["people"] == 12 and view["current"]["flagged"] > 0
+    assert view["reviews"] == [] and view["can_certify"] and view["current"]["people"] == 14 and view["current"]["flagged"] > 0
     assert not recert.view(s, OMAR)["can_certify"] and not recert.view(s, AUDRA)["can_certify"]
     recert.start(s, MAYA, "Second quarter review", at=now() - timedelta(days=30))
     view = recert.view(s, MAYA)
@@ -385,8 +385,8 @@ def test_the_demo_register_and_last_review(client):
     assert {"Access", "Detection", "Screening", "Reference lists"} <= {e["area"] for e in g["register"]} and g["areas"][0] == "Workflows"
     assert any(e["second"] for e in g["register"])  # at least one change shows its second person
     (review,) = g["access"]["reviews"]
-    assert review["status"] == "closed" and review["decided"] == review["people"] == 12 and review["changes"] == 1 and review["outstanding"] == 1
-    assert g["access"]["can_certify"] and g["access"]["current"]["people"] == 12
+    assert review["status"] == "closed" and review["decided"] == review["people"] == 14 and review["changes"] == 1 and review["outstanding"] == 1
+    assert g["access"]["can_certify"] and g["access"]["current"]["people"] == 14
     assert not client.get("/api/governance", headers=h("meridian", "tara")).json()["access"]["can_certify"]
     assert client.get("/api/governance", headers=h("kestrel", next(p for t, p in EVERYONE if t == "kestrel" and "view_team" in _permissions(t, p)))).json()["access"]["reviews"] == []
 

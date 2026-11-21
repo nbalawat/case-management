@@ -156,6 +156,18 @@ class Settings:
     # Bring the database to the newest migration when the application starts. Off where a separate step migrates
     # (the Helm chart): the application then refuses to start against a database that is behind.
     migrate_on_start: bool = os.getenv("MIGRATE_ON_START", "1") == "1"
+    # The public API (/api/v1). Credentials are stored as keyed hashes and webhook signing secrets are encrypted at rest,
+    # both under API_SECRET_KEY. Set it from the deployment's secret store; the default exists for laptops and tests only.
+    api_secret_key: str = os.getenv("API_SECRET_KEY", "")
+    api_token_ttl: int = int(os.getenv("API_TOKEN_TTL", "900"))  # seconds an access token lives; clients may ask for less
+    api_rate_limit: int = int(os.getenv("API_RATE_LIMIT", "600"))  # default requests per minute for one API client
+    api_tenant_rate_limit: int = int(os.getenv("API_TENANT_RATE_LIMIT", "3000"))  # requests per minute for all of one client's apps
+    api_max_body: int = int(os.getenv("API_MAX_BODY", str(2 * 1024 * 1024)))  # bytes
+    api_call_keep_days: int = int(os.getenv("API_CALL_KEEP_DAYS", "30"))
+    # Deliver webhooks from inside the API process (one process only). A deployment runs `python -m app.public.webhooks.worker`.
+    webhook_workers: bool = os.getenv("WEBHOOK_WORKERS", "0") == "1"
+    # Webhooks go to public https addresses only. 1 also allows http and private addresses, for a laptop receiver.
+    webhook_allow_private: bool = os.getenv("WEBHOOK_ALLOW_PRIVATE", "0") == "1"
     # Postgres only. The role every request's transaction runs as (SET LOCAL ROLE), so that row-level security binds
     # it even when DATABASE_URL names the tables' owner or a superuser, which RLS would otherwise let through. The
     # application creates the role (no login, no superuser, no BYPASSRLS) and grants it the tables. Empty: requests run

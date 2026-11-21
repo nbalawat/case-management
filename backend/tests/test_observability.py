@@ -133,3 +133,25 @@ def test_with_a_metrics_port_the_api_does_not_serve_metrics_itself(client, monke
     assert client.get("/metrics").status_code == 404
     monkeypatch.delenv("METRICS_PORT")
     assert client.get("/metrics").status_code == 200
+
+
+def test_a_second_process_on_a_taken_metrics_port_works_on_without_metrics(monkeypatch, caplog):
+    """Two workers in one container both read METRICS_PORT; the second must start anyway, and say why it serves none."""
+    import errno
+    import prometheus_client
+
+    def taken(port, registry=None):
+        raise OSError(errno.EADDRINUSE, "Address already in use")
+
+    monkeypatch.setattr(prometheus_client, "start_http_server", taken)
+    monkeypatch.setattr(metrics, "_serving", None)
+    with caplog.at_level(logging.WARNING, logger="caseforge.metrics"):
+        assert metrics.serve(9100) is False
+    assert any("METRICS_PORT" in r.getMessage() for r in caplog.records)
+
+    def broken(port, registry=None):
+        raise OSError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(prometheus_client, "start_http_server", broken)
+    with pytest.raises(OSError):  # anything else is still a real failure
+        metrics.serve(80)

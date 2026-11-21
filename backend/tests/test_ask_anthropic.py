@@ -132,7 +132,7 @@ def test_full_answer_loop_through_the_adapter(s):
     assert out["status"] == "answered" and [c["id"] for c in out["cited"]] == [C[2]] and out["unverified"] == []
     assert out["provider"] == "anthropic:claude-opus-5-5" and out["usage"] == {"input_tokens": 200, "output_tokens": 40}
     offered = {t["name"] for t in stub.requests[0]["tools"]}
-    assert offered == {"breakdown", "list_cases", "list_records", "record", "calculate", "case_detail", "customer"}  # ana does not hold the team view
+    assert offered == {"breakdown", "list_cases", "list_records", "record", "calculate", "case_detail", "customer", "policy_search"}  # ana does not hold the team view
     result = stub.requests[1]["messages"][-1]["content"][0]
     assert result["tool_use_id"] == "tu_1" and C[2] in result["content"] and "is_error" not in result
     assert stub.requests[0]["system"][0]["text"] == service.INSTRUCTIONS

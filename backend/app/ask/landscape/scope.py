@@ -1,10 +1,10 @@
 """What one person may see, beyond cases: customers, transactions and every record that hangs off a case.
 
-Cases follow the platform's visibility rules (app/visibility.py). For everything else Ask applies one rule here,
-until the access layer filters customers and transactions itself:
+Cases follow the platform's visibility rules (app/visibility.py). For everything else Ask applies one rule here:
 
-  * a person whose roles see every case sees every customer and their transactions and accounts;
-  * a person whose roles are limited sees only customers on cases or alerts they can see;
+  * a person whose roles see every case sees every customer and their transactions and accounts, except that
+    customer reach by attribute (booking jurisdiction, segment, a relationship manager's own book) always holds;
+  * a person whose roles are limited sees only customers on cases or alerts they can see, within that same reach;
   * alerts, holds, disputes, filings, KYC triggers, evidence and agent work follow their case; a record with no
     case (a CTR, an alert still in intake) follows its customer;
   * figures derived from cases ("has a SAR", "open cases") count only cases the person can see, so a restricted
@@ -20,7 +20,7 @@ from sqlalchemy import false, or_, select, true, union
 from sqlalchemy.orm import Session
 
 from ...domain.access import Persona
-from ...visibility import Viewer, viewer_of, visible_ids
+from ...visibility import Viewer, viewer_of, visible_ids, visible_party_ids
 
 
 @dataclass
@@ -39,7 +39,7 @@ class Scope:
 
     @property
     def sees_every_customer(self) -> bool:
-        return self.viewer.views is None
+        return self.viewer.views is None and self.viewer.customers is None
 
     def cases(self):
         """A subquery of the case ids this person may see."""
@@ -57,9 +57,15 @@ class Scope:
         if self._parties is None:
             from ...domain.models import Alert, Case
 
-            on_cases = select(Case.party_id).where(Case.id.in_(self.cases()))
-            on_alerts = select(Alert.party_id).where(or_(Alert.case_id.is_(None), Alert.case_id.in_(self.cases())))
-            self._parties = union(on_cases, on_alerts).subquery()
+            reach = visible_party_ids(self.s, self.viewer) if self.viewer.customers is not None else None
+            if self.viewer.views is None:
+                self._parties = reach.subquery()
+            else:
+                on_cases = select(Case.party_id).where(Case.id.in_(self.cases()))
+                on_alerts = select(Alert.party_id).where(or_(Alert.case_id.is_(None), Alert.case_id.in_(self.cases())))
+                if reach is not None:
+                    on_alerts = on_alerts.where(Alert.party_id.in_(reach))  # cases already respect reach
+                self._parties = union(on_cases, on_alerts).subquery()
         return self._parties
 
     def party_ok(self, party_col):

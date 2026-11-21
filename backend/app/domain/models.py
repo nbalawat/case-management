@@ -88,9 +88,9 @@ class Party(TenantKeyed, Base):
     phone: Mapped[str] = mapped_column(String(40), default="")
     email: Mapped[str] = mapped_column(String(200), default="")
     # How the client looks after the relationship; attribute-based access rules read these.
-    segment: Mapped[str] = mapped_column(String(30), default="retail")  # retail | business | private | correspondent | ...
+    segment: Mapped[str] = mapped_column(String(30), default="retail", index=True)  # retail | business | private | correspondent | ...
     booking_jurisdiction: Mapped[str | None] = mapped_column(String(2), nullable=True)  # where the relationship is booked
-    relationship_manager: Mapped[str | None] = mapped_column(String(40), nullable=True)  # a person id at the client
+    relationship_manager: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)  # a person id at the client
     accounts: Mapped[list["Account"]] = relationship(back_populates="party")
     identifiers: Mapped[list["PartyIdentifier"]] = relationship(back_populates="party", order_by="PartyIdentifier.kind",
                                                                 cascade="all, delete-orphan")
@@ -1002,5 +1002,28 @@ class FormSubmission(TenantScoped, Base):
     __table_args__ = (UniqueConstraint("tenant_id", "case_id", "form_id"),)
 
 
+class AccessGrant(TenantScoped, Base):
+    """Break-glass: one person, one case or customer they could not otherwise see, for a stated reason, for a few hours.
+
+    The visibility filter reads live grants. Every grant waits for someone else to review it afterwards.
+    """
+
+    __tablename__ = "access_grant"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    person: Mapped[str] = mapped_column(String(60), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # case | customer
+    target: Mapped[str] = mapped_column(String(40), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    opened: Mapped[datetime] = mapped_column(DateTime, default=now)
+    ends: Mapped[datetime] = mapped_column(DateTime, index=True)
+    closed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # ended early by the person
+    review: Mapped[str | None] = mapped_column(String(20), nullable=True)  # justified | not_justified
+    reviewed_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    reviewed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    review_note: Mapped[str] = mapped_column(Text, default="")
+
+
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox
 from ..ai import usage as _ai_usage  # noqa: E402,F401  registers the model usage table
+
+from ..public import models as _public  # noqa: E402,F401  the public API's tables

@@ -16,7 +16,7 @@ const groups = (ctx: ReturnType<typeof shellContext>) => menuFor(ctx).map(g => g
 
 describe('role-shaped menu', () => {
   it('gives an analyst their work and their desks, and nothing to configure', () => {
-    expect(labels(analyst)).toEqual(['My work', 'Cases', 'Alert intake', 'Sanctions', 'Ask', 'Entities'])
+    expect(labels(analyst)).toEqual(['My work', 'Cases', 'Alert intake', 'Sanctions', 'Ask', 'Knowledge library', 'Entities'])
     expect(groups(analyst)).not.toContain('admin')
     expect(groups(analyst)).not.toContain('oversight')
   })

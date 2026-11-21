@@ -155,6 +155,20 @@ policy says what they may do.
 | `AGENT_MODE` | `rules` | `model` runs specialist agents as tool loops on the model, rules as fallback |
 | `LLM_PROVIDER` | `mock` | The provider behind agent drafting |
 
+## Public API
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `API_SECRET_KEY` | empty (development key; refused under real sign-in) | Keys credential hashes and webhook secret encryption. 32+ characters, from the secret store |
+| `API_TOKEN_TTL` | `900` | Access token lifetime, seconds |
+| `API_RATE_LIMIT`, `API_TENANT_RATE_LIMIT` | `600`, `3000` | Requests a minute per application, per client |
+| `API_MAX_BODY` | `2097152` | Largest request body, bytes |
+| `API_CALL_KEEP_DAYS` | `30` | How long the call record is kept |
+| `WEBHOOK_WORKERS` | `0` | Deliver webhooks inside the API process (one process only) |
+| `WEBHOOK_ALLOW_PRIVATE` | `0` | Allow http and private webhook addresses, for a laptop receiver |
+
+See [public-api.md](public-api.md).
+
 ## Helm values
 
 The chart maps these onto values (`eventBus.url`, `search.url`, `temporal.url`, `flink.url`, `storage.evidenceUrl`,

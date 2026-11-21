@@ -76,9 +76,14 @@ class _Pump:
             self.sink = LakeSink(bus, store)
 
     def __call__(self) -> None:
-        self.stream.step(max_messages=1_000, timeout=0.2)
-        if self.sink is not None:
-            self.sink.step(max_messages=5_000, timeout=0.05)
+        # As the worker does: a step that fails goes back to the last commit and is tried again on the next call.
+        for part, kw in ((self.stream, {"max_messages": 1_000, "timeout": 0.2}), (self.sink, {"max_messages": 5_000, "timeout": 0.05})):
+            if part is None:
+                continue
+            try:
+                part.step(**kw)
+            except Exception:  # noqa: BLE001
+                log.warning("A consumer step failed during the load test; it is retried from the last commit", exc_info=True)
 
     def close(self) -> None:
         self.stream.close()
@@ -126,11 +131,15 @@ def run(plan: Plan, *, bus=None, store=None, query_engine=None) -> Outcome:
         sender.start()
     t_consume = time.perf_counter() if pump is not None else t_publish
 
-    def received() -> int:
-        return stages.stream_totals(plan.tenant)["received"] - before["received"]
+    def settled() -> int:
+        # Loaded or set aside, not merely received: after a rebalance a consumer can be handed messages another one
+        # already loaded, and those come back as duplicates. Counting them would end the wait before every payment
+        # is in. The generated payments are all distinct, so loaded plus rejected reaches the total exactly once.
+        now_ = stages.stream_totals(plan.tenant)
+        return (now_["loaded"] - before["loaded"]) + (now_["rejected"] - before["rejected"])
 
     try:
-        consumed = stages.wait_for("stream", plan.transactions, received, pump=pump, started=t_consume, stall_seconds=plan.stall_seconds)
+        consumed = stages.wait_for("stream", plan.transactions, settled, pump=pump, started=t_consume, stall_seconds=plan.stall_seconds)
         if pump is None:
             sender.join()
             out.append(result[0])

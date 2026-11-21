@@ -66,9 +66,12 @@ class LakeSink:
             self._pending = []
             return done
         except Exception:
-            sub, self._sub = self._sub, None  # start again from the last commit; the table's own marks prevent repeats
-            self._pending = []
-            sub.close()
+            self._pending = []  # start again from the last commit; the table's own marks prevent repeats
+            try:
+                self._sub.rewind()  # in place, so the group does not rebalance
+            except Exception:  # noqa: BLE001
+                sub, self._sub = self._sub, None
+                sub.close()
             raise
 
     def _write(self, messages: list[Message]) -> dict[tuple[str, str], Written]:

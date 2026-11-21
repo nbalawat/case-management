@@ -36,6 +36,11 @@ class Subscription(Protocol):
         """Everything returned by poll so far has been dealt with."""
         ...
 
+    def rewind(self) -> None:
+        """Go back to the last commit, keeping this member in its group: the next poll returns what was read since
+        then again. Leaving and rejoining would do the same, but makes every member of the group rebalance."""
+        ...
+
     def close(self) -> None: ...
 
 
@@ -133,6 +138,9 @@ class MemorySubscription:
         with self._bus._lock:
             for name, at in self._position.items():
                 self._bus._committed[(self._group, name)] = at
+
+    def rewind(self) -> None:
+        self._position.clear()
 
     def close(self) -> None:
         self._position.clear()
