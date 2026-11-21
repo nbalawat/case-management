@@ -1,8 +1,8 @@
 """Runs each client's due pipelines on a timer, inside the application process.
 
 This is the laptop stand-in for an orchestrator. It is off unless PIPELINE_SCHEDULER=1, and it must run in
-exactly one process: with several API workers, leave it off and call `POST /api/data/run` with due_only from
-whatever scheduler the deployment already has.
+exactly one process. On Temporal (WORKFLOW_ENGINE=temporal) leave it off: the durable worker keeps a schedule per
+client that calls `tick_one`, once per interval however many workers and API replicas there are.
 """
 from __future__ import annotations
 
@@ -15,6 +15,14 @@ from . import pipeline
 
 log = logging.getLogger("caseforge.pipelines")
 INTERVAL_SECONDS = 60
+
+
+def tick_one(tenant_id: str) -> int:
+    """Start one client's due pipelines. Temporal's pipeline schedule calls this, one client per workflow."""
+    with session_scope(tenant_id) as s:
+        runs = pipeline.run_due(s)
+        s.commit()
+    return len(runs)
 
 
 def tick() -> dict[str, int]:

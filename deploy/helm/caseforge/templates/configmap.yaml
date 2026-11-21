@@ -21,6 +21,10 @@ data:
   SEARCH_URL: {{ .Values.search.url | quote }}
   TEMPORAL_URL: {{ .Values.temporal.url | quote }}
   TEMPORAL_NAMESPACE: {{ .Values.temporal.namespace | quote }}
+  WORKFLOW_ENGINE: {{ .Values.temporal.engine | quote }}
+  TEMPORAL_NAMESPACE_MODE: {{ .Values.temporal.namespaceMode | quote }}
+  TEMPORAL_NAMESPACE_PREFIX: {{ .Values.temporal.namespacePrefix | quote }}
+  TEMPORAL_RETENTION_DAYS: {{ .Values.temporal.retentionDays | quote }}
   TEMPORAL_TASK_QUEUE: {{ .Values.temporal.taskQueue | quote }}
   FLINK_URL: {{ .Values.flink.url | quote }}
   FLINK_GATEWAY_URL: {{ .Values.flink.gatewayUrl | quote }}

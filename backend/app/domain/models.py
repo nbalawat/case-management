@@ -900,3 +900,4 @@ class FormSubmission(TenantScoped, Base):
 
 
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox
+from ..ai import usage as _ai_usage  # noqa: E402,F401  registers the model usage table

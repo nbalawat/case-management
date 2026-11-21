@@ -13,7 +13,7 @@ type Backbone = {
   lake: { connected: boolean; note: string; tables: { name: string; rows: number; commits: number; last_commit: string | null }[] }
   search: { engine: string; names: number | null; note: string }
   graph: { engine: string; entities: number | null; links: number | null; note: string }
-  clocks: { engine: string; connected: boolean; clocks: number | null; note: string }
+  clocks: { engine: string; connected: boolean; clocks: number | null; workflows?: number | null; namespace?: string | null; note: string }
   stream_jobs: StreamJobsView
   topics: { out: string[]; in: string[]; dead_letter: string }; streams: Stream[]
 }
@@ -59,8 +59,8 @@ function BackboneCard() {
       <p className="muted">{data.search.note}{data.search.names !== null && ` ${data.search.names.toLocaleString()} customers and counterparties indexed for this client.`}</p>
       <h4>Payment network <Pill tone={data.graph.engine === 'age' ? 'good' : 'neutral'}>{data.graph.engine === 'age' ? 'Apache AGE' : 'Database'}</Pill></h4>
       <p className="muted">{data.graph.note}{data.graph.entities !== null && data.graph.links !== null && ` ${data.graph.entities.toLocaleString()} customers and counterparties and ${data.graph.links.toLocaleString()} relationships held for this client.`}</p>
-      <h4>Stage clocks <Pill tone={data.clocks.connected ? 'good' : 'neutral'}>{data.clocks.engine === 'temporal' ? (data.clocks.connected ? 'Temporal' : 'Temporal not answering') : 'Sweep'}</Pill></h4>
-      <p className="muted">{data.clocks.note}{data.clocks.clocks !== null && ` ${data.clocks.clocks.toLocaleString()} running for this client now.`}</p>
+      <h4>Case workflows <Pill tone={data.clocks.engine === 'temporal' && data.clocks.connected ? 'good' : 'neutral'}>{data.clocks.engine === 'temporal' ? (data.clocks.connected ? 'Temporal' : 'Temporal not answering') : 'In the application'}</Pill></h4>
+      <p className="muted">{data.clocks.note}{data.clocks.clocks !== null && ` ${data.clocks.clocks.toLocaleString()} case workflows running for this client now.`}{data.clocks.namespace && ` Namespace: ${data.clocks.namespace}.`}</p>
       <StreamJobs view={data.stream_jobs} onChange={reload} />
       <p className="muted small">Out: {data.topics.out.join(', ')}. Records that cannot be loaded go to {data.topics.dead_letter} with the reason.</p>
     </Card>
