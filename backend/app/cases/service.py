@@ -23,6 +23,8 @@ class TransitionError(Exception):
 
 # Called after a case reaches a closed state: (session, case, definition, actor, timestamp).
 ON_CLOSED: list[Callable[[Session, Case, dict, Persona, datetime], None]] = []
+# Asked before a case may close: (session, case) -> why not, or None. A hold still in force is one such reason.
+CLOSE_GUARDS: list[Callable[[Session, Case], str | None]] = []
 
 
 def definition(case: Case) -> dict:
@@ -134,6 +136,11 @@ def _blocked(s: Session, case: Case, t: dict, persona: Persona, note: str | None
             return why
     if note is not None and "note" in req and not note.strip():
         return "A rationale note is required"
+    if definition(case)["states"][t["to"]].get("kind") == "closed":
+        for guard in CLOSE_GUARDS:
+            why = guard(s, case)
+            if why:
+                return why
     return None
 
 

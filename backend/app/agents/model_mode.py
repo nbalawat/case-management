@@ -16,7 +16,7 @@ from contextlib import contextmanager
 
 from ..ask.gateway import ChatModel, ModelUnavailable, ToolOutput, ToolSpec, get_model, resolve_provider
 from ..config import settings
-from ..detection.scenarios import DEMO_WATCHLIST, HIGH_RISK_COUNTRIES, REGISTRY
+from ..detection.scenarios import HIGH_RISK_COUNTRIES, REGISTRY
 from .catalog import AgentSpec
 from .steps import Context, Step, _f
 from .tools import ToolDenied
@@ -114,8 +114,8 @@ def _read(tool: str, ctx: Context) -> tuple[dict, set[str], set[str]]:
                                                            "explanation": a.explanation, "score": a.score, "transaction_ids": a.txn_ids}
                                                           for a in ctx.alerts]}, {i for a in ctx.alerts for i in a.txn_ids}, {"Typology library"})
     if tool == "watchlist":
-        labels = {f"Watchlist entry {w}" for w in DEMO_WATCHLIST}
-        return {"entries": [{"source": f"Watchlist entry {w}", "name": w} for w in DEMO_WATCHLIST]}, set(), labels
+        listed = ctx.watchlist
+        return {"entries": [{"source": f"Watchlist entry {w}", "name": w} for w in listed]}, set(), {f"Watchlist entry {w}" for w in listed}
     if tool == "media_search":
         docs = [{"source": f"Media {e.doc_id}", "publisher": e.source, "published": e.published, "title": e.title, "category": e.category,
                  "names_the_customer": e.names_subject, "quote": e.quote, "instructions_removed": e.instructions_removed} for e in ctx.media]

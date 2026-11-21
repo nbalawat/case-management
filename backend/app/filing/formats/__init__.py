@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from . import fincen, goaml
+from . import fincen, goaml, ofac
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,11 @@ FORMATS: dict[str, Format] = {f.id: f for f in (
     Format("fincen_ctr_xml", "FinCEN CTR (BSA XML)", "fincen", ("CTR",), "xml", fincen.render_ctr, fincen.check_ctr),
     Format("goaml_str_xml", "goAML STR (XML)", "goaml", ("STR",), "xml", goaml.render_str, goaml.check_str),
     Format("goaml_ctr_xml", "goAML CTR (XML)", "goaml", ("CTR",), "xml", goaml.render_ctr, goaml.check_ctr),
+    Format("ofac_report", "OFAC blocked or rejected property (structured record)", "ofac", ("BLOCK", "REJECT"), "xml", ofac.render, ofac.check),
+    Format("sanctions_report", "Report to the sanctions authority (structured record)", "sanctions", ("BLOCK", "REJECT"), "xml", ofac.render, ofac.check),
 )}
+# Who a client reports blocked or rejected property to follows from where it reports suspicion: a FinCEN filer answers to OFAC.
+SANCTIONS_REGIME = {"fincen": "ofac"}
 # What a suspicious-activity report is called under each regime.
 SUSPICION_KIND = {"fincen": "SAR", "goaml": "STR"}
 

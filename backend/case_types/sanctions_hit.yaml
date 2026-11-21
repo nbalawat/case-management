@@ -1,8 +1,8 @@
 case_type: sanctions_hit
 title: Sanctions screening hit
 domain: Sanctions
-version: 2.0.0
-scenarios: [sanctions_name]
+version: 2.1.0
+scenarios: [sanctions_name, sanctions_customer]
 initial_state: adjudication
 
 states:

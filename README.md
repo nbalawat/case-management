@@ -53,7 +53,8 @@ each client's issuer: `PUT /api/platform/tenants/{id}/identity`.
 ## A fifteen-minute demo
 
 The client and person pickers at the top right are the whole login. Steps 1 to 9 are at Meridian Retail Bank;
-each says who to be. Steps 10 to 12 show the platform running several clients.
+each says who to be. Steps 10 to 12 show the platform running several clients. Workflows, Lists, Access,
+Data and Integrations are under Setup in the top bar.
 
 1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
    his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
@@ -145,6 +146,7 @@ The full API reference is at <http://localhost:8000/docs>.
 | Workflows | Six case types as versioned YAML: stages, queues, stage tasks, conditional steps, waiting stages, four-eyes, stage clocks with escalation, QA sampling with reopen. Checked and published from the UI. | Durable workflow engine (timers are swept, not scheduled), parallel branches, a drag-and-drop designer |
 | Casework at volume | Per-client code lists (closing reasons, QA criteria and weights, QA root causes, hibernation rules), edited on the Lists page and retired rather than deleted. Closing without a report needs a reason the client offers for that outcome. Bulk claim, reassign and move, where each case passes its own checks and refusals change nothing. Merging two open cases about one customer. QA scorecards with a pass mark, and a findings report by person, criterion, root cause and agent advice. Weak alerts that wait for a second alert, join its case, or close with the rule on record. | Approval of list changes by a second person, list versions, case splitting, undoing a merge, scheduled sweeps (waiting alerts close when the clock sweep runs) |
 | KYC depth | A risk rating per customer from the client's own factors, points and bands (edited on Lists), showing the evidence for each factor. Raising a rating takes effect at once; lowering one waits for a second person holding `approve_risk`, never the proposer. Ownership structures as versions: effective shares multiplied down every chain, beneficial owners at the client's threshold or by control, untraced shares reported, and flags for trusts and nominees, loops, depth, politically exposed or unverified owners. A document store behind the same storage interface as the pipelines (`EVIDENCE_URL`), with a SHA-256 fingerprint checked on every read, a tamper-evident custody log, verification, expiry, and redacted copies of text documents. Flow of funds per customer or per case under resolved names. Events between reviews (rating rose, owners changed, a document expired, a SAR was filed, a sanctions match confirmed) open or join a review, and a schedule shows who is due one. | Identity and document verification vendors, registry lookups for ownership, OCR and redaction of scans and PDFs, virus scanning of uploads, encryption keys per client, a customer portal for collecting documents. The periodic review backlog in the demo comes from synthetic onboarding dates. |
+| Fraud and sanctions depth | Watchlists per client, loaded as versions from CSV or JSON: each load is compared with what is held, removed names are kept as history, and every customer and recent payment is screened again. The client's own do-not-deal list is screened the same way. False-match exemptions with two people, an end date, and automatic ending when the list entry changes; identical names cannot be exempted. Holds on a payment, account, card or online access, with a review clock per reason; a sanctions hold is released, blocked or rejected only by a second person, and a case cannot close while a hold is active. Blocked and rejected payments produce a report to the authority through the same reports machinery, due in ten business days. Confidential searches for law enforcement requests, visible only to people with the permission, opening no case. Fraud step-up checks on a hold, and disputes with clocks per payment kind for the customer's credit, the recovery (chargeback, return, recall) and the final answer, with loss and recovery worked out per dispute and by cause. | The lists are a fictional demo list: no feed from OFAC, the UN, the EU, HMT or a commercial list vendor. Holds are records here; nothing tells a payment engine or core banking system to stop or release money. Reports are rendered and sent through the simulated channel, not OFAC's own reporting system, and the annual report of blocked property is not built. No card network chargeback or ACH return connection. Business days skip weekends only, not public holidays. Step-up checks record an outcome and send nothing to the customer. Sharing between institutions (314(b)) is not built. |
 | People and access | Each client's own versioned policy: roles, permissions, queues, people (who may hold several roles), read-only roles. Edited and published from the UI with checks: a change is refused if it would strand a workflow or lock everyone out. Every person at every kind of client is tested against every workflow step. | People and group membership synced from the client's identity provider (SCIM); today the provider proves who someone is and the policy on the Access page says what they may do. A form-based editor. |
 | Case visibility | Each role can be limited to its own queues, its own cases, or some case types; people keep cases they own or have worked on, and someone with several roles sees what any of them shows. Restricted cases are hidden from everyone not cleared, including their former owner, team leads and administrators, and cases opened from a restricted case inherit it. Enforced in the data layer, so lists, case pages, actions, the event feed, dashboards, the agent ledger and Ask all follow it; a hidden case answers "not found". Tested by signing in as every person at every client and checking every case against an independent statement of the rule. | Customers and transactions are not hidden by this rule, only cases and what hangs off them, so the Data pages and a customer lookup in Ask still show a customer whose case is restricted. Alerts closed by an agent before any case existed are visible to all. Rules by customer attribute (segment, country, relationship manager's own book). Break-glass access with a reason. Postgres row-level security as a second layer. A restricted case stays in its workflow, so someone cleared must also hold the role for the next step. |
 | Clients | Shared database with every row keyed by client. Isolation is enforced in the data layer: queries are filtered and writes stamped automatically, and statements that cannot be filtered are refused. Per-client case types and workflow versions. Templates, one-step onboarding, suspend, and an operator console that shows counts only. | Postgres row-level security as a second layer, dedicated databases or stamps per client (the choice is recorded, not acted on), per-client encryption keys, usage metering, offboarding and data export |
@@ -182,6 +184,11 @@ backend/app/
                answer loop with citation checks and the question record
   kyc/         risk rating and governed overrides, ownership analysis, the document store, flow of funds,
                review triggers and the KYC desk
+  sanctions/   watchlists as versions, rescreening, false-match exemptions, reports on blocked and rejected payments,
+               confidential searches for law enforcement
+  fraud/       disputes: credit, recovery and resolution clocks, loss and recovery
+  holds.py     holds on payments, accounts, cards and online access; two-person release; step-up checks
+  workdays.py  business-day deadlines
   filing/      the neutral report, one renderer per regulator's format, checks, sending channels, the life of a report
   entities/    name comparison, entity resolution and its human desk, the payment network, profiles, search
   reporting/   dashboard metrics
@@ -236,6 +243,13 @@ registry, and `ChatModel` for the model that answers questions), so later milest
     Press "Record a change", add a person behind the trust and press "Work it out" to see the answer before
     saving. On Sable and Finch, the passport has expired: open the document to see its fingerprint and everyone
     who touched it. On any monitoring case, Flow of funds shows only the payments behind its alerts.
+20. **Sanctions and fraud, at Meridian.** As Maya Chen, open Sanctions: a $48,200 payment is held on a 90% name
+    match, and Sofia Marin's proposal to release it waits for a second person. Approve it, or open the case to
+    see the two names side by side. Prepare the report owed for the rejected payment and follow it to Reports.
+    Under Lists screened against, add a name to the internal list and watch everyone get screened again. Open
+    the law enforcement request and decide a possible match; switch to Ivan Petrov and the section is gone. As
+    Fran Dubois, open Fraud: a wire dispute is in recovery, and the closed ones show what came back and what was
+    lost. Open its case to record money coming back and resolve it on the figures.
 
 ## Milestones
 
@@ -277,10 +291,13 @@ findings, alert hibernation. The demo data is now identical on every run.
 **11. KYC depth (done).** Governed risk ratings, beneficial ownership, a document store with chain of custody,
 flow of funds, and reviews triggered by events as well as by the calendar.
 
-**12. Enterprise breadth.** Fraud and sanctions depth, lookback projects, management reporting, governance views
-and detection tuning.
+**12. Fraud and sanctions depth (done).** Versioned watchlists and rescreening, false-match exemptions, holds with
+two-person release, reports on blocked and rejected payments, law enforcement searches, fraud disputes and
+recoveries.
 
-**13. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
+**13. Enterprise breadth.** Lookback projects, management reporting, governance views and detection tuning.
+
+**14. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
 architecture: per-client stamps and the SaaS, dedicated, client-cloud and air-gapped deployment modes.
 
 ## Screenshots

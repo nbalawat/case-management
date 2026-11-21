@@ -6,6 +6,7 @@ locked, and the only way to change either is an amendment that points back at th
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -28,6 +29,11 @@ class FilingError(Exception):
     pass
 
 
+# Kinds of report built outside this module register how to rebuild one: kind -> (session, filing, timestamp) -> (format, body).
+REBUILD: dict[str, Callable[[Session, Filing, datetime], tuple[Format, dict]]] = {}
+SUSPICION_KINDS = tuple(SUSPICION_KIND.values())
+
+
 def _note(s: Session, f: Filing, persona_id: str, what: str, ts: datetime, **detail: object) -> None:
     f.history = [*f.history, {"at": ts.isoformat(), "by": persona_id, "what": what, **detail}]
     if f.case_id:
@@ -45,7 +51,7 @@ def _write(f: Filing, fmt: Format, report: dict) -> None:
 
 def locked(s: Session, case_id: str) -> bool:
     """True once a report quoting this case's narrative has gone to the regulator."""
-    return s.scalars(select(Filing.id).where(Filing.case_id == case_id, Filing.status.in_(SENT))).first() is not None
+    return s.scalars(select(Filing.id).where(Filing.case_id == case_id, Filing.kind.in_(SUSPICION_KINDS), Filing.status.in_(SENT))).first() is not None
 
 
 @system_work
@@ -116,6 +122,11 @@ def recheck(s: Session, filing_id: str, persona: Persona, ts: datetime | None = 
     if f.status != "prepared":
         raise FilingError("Only a report that has not been sent can be rebuilt")
     prior = f.payload.get("prior_reference", "")
+    if f.kind in REBUILD:
+        fmt, body = REBUILD[f.kind](s, f, ts)
+        _write(f, fmt, body | {"prior_reference": prior})
+        _note(s, f, persona.id, "rechecked", ts, problems=len(f.problems))
+        return f
     if f.case_id:
         case = s.scalars(select(Case).where(Case.id == f.case_id)).one()
         body = reports.suspicious_activity(s, case, f.kind, ts, prior_reference=prior)
@@ -172,7 +183,15 @@ def amend(s: Session, filing_id: str, persona: Persona, narrative: str | None = 
     if old.status not in ("acknowledged", "rejected"):
         raise FilingError("Only a report the regulator has answered can be amended")
     old.status = "superseded"
-    if old.case_id:
+    if old.kind in REBUILD:
+        fmt, body = REBUILD[old.kind](s, old, ts)
+        new = Filing(id=new_id(old.kind.lower()), case_id=old.case_id, party_id=old.party_id, kind=old.kind, filed_by=persona.id, filed_at=ts, due=old.due,
+                     amends_id=old.id, sha256="", history=[], problems=[])
+        _write(new, fmt, body | {"prior_reference": old.reference})
+        s.add(new)
+        s.flush()
+        _note(s, new, persona.id, "prepared", ts, format=fmt.id, problems=len(new.problems), amends=old.id)
+    elif old.case_id:
         case = s.scalars(select(Case).where(Case.id == old.case_id)).one()
         if narrative is not None and narrative.strip():
             case.narrative, case.drafted_by = narrative.strip(), persona.id

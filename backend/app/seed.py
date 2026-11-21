@@ -221,10 +221,15 @@ def _work_monitoring(d: Desk, cases: list[Case]) -> None:
                     d.own(c, c.created + timedelta(hours=1))
                 continue
             t = c.created + timedelta(hours=g.r.randint(1, 3))
+            from .sanctions import demo as sanctions_demo
+
             if escalate:
-                d.step(c, "escalated", t)
+                t = d.step(c, "escalated", t)
+                sanctions_demo.hold_on_escalation(d.s, c, t + timedelta(minutes=5))
                 if age_h > 60:
-                    d.step(c, "blocked", t + timedelta(hours=g.r.randint(4, 18)), "Match confirmed on name and jurisdiction; payment blocked and reported.")
+                    t = min(t + timedelta(hours=g.r.randint(4, 18)), g.end - timedelta(hours=1))
+                    sanctions_demo.block_before_close(d.s, c, t)
+                    d.step(c, "blocked", t, "Match confirmed on name and jurisdiction; payment blocked and reported.")
             else:
                 d.step(c, "discounted", t, "Name differs in a distinguishing token; no secondary identifier matches.")
             continue
@@ -664,6 +669,11 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     from .kyc import demo as kyc_demo
 
     extra = kyc_demo.seed(s, g.end)
+    from .fraud import demo as fraud_demo
+    from .sanctions import demo as sanctions_demo
+
+    extra["transactions"] += sanctions_demo.seed(s, g.end)["transactions"]
+    fraud_demo.seed(s, g.end)
     resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))

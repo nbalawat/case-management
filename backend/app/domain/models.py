@@ -40,6 +40,18 @@ def repeatable_ids(seed: str):
         _id_source.reset(token)
 
 
+@contextlib.contextmanager
+def side_ids(seed: str):
+    """A separate seeded stream for a side step of synthetic data, so adding the step does not shift every id drawn after it.
+
+    Outside synthetic data it does nothing: live ids stay random."""
+    if _id_source.get() is None:
+        yield
+        return
+    with repeatable_ids(seed):
+        yield
+
+
 class Tenant(Base):
     """A client of the platform. The only business table that is not tenant-scoped."""
 
@@ -548,3 +560,134 @@ class KycTrigger(TenantScoped, Base):
     at: Mapped[datetime] = mapped_column(DateTime, default=now)
     outcome: Mapped[str] = mapped_column(String(16))  # opened_review | joined_review | noted
     case_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class Watchlist(TenantScoped, Base):
+    """A list the client screens against: a sanctions list it subscribes to, or its own list of names it will not deal with."""
+
+    __tablename__ = "watchlist"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    code: Mapped[str] = mapped_column(String(40))
+    __table_args__ = (UniqueConstraint("tenant_id", "code"),)
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(12), default="sanctions")  # sanctions | internal
+    source: Mapped[str] = mapped_column(String(200), default="")
+    version: Mapped[int] = mapped_column(Integer, default=0)  # goes up with every load or edit
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_by: Mapped[str] = mapped_column(String(40), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    history: Mapped[list] = mapped_column(JSON, default=list)  # [{version, at, by, added, changed, removed, note}]
+
+
+class WatchlistEntry(TenantScoped, Base):
+    """One name on a list. An entry taken off a list is kept, marked with the version that removed it."""
+
+    __tablename__ = "watchlist_entry"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    list_id: Mapped[str] = mapped_column(String(40), index=True)
+    ref: Mapped[str] = mapped_column(String(60))  # the publisher's own id for the entry
+    name: Mapped[str] = mapped_column(String(200))
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    kind: Mapped[str] = mapped_column(String(12), default="entity")  # entity | person | vessel
+    countries: Mapped[list] = mapped_column(JSON, default=list)
+    programs: Mapped[list] = mapped_column(JSON, default=list)
+    identifiers: Mapped[list] = mapped_column(JSON, default=list)  # [{type, value}]
+    added_version: Mapped[int] = mapped_column(Integer, default=1)
+    removed_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class ScreeningExemption(TenantScoped, Base):
+    """A decision that one name is not one list entry, so the same false match is not raised again. Two people, and an end date."""
+
+    __tablename__ = "screening_exemption"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(200))  # the name as screened
+    subject_key: Mapped[str] = mapped_column(String(200), index=True)
+    entry_id: Mapped[str] = mapped_column(String(40), index=True)
+    case_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)  # pending | active | refused | revoked
+    proposed_by: Mapped[str] = mapped_column(String(40))
+    proposed_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    decided_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    decision_note: Mapped[str] = mapped_column(Text, default="")
+    expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    entry_version: Mapped[str] = mapped_column(String(64), default="")  # fingerprint of the entry as it was; a changed entry voids the exemption
+
+
+class Hold(TenantScoped, Base):
+    """Money or access stopped while a case is decided: a held payment, a frozen account, a blocked card."""
+
+    __tablename__ = "hold"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(40), index=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    target: Mapped[str] = mapped_column(String(16))  # payment | account | card | online_access
+    target_id: Mapped[str] = mapped_column(String(60), default="")
+    amount: Mapped[float] = mapped_column(Float, default=0.0)
+    reason_code: Mapped[str] = mapped_column(String(40))
+    note: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(12), default="active", index=True)  # active | released | blocked | rejected
+    placed_by: Mapped[str] = mapped_column(String(40))
+    placed_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    review_by: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # a hold nobody has looked at by then is escalated
+    overdue_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
+    challenge: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # step-up: {method, status, requested_by, requested_at, completed_at, note}
+    proposal: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {outcome, note, by, at} waiting for a second person
+    decided_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    decision_note: Mapped[str] = mapped_column(Text, default="")
+    history: Mapped[list] = mapped_column(JSON, default=list)  # [{at, by, what, note}]
+
+
+class Dispute(TenantScoped, Base):
+    """A customer's claim that payments were not theirs, followed through credit, recovery from the other bank, and the final loss."""
+
+    __tablename__ = "dispute"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(40), index=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    txn_ids: Mapped[list] = mapped_column(JSON, default=list)
+    amount: Mapped[float] = mapped_column(Float)
+    rail: Mapped[str] = mapped_column(String(10))  # card | ach | wire | p2p
+    reason_code: Mapped[str] = mapped_column(String(40))
+    rule: Mapped[str] = mapped_column(String(20), default="")  # the dispute_rules code whose clocks apply
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open | credited | recovery | closed
+    outcome: Mapped[str | None] = mapped_column(String(20), nullable=True)  # recovered | partly_recovered | written_off | customer_liable | withdrawn
+    reported_at: Mapped[datetime] = mapped_column(DateTime, default=now)  # when the customer told the bank
+    opened_by: Mapped[str] = mapped_column(String(40))
+    credit_due: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    credit_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    credit_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    credit_final: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolve_due: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recovery_ref: Mapped[str] = mapped_column(String(60), default="")  # chargeback or recall reference
+    recovery_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recovery_due: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # the last day the network accepts one
+    recovered: Mapped[float] = mapped_column(Float, default=0.0)
+    customer_liability: Mapped[float] = mapped_column(Float, default=0.0)
+    loss: Mapped[float] = mapped_column(Float, default=0.0)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    history: Mapped[list] = mapped_column(JSON, default=list)  # [{at, by, what, note, amount}]
+
+
+class InfoShare(TenantScoped, Base):
+    """A request from law enforcement, through the regulator, to search for named subjects (in the US, section 314(a))."""
+
+    __tablename__ = "info_share"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    reference: Mapped[str] = mapped_column(String(60))  # the tracking number on the request
+    __table_args__ = (UniqueConstraint("tenant_id", "reference"),)
+    received: Mapped[datetime] = mapped_column(DateTime, default=now)
+    due: Mapped[datetime] = mapped_column(DateTime)
+    loaded_by: Mapped[str] = mapped_column(String(40))
+    subjects: Mapped[list] = mapped_column(JSON, default=list)  # [{no, name, kind, aliases, dob, identifiers, country}]
+    status: Mapped[str] = mapped_column(String(14), default="received", index=True)  # received | searched | responded | no_match
+    searched_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    searched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scope: Mapped[dict] = mapped_column(JSON, default=dict)  # what was searched: counts and look-back periods
+    matches: Mapped[list] = mapped_column(JSON, default=list)  # [{id, subject_no, where, party_id, name, score, basis, decision, decided_by, decided_at, note}]
+    responded_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    response: Mapped[dict | None] = mapped_column(JSON, nullable=True)

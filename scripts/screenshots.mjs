@@ -188,6 +188,19 @@ for (const c of fresh.filter(c => c.case_type === 'tm_alert_investigation').slic
 await as('maya')
 await go(`/cases/${moving.id}`); await page.locator('svg.flow').waitFor()
 await page.locator('section.card', { hasText: 'Flow of funds' }).screenshot({ path: `${out}47-flow-of-funds.png` })
+// Fraud and sanctions depth: the sanctions desk, a held payment waiting for a second person, and the fraud desk with a dispute on its clocks.
+const sanctionsDesk = await (await fetch(`${base}/api/sanctions`, { headers: H })).json()
+await as('maya')
+await go('/sanctions'); await page.getByText('Held now').first().waitFor(); await shot('48-sanctions-desk')
+const waiting = sanctionsDesk.holds.find(h => h.proposal) ?? sanctionsDesk.holds[0]
+await go(`/cases/${waiting.case_id}`); await page.locator('.hold').first().waitFor(); await page.locator('.match').first().waitFor()
+await page.locator('section.card', { hasText: 'List match' }).first().screenshot({ path: `${out}49-list-match.png` })
+await page.locator('section.card', { has: page.locator('.hold') }).first().screenshot({ path: `${out}50-hold-second-person.png` })
+const fraudDesk = await (await fetch(`${base}/api/fraud`, { headers: H })).json()
+await as('fran')
+await go('/fraud'); await page.locator('.reasons').waitFor(); await shot('51-fraud-desk')
+await go(`/cases/${fraudDesk.disputes.find(d => d.status !== 'closed').case_id}`); await page.locator('section.card', { hasText: 'Disputes' }).first().waitFor()
+await page.locator('section.card', { hasText: 'Disputes (' }).first().screenshot({ path: `${out}52-dispute.png` })
 // A second client: different people, roles and workloads, and its own access policy to edit.
 await as('joy', 'kestrel')
 await go('/'); await shot('12-second-client-my-work')

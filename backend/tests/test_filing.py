@@ -279,7 +279,7 @@ def test_each_demo_client_reports_in_its_own_regime_with_reports_at_every_stage(
     page = client.get("/api/filings", headers=h(t, _officer(t))).json()
     regime = {"meridian": "fincen", "kestrel": "fincen", "alder": "goaml"}[t]
     assert page["profile"]["regime"] == regime and page["profile"]["missing"] == [] and page["can_submit"]
-    suspicion = [f for f in page["filings"] if f["kind"] != "CTR"]
+    suspicion = [f for f in page["filings"] if f["kind"] in ("SAR", "STR")]
     assert {f["kind"] for f in suspicion} == {"STR" if regime == "goaml" else "SAR"} and all(f["problems"] == [] for f in page["filings"])
     assert {"acknowledged", "superseded"} <= {f["status"] for f in suspicion}
     assert all(f["reference"].startswith("31000") for f in suspicion if f["status"] == "acknowledged")
