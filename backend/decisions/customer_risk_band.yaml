@@ -1,0 +1,26 @@
+id: customer_risk_band
+title: Customer risk band
+version: "1.0"
+description: >-
+  The customer risk band, from the scoring model's points plus knock-out rules that the points alone cannot express.
+  Out of use until a client enables it; until then the band comes from the score thresholds.
+context: customer
+binding: risk_band
+enabled: false
+hit_policy: PRIORITY
+inputs:
+  - {name: score, label: Model score, kind: number}
+  - {name: pep, label: Politically exposed, kind: bool}
+  - {name: high_risk_country, label: High-risk country, kind: bool}
+  - {name: opaque_ownership, label: Ownership not traceable, kind: bool}
+  - {name: prior_report, label: Reported before, kind: bool}
+outputs:
+  - {name: band, label: Band, kind: text, values: [high, medium, low], default: low}
+rules:
+  - {id: r1, when: {score: ">= 50"}, then: {band: high}}
+  - {id: r2, when: {score: "[25..50)"}, then: {band: medium}}
+  - {id: r3, when: {score: "< 25"}, then: {band: low}}
+  - {id: r4, when: {pep: true}, then: {band: high}, note: Knock-out - every PEP is high risk}
+  - {id: r5, when: {opaque_ownership: true}, then: {band: high}, note: Knock-out - untraceable ownership}
+  - {id: r6, when: {high_risk_country: true, prior_report: true}, then: {band: high}}
+  - {id: r7, when: {high_risk_country: true}, then: {band: medium}, note: Floor for high-risk geographies}

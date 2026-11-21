@@ -65,6 +65,7 @@ def route_alerts(s: Session, alerts: list[Alert], screened: bool = False, woken:
 
         alerts = gate(s, alerts)
     touched: dict[str, Case] = {}
+    opened: list[Case] = []
     tenant = tenant_of(s)
     types = load_case_types(tenant)
     for a in sorted(alerts, key=lambda x: x.created):
@@ -80,6 +81,7 @@ def route_alerts(s: Session, alerts: list[Alert], screened: bool = False, woken:
                 a.policy_note = f"Held by the rule '{rule['label']}': score {a.score:.2f} is below {float(rule['below']):.2f}, so it waits {days} days for another alert."
                 continue
             case = create_case(s, types[ct["case_type"]], a.party_id, priority_for(a.score), created=a.created)
+            opened.append(case)
             s.flush()
             # Anything that was waiting for this customer joins the case that has now opened.
             scenarios = {x for x in {h.scenario for h in s.scalars(select(Alert).where(Alert.party_id == a.party_id, Alert.status == "hibernated"))}
@@ -97,6 +99,10 @@ def route_alerts(s: Session, alerts: list[Alert], screened: bool = False, woken:
                {"alert_id": a.id, "scenario": a.scenario, "score": a.score}, ts=a.created)
         touched[case.id] = case
     s.flush()
+    if opened:
+        from ..decisions.bindings import on_cases_opened  # the client's routing and priority tables, when enabled
+
+        on_cases_opened(s, opened)
     return list(touched.values())
 
 

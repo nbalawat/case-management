@@ -45,6 +45,7 @@ FACTORY = {
     "InfoShare": lambda k: m.InfoShare(id=f"lea-{k}", reference="same reference", due=NOW, loaded_by="x"),
     "Filing": lambda k: m.Filing(id=f"sar-{k}", case_id=f"case-{k}", kind="SAR", filed_by="x", sha256="0" * 64),
     "InfoRequest": lambda k: m.InfoRequest(id=f"rfi-{k}", case_id=f"case-{k}", recipient="customer", question="q", raised_by="x", due=NOW),
+    "DecisionVersion": lambda k: m.DecisionVersion(table_id="case_priority", version="9.0", source="x", published_by="x"),
     "WorkflowVersion": lambda k: m.WorkflowVersion(case_type="tm_alert_investigation", version="9.0.0", source="x", published_by="x"),
     "AccessPolicyVersion": lambda k: m.AccessPolicyVersion(version="9.0.0", source="x", published_by="x"),
     "DataSource": lambda k: m.DataSource(id=f"src-{k}", name="same name", dataset="transactions", root="lake", created_by="x"),
