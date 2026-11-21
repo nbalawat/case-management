@@ -1,14 +1,30 @@
 /**
  * The module registry: the single list of everything the app can show. Each module declares its route, how it
  * appears in the menu, who it is for and what count it carries. The sidebar, the command palette, the page
- * title and the routes are all built from this list, so adding a page is one entry here and nothing else.
+ * title and the routes are all built from this list.
+ *
+ * Adding a page: put one file in `src/modules/` that default-exports a `Module` (or an array of them). It is
+ * picked up automatically, so parallel features never edit this file or the same line. Use `after` to place it
+ * in its group after another module's id; without it, it goes at the end of its group. Example:
+ *
+ *   // src/modules/workflow-designer.tsx
+ *   import { PencilRuler } from 'lucide-react'
+ *   import { can } from '../shell/access'
+ *   import { page } from '../shell/page'
+ *   import type { Module } from '../shell/registry'
+ *   export default { id: 'workflow-designer', path: '/workflows/designer', label: 'Workflow designer', group: 'admin',
+ *     description: '...', icon: PencilRuler, page: page(() => import('../pages/WorkflowDesignerHome')),
+ *     visible: can('publish_workflow'), after: 'forms' } satisfies Module
  */
-import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
+import type { ComponentType, LazyExoticComponent } from 'react'
 import {
   BarChart3, Bot, Boxes, ClipboardList, CreditCard, Database, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
   Radar, ScrollText, ShieldAlert, ShieldCheck, Siren, Sparkles, TableProperties, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { anyOf, can, desk, everyone, readOnly, type Rule } from './access'
+import { page } from './page'
+
+export { page }
 
 export type GroupId = 'work' | 'desks' | 'investigate' | 'oversight' | 'admin'
 export const GROUPS: { id: GroupId; label: string }[] = [
@@ -40,12 +56,13 @@ export type Module = {
   children?: { path: string; page: Page }[]
   badge?: (b: Badges) => Badge
   keywords?: string[]
+  /** For a module in `src/modules/`: the id of the module it follows in its group. */
+  after?: string
 }
 
-const page = (load: () => Promise<{ default: ComponentType }>) => lazy(load)
 const manager = can('view_team')
 
-export const MODULES: Module[] = [
+const CORE: Module[] = [
   // Work
   { id: 'my-work', path: '/', label: 'My work', description: 'Your cases, then unassigned work in your queues', icon: Inbox, group: 'work',
     page: page(() => import('../pages/MyWork')), visible: can('work'), keywords: ['inbox', 'queue', 'claim'],
@@ -109,6 +126,24 @@ export const MODULES: Module[] = [
   { id: 'platform', path: '/platform', label: 'Integrations', description: 'Connected systems, events and scale', icon: Plug, group: 'admin',
     page: page(() => import('../pages/Platform')), visible: can('manage_access', 'load_data'), keywords: ['api', 'kafka', 'webhook'] },
 ]
+
+/** Modules defined one per file in src/modules/, found at build time. */
+const DISCOVERED: Module[] = Object.entries(import.meta.glob<{ default: Module | Module[] }>('../modules/*.tsx', { eager: true }))
+  .sort(([a], [b]) => a.localeCompare(b))
+  .flatMap(([, m]) => [m.default].flat())
+
+/** Put each discovered module after the one it names, or at the end of its group. */
+export function place(core: Module[], extra: Module[]): Module[] {
+  const out = [...core]
+  for (const m of extra) {
+    let at = m.after ? out.findIndex(x => x.id === m.after) : -1
+    if (at < 0) at = out.map(x => x.group).lastIndexOf(m.group)
+    out.splice(at < 0 ? out.length : at + 1, 0, m)
+  }
+  return out
+}
+
+export const MODULES: Module[] = place(CORE, DISCOVERED)
 
 /** The module a path belongs to, matching detail routes to their parent. */
 export function moduleFor(pathname: string): Module | undefined {

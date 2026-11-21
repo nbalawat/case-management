@@ -10,6 +10,7 @@ from ..tenants.registry import UnknownTenant, runtime
 from .deps import OPERATORS, identity
 
 router = APIRouter(prefix="/api/auth")
+PUBLIC = True  # signing in cannot require being signed in
 
 
 @router.get("/config")

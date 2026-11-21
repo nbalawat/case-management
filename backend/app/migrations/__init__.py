@@ -7,9 +7,15 @@
 
 `versions/0016_baseline.py` is the schema as it stood when migrations began (the old "schema version 16"). Every
 change since is a file after it. Never edit a migration that has been released: write the next one.
+
+Parallel work: new revisions are named by the time they were written (`20261121174700_what_changed.py`), not by
+the next number, so two branches never claim the same id. Two branches that each add a migration still leave two
+heads once both land; `python -m app.migrate check` (run in CI) fails on that, and on a repeated id, and says
+which file to re-point. The fix is one line: set the newer file's `down_revision` to the other head.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from alembic import command
@@ -33,8 +39,34 @@ def config(conn: Connection | None = None) -> Config:
     return cfg
 
 
+def scripts() -> ScriptDirectory:
+    return ScriptDirectory.from_config(config())
+
+
 def head() -> str:
-    return ScriptDirectory.from_config(config()).get_current_head()
+    return scripts().get_current_head()
+
+
+_REVISION = re.compile(r"^revision\s*(?::\s*str\s*)?=\s*['\"]([^'\"]+)['\"]", re.M)
+
+
+def problems() -> list[str]:
+    """What stops the migrations forming one line: a revision id used twice, or more than one head. Empty when sound.
+
+    Alembic itself only warns on a repeated id and then silently keeps one of the files, so look at the files."""
+    seen: dict[str, list[str]] = {}
+    for f in sorted((HERE / "versions").glob("*.py")):
+        if m := _REVISION.search(f.read_text()):
+            seen.setdefault(m.group(1), []).append(f.name)
+    found = [f"revision id {rev!r} is used by {len(files)} files: {', '.join(files)}. Give all but one a new id "
+             f"(`python -m app.migrate revision` names them by time) and chain them with down_revision."
+             for rev, files in seen.items() if len(files) > 1]
+    heads = sorted(scripts().get_heads()) if not found else []
+    if len(heads) > 1:
+        files = {h: scripts().get_revision(h).path.rsplit("/", 1)[-1] for h in heads}
+        found.append(f"{len(heads)} migration heads: {', '.join(f'{h} ({files[h]})' for h in heads)}. Two branches each "
+                     f"added a migration. In the one your branch added, set down_revision to the other head.")
+    return found
 
 
 def current(conn: Connection) -> str | None:
