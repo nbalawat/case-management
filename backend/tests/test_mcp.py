@@ -153,3 +153,13 @@ def test_the_stdio_server_runs_as_the_person_it_was_started_for(client):
     with appdb.session_scope(tenant) as s:
         bind_viewer(s, p)
         assert out["matching"] == query.breakdown(s, p, catalog.get("alerts"))["matching"]
+
+
+def test_provider_staff_reach_a_client_over_mcp_only_while_engaged_and_the_client_sees_each_request(client):
+    """The managed service's rules hold at /mcp as on every other route."""
+    err, out = call(client, "kestrel", "ms.priya", "breakdown", {})
+    assert not err and out["matching_cases"] >= 1
+    for other in ("meridian", "alder"):
+        assert rpc(client, other, "ms.priya", "tools/list").status_code == 403
+    view = client.get("/api/access/managed-service", headers=h("kestrel", "pat")).json()
+    assert any(x["actor"] == "ms.priya" and x["subject"] == "POST /mcp" for x in view["log"])
