@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, fmtDate, words } from '../api'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
+import DataGrid from '../components/grid/DataGrid'
+import { SearchInput, Segmented } from '../components/grid/controls'
+import type { GridColumn, SortState } from '../components/grid/types'
 
 type Rule = { code: string; label: string; scenario: string; below: number; days: number }
 type Waiting = {
@@ -15,6 +18,22 @@ export default function Alerts() {
   const { data, error, reload } = useApi<Intake>('/alerts/intake')
   const [msg, setMsg] = useState<string | null>(null)
   const nav = useNavigate()
+  const [show, setShow] = useState('all')
+  const [q, setQ] = useState('')
+  const [sorting, setSorting] = useState<SortState>([{ id: 'created', desc: true }])
+  const columns = useMemo<GridColumn<Waiting>[]>(() => [
+    { id: 'customer', accessorFn: a => a.party_name, header: 'Customer', meta: { label: 'Customer', pinned: true }, enableHiding: false,
+      cell: ({ row: { original: a } }) => <><Link to={`/customers/${a.party_id}`} onClick={e => e.stopPropagation()}><b>{a.party_name}</b></Link><div className="muted small">{a.id} · {a.source}</div></> },
+    { id: 'scenario', accessorFn: a => a.scenario, header: 'Scenario', meta: { label: 'Scenario' },
+      cell: ({ row: { original: a } }) => <>{words(a.scenario)}<div className="muted small">{a.explanation}</div></> },
+    { id: 'score', accessorFn: a => a.score, header: 'Score', meta: { label: 'Score', align: 'right' }, cell: ({ row }) => row.original.score.toFixed(2) },
+    { id: 'created', accessorFn: a => a.created, header: 'Raised', meta: { label: 'Raised', className: 'nowrap' }, cell: ({ row }) => fmtDate(row.original.created) },
+    { id: 'status', accessorFn: a => a.wake_by ?? '', header: 'Status', meta: { label: 'Status' },
+      cell: ({ row: { original: a } }) => (a.status === 'hibernated' ? <Pill tone="warning">waiting until {fmtDate(a.wake_by!)}</Pill> : <Pill>closed after waiting</Pill>) },
+    { id: 'why', header: 'Why', enableSorting: false, meta: { label: 'Why', className: 'small' }, cell: ({ row }) => row.original.note },
+    ...(data?.can_wake ? [{ id: 'act', header: '', enableSorting: false, enableHiding: false, meta: { pinned: true },
+      cell: ({ row }) => <button onClick={e => { e.stopPropagation(); wake(row.original) }} title="Open a case for this alert now">Open a case</button> } as GridColumn<Waiting>] : []),
+  ], [data?.can_wake]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!data) return <Loading error={error} />
   const n = (k: string) => data.counts[k] ?? 0
   const wake = (a: Waiting) => api.post<{ case_id: string }>(`/alerts/${a.id}/wake`).then(r => nav(`/cases/${r.case_id}`)).catch(e => { setMsg(e.message); reload() })
@@ -39,19 +58,14 @@ export default function Alerts() {
       </Card>
       <Card title={`Waiting and closed alerts (${data.alerts.length})`}>
         {msg && <p className="msg" role="status">{msg}</p>}
-        {data.alerts.length === 0 ? <p className="empty">No alert is waiting.</p> : (
-          <div className="scroll"><table>
-            <thead><tr><th>Customer</th><th>Scenario</th><th className="num">Score</th><th>Raised</th><th>Status</th><th>Why</th>{data.can_wake && <th />}</tr></thead>
-            <tbody>{data.alerts.map(a => (
-              <tr key={a.id}>
-                <td><Link to={`/customers/${a.party_id}`}><b>{a.party_name}</b></Link><div className="muted small">{a.id} · {a.source}</div></td>
-                <td>{words(a.scenario)}<div className="muted small">{a.explanation}</div></td>
-                <td className="num">{a.score.toFixed(2)}</td><td className="nowrap">{fmtDate(a.created)}</td>
-                <td>{a.status === 'hibernated' ? <Pill tone="warning">waiting until {fmtDate(a.wake_by!)}</Pill> : <Pill>closed after waiting</Pill>}</td>
-                <td className="small">{a.note}</td>
-                {data.can_wake && <td><button onClick={() => wake(a)} title="Open a case for this alert now">Open a case</button></td>}
-              </tr>))}</tbody>
-          </table></div>)}
+        <DataGrid<Waiting> id="alerts-intake" label="Waiting and closed alerts" columns={columns} getRowId={a => a.id}
+          rows={data.alerts.filter(a => (show === 'all' || a.status === show) && (!q || `${a.party_name} ${a.party_id} ${a.id} ${a.scenario}`.toLowerCase().includes(q.toLowerCase())))}
+          sorting={sorting} onSortingChange={setSorting} empty="No alert is waiting."
+          onOpen={a => nav(`/customers/${a.party_id}`)}
+          toolbar={<>
+            <Segmented label="Status" value={show} onChange={setShow} options={[['all', 'All'], ['hibernated', 'Waiting'], ['expired', 'Closed after waiting']]} />
+            <SearchInput value={q} onChange={setQ} placeholder="Customer, alert or scenario" />
+          </>} />
       </Card>
     </>
   )

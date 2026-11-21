@@ -71,6 +71,14 @@ transaction, jump to any page you have, or type a question and ask it. Light, da
 account menu. Every page still opens by its address for anyone, and the server still decides what each person
 may see and do; the menu only decides what is in front of them.
 
+**Lists.** Cases, Alert intake and Regulatory reports share one grid. Cases are paged, sorted and filtered in the
+database (`GET /api/case-list`), so the list stays quick however many cases there are; each filter shows how many
+cases every choice would leave. Filters, sort and page live in the address, so a view can be bookmarked or sent.
+Pick or save named views, choose columns and row density, export everything that matches to CSV, and move with the
+keyboard: `J`/`K` or the arrows, `Enter` to open, `Space` for a quick view beside the list, `X` to select for bulk
+steps. Saved views and column choices are kept in the browser, per client and person; storing them on the server
+so they follow a person between devices and can be shared with a team is still to do.
+
 1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
    his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
 2. **An investigation, still as Ivan.** Open a case in *Investigation*. The agent briefing is on the left with

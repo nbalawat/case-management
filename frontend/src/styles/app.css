@@ -8,6 +8,7 @@
 @import "../index.css" layer(legacy);
 @import "./tokens.css";
 @import "./shell.css" layer(components);
+@import "./grid.css" layer(components);
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
