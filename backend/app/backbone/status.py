@@ -105,7 +105,7 @@ def graph_engine(tenant_id: str) -> dict:
 
 
 def stage_clocks(tenant_id: str) -> dict:
-    """Where this client's stage clocks run: the sweep, or durable timers on Temporal."""
-    from ..durable import temporal
+    """Where this client's case workflows and stage clocks run: inside the application, or durably on Temporal."""
+    from ..workflow import engine
 
-    return temporal.status(tenant_id)
+    return engine().status(tenant_id)
