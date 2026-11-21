@@ -143,7 +143,14 @@ def score(s: Session, party: Party, at: datetime | None = None) -> dict:
         evidence = TESTS[f["code"]](ctx) if f["code"] in TESTS else None
         factors.append({"code": f["code"], "label": f["label"], "points": int(f.get("points", 0)), "applies": evidence is not None, "evidence": evidence or ""})
     total = sum(f["points"] for f in factors if f["applies"])
-    return {"score": total, "band": band_for(s, total), "factors": factors, "model": _fingerprint(s)}
+    result = {"score": total, "band": band_for(s, total), "factors": factors, "model": _fingerprint(s)}
+    from ..decisions.bindings import risk_band  # a client's risk band table, when enabled, has the last word
+
+    decided = risk_band(s, party, result)
+    if decided is not None:
+        result |= {"score_band": result["band"], "band": decided["band"], "decision": decided,
+                   "model": f"{result['model']}+{decided['table']}@{decided['version']}"}
+    return result
 
 
 @system_work

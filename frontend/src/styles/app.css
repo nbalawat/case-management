@@ -11,6 +11,7 @@
 @import "./grid.css" layer(components);
 @import "./workspace.css" layer(components);
 @import "./dashboard.css" layer(components);
+@import "./studio.css" layer(components);
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 

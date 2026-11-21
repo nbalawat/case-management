@@ -804,5 +804,19 @@ class StreamStat(TenantScoped, Base):
     __table_args__ = (UniqueConstraint("tenant_id", "stream"),)
 
 
+class DecisionVersion(TenantScoped, Base):
+    """A decision table published by a client. Files in backend/decisions are the shipped library; the highest version wins."""
+
+    __tablename__ = "decision_version"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    table_id: Mapped[str] = mapped_column(String(60), index=True)
+    version: Mapped[str] = mapped_column(String(20))
+    source: Mapped[str] = mapped_column(Text)  # the table as YAML
+    published_by: Mapped[str] = mapped_column(String(40))
+    published: Mapped[datetime] = mapped_column(DateTime, default=now)
+    note: Mapped[str] = mapped_column(Text, default="")
+    __table_args__ = (Index("ux_decision_version", "tenant_id", "table_id", "version", unique=True),)
+
+
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox
 from ..ai import usage as _ai_usage  # noqa: E402,F401  registers the model usage table
