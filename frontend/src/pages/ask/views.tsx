@@ -105,7 +105,7 @@ function StepHead({ step }: { step: Step }) {
   return (
     <div className="step-h"><b>{toolLabel(step)}</b>
       {step.tool === 'case_detail' ? <Pill>{i.case_id}</Pill> : step.tool === 'customer' ? <Pill>{i.name_or_id}</Pill>
-        : step.tool === 'record' ? <Pill>{i.id}</Pill> : step.tool === 'calculate' ? <code className="small">{i.expression}</code>
+        : step.tool === 'record' ? <Pill>{i.id}</Pill> : step.tool === 'policy_search' ? <Pill>{i.query}</Pill> : step.tool === 'calculate' ? <code className="small">{i.expression}</code>
           : step.tool === 'team_workload' ? null : <Filters filters={i.filters} object={i.object} />}
       {!step.ok && <Pill tone="critical">not allowed or not possible</Pill>}</div>
   )
@@ -119,6 +119,7 @@ export function StepView({ step, links }: { step: Step; links: Links }) {
         : step.tool === 'list_cases' || (step.tool === 'list_records' && 'cases' in (r as object)) ? <CaseListView d={r as CaseList} />
           : step.tool === 'list_records' ? <RecordListView d={r as RecordList} links={links} />
             : step.tool === 'record' && 'record' in (r as object) ? <OneRecordView d={r as OneRecord} />
+              : step.tool === 'policy_search' ? <ul className="small">{((r as { passages?: { id: string; title: string; section: string; link: string }[] }).passages ?? []).map(p => <li key={p.id}><Link to={p.link}>{p.title}: {p.section}</Link> <span className="muted">{p.id}</span></li>)}</ul>
               : step.tool === 'calculate' ? <p className="small"><code>{(r as Calculation).expression}</code> = <b>{show((r as Calculation).value)}</b></p>
                 : step.tool === 'team_workload' ? <BreakdownView d={{
                   columns: ['Person', 'Open cases', 'Past the stage clock'], group_by: ['owner'], measures: ['cases', 'late'], groups: 0, truncated: false,

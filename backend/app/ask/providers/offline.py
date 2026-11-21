@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from ..gateway import ModelTurn, ToolCall, ToolOutput, ToolSpec
+from . import offline_policy
 from .offline_landscape import named_object, plan as landscape_plan, write as landscape_write
 
 CASE_ID = re.compile(r"\bcase-[0-9a-f]{10}\b")
@@ -366,9 +367,12 @@ WRITERS = {"breakdown": _write_breakdown, "list_cases": _write_list, "case_detai
 
 class OfflineConversation:
     def __init__(self, tools: list[ToolSpec], context: dict):
-        self.tools, self.context, self.plan, self.other = {t.name for t in tools}, context, None, None
+        self.tools, self.context, self.plan, self.other, self.rules = {t.name for t in tools}, context, None, None, False
 
     def ask(self, question: str) -> ModelTurn:
+        if "policy_search" in self.tools and offline_policy.wants_rules(question):
+            self.rules = True
+            return ModelTurn("tools", tool_calls=[ToolCall("offline-1", "policy_search", {"query": question})], model=OfflinePlanner.name)
         objects = self.context.get("objects") or {}
         self.other = landscape_plan(question, date.fromisoformat(self.context["today"]), objects) if objects else None
         if self.other and self.other["tool"] in self.tools:
@@ -389,6 +393,8 @@ class OfflineConversation:
         out = outputs[0]
         if out.error:
             return ModelTurn("answer", f"I could not answer that. {out.content['error']}", model=OfflinePlanner.name)
+        if self.rules:
+            return ModelTurn("answer", offline_policy.write(out.content), model=OfflinePlanner.name)
         if self.other:
             vocab = self.context["objects"][self.other["args"]["object"]]
             text = landscape_write(self.other, out.content, vocab)
