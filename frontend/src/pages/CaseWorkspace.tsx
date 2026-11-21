@@ -4,6 +4,7 @@ import { api, daysUntil, fmtDate, fmtDateTime, fmtMoney, hoursUntil, words } fro
 import { useApi } from '../useApi'
 import { useNameOf, usePeople, usePersona } from '../App'
 import { Card, Loading, Pill, Priority, Sla, StageClock } from '../components/ui'
+import CaseExtras from '../components/CaseExtras'
 import type { CaseRow } from './Cases'
 
 type Finding = { text: string; cites: string[]; sources?: string[] }
@@ -16,7 +17,7 @@ type Detail = {
   transactions: { id: string; ts: string; amount: number; direction: string; channel: string; counterparty: string; country: string; alerted: boolean }[]
   agent_run: null | { provider: string; recommendation: string; confidence: number; steps: { agent: string; title: string; summary: string; findings: Finding[]; outcome?: string; level?: string; rejected?: number }[] }
   events: { id: number; ts: string; actor: string; actor_kind: string; kind: string; payload: Record<string, unknown> }[]
-  transitions: { to: string; label: string; to_label: string; needs_note: boolean; blocked: string | null; when: string; four_eyes: boolean }[]
+  transitions: { to: string; label: string; to_label: string; needs_note: boolean; blocked: string | null; when: string; four_eyes: boolean; reasons: { code: string; label: string }[] }[]
   tasks: { id: string; label: string; required: boolean; done: boolean; done_by: string | null; done_at: string | null }[]
   requests: { id: string; recipient_label: string; question: string; status: string; raised_by: string; created: string; due: string; response: string; answered: string | null; answered_by: string | null }[]
   workflow: { states: { id: string; label: string; kind: string }[]; autonomy: string; recipients: Record<string, string> }
@@ -31,6 +32,7 @@ export default function CaseWorkspace() {
   const persona = usePersona()
   const { data, error, reload } = useApi<Detail>(`/cases/${id}`, [persona?.id])
   const [note, setNote] = useState('')
+  const [reason, setReason] = useState('')
   const [restricting, setRestricting] = useState<null | 'restrict' | 'lift'>(null)
   const [narr, setNarr] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
@@ -41,13 +43,14 @@ export default function CaseWorkspace() {
   const [chat, setChat] = useState<Answer[]>([])
   const [question, setQuestion] = useState('')
   const [asking, setAsking] = useState(false)
+  const [tick, setTick] = useState(0) // bumps after every action so the side panels reload too
   const nameOf = useNameOf()
   const { can } = usePeople()
   useEffect(() => { if (data) setNarr(data.case.narrative) }, [data?.case.id, data?.case.narrative]) // eslint-disable-line
   if (!data) return <Loading error={error} />
   const { case: c, party, agent_run: run } = data
   const act = async (fn: () => Promise<unknown>, ok: string) => {
-    try { await fn(); setMsg(ok); setNote(''); reload() } catch (e) { setMsg((e as Error).message) }
+    try { await fn(); setMsg(ok); setNote(''); setReason(''); setTick(n => n + 1); reload() } catch (e) { setMsg((e as Error).message) }
   }
   const { access } = data
   const ask = (q: string) => {
@@ -60,6 +63,10 @@ export default function CaseWorkspace() {
   const idx = openStates.findIndex(s => s.id === c.state)
   const txns = data.transactions.filter(t => (focus.length ? focus.includes(t.id) : !onlyAlerted || t.alerted))
   const rec = run?.steps.find(s => s.agent === 'orchestrator')
+  // Closing reasons differ by outcome, so the list offers every reason and each button accepts only its own.
+  const reasons = [...new Map(data.transitions.flatMap(t => t.reasons).map(r => [r.code, r])).values()]
+  const why = (t: Detail['transitions'][number]) => t.blocked ?? (t.needs_note && !note.trim() ? 'Add a rationale note first'
+    : t.reasons.length && !t.reasons.some(r => r.code === reason) ? (reason ? 'The chosen reason does not apply to this outcome' : 'Choose a closing reason first') : '')
   return (
     <>
       <div className="crumbs"><Link to="/cases">Cases</Link> / {c.id}</div>
@@ -108,7 +115,7 @@ export default function CaseWorkspace() {
       </form>}
       <ol className="stepper" aria-label="Workflow stage">
         {openStates.map((s, i) => <li key={s.id} className={!c.open || i < idx ? 'done' : i === idx ? 'now' : ''}>{s.label}</li>)}
-        <li className={c.open ? '' : 'now end'}>{c.open ? 'Decision' : c.state_label}</li>
+        <li className={c.open ? '' : 'now end'}>{c.open ? 'Decision' : c.disposition === 'merged' ? 'Merged into another case' : c.state_label}</li>
       </ol>
 
       <div className="workspace">
@@ -191,7 +198,7 @@ export default function CaseWorkspace() {
         <div className="col">
           <Card title="Decision">
             {data.filing && <div className="filed"><b>{data.filing.kind} {data.filing.status === 'acknowledged' ? `accepted by the regulator (${data.filing.reference})` : data.filing.status === 'submitted' ? 'sent to the regulator' : data.filing.status === 'rejected' ? 'rejected by the regulator' : data.filing.problems.length ? 'prepared but not sent: it needs fixing' : 'prepared, not sent yet'}</b> · prepared by {nameOf(data.filing.filed_by)} on {fmtDateTime(data.filing.filed_at)}<code>{data.filing.id} · sha256 {data.filing.sha256.slice(0, 16)}…</code>{(can('submit_filings') || can('view_team')) && <Link to={`/filings/${data.filing.id}`}>Open the report</Link>}</div>}
-            {!c.open && !data.filing && <p className="empty">Closed: {c.state_label}.</p>}
+            {!c.open && !data.filing && c.disposition !== 'merged' && <p className="empty">Closed: {c.state_label}.</p>}
             {c.open && <>
               {data.tasks.length > 0 && <fieldset className="tasks"><legend>Tasks in this stage</legend>
                 {data.tasks.map(t => (
@@ -204,10 +211,15 @@ export default function CaseWorkspace() {
               </fieldset>}
               <label className="lbl" htmlFor="note">Rationale note</label>
               <textarea id="note" rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="Required for closures and returns" />
+              {reasons.length > 0 && <>
+                <label className="lbl" htmlFor="reason">Closing reason</label>
+                <select id="reason" value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%' }}>
+                  <option value="">Choose a reason (needed to close)</option>{reasons.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+                </select></>}
               <div className="actions">{data.transitions.map(t => (
-                <button key={t.to + t.label} disabled={!!t.blocked || (t.needs_note && !note.trim())} title={t.blocked ?? (t.needs_note && !note.trim() ? 'Add a rationale note first' : '')}
+                <button key={t.to + t.label} disabled={!!why(t)} title={why(t)}
                   className={/file|block|refund$/i.test(t.label) ? 'primary' : ''}
-                  onClick={() => act(() => api.post(`/cases/${c.id}/transition`, { to: t.to, note }), `Moved to ${t.to_label}.`)}>
+                  onClick={() => act(() => api.post(`/cases/${c.id}/transition`, { to: t.to, note, reason: t.reasons.length ? reason : '' }), `Moved to ${t.to_label}.`)}>
                   {t.label}{t.four_eyes && !t.blocked && <em className="tag">four-eyes</em>}{t.blocked && <small>{t.blocked}</small>}
                   {t.when && <small className="why">Offered because {t.when}</small>}
                 </button>))}
@@ -217,6 +229,7 @@ export default function CaseWorkspace() {
             </>}
             {msg && <p className="msg" role="status">{msg}</p>}
           </Card>
+          <CaseExtras caseId={c.id} tick={tick} onChange={(m: string) => { setMsg(m); setTick(n => n + 1); reload() }} />
           <Card title="Narrative" action={<span className="muted small">{c.drafted_by ? `Saved by ${nameOf(c.drafted_by)}` : narr ? 'Agent draft, not yet reviewed' : ''}</span>}>
             <textarea rows={11} value={narr} onChange={e => setNarr(e.target.value)} disabled={!c.open || !access.can_work} aria-label="Narrative" />
             {c.open && access.can_work && <button onClick={() => act(() => api.post(`/cases/${c.id}/narrative`, { text: narr }), 'Narrative saved under your name.')} disabled={!narr.trim()}>Save as my narrative</button>}

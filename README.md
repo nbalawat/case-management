@@ -143,6 +143,7 @@ The full API reference is at <http://localhost:8000/docs>.
 | Detection | Four scenarios (structuring, rapid movement, high-risk geography, watchlist name match), versioned and idempotent | Stream processing, ML models, a real sanctions list (the watchlist is fictional) |
 | Alert intake | `POST /api/alerts` for outside engines, deduplicated, grouped per customer | Vendor-specific adapters |
 | Workflows | Six case types as versioned YAML: stages, queues, stage tasks, conditional steps, waiting stages, four-eyes, stage clocks with escalation, QA sampling with reopen. Checked and published from the UI. | Durable workflow engine (timers are swept, not scheduled), parallel branches, a drag-and-drop designer |
+| Casework at volume | Per-client code lists (closing reasons, QA criteria and weights, QA root causes, hibernation rules), edited on the Lists page and retired rather than deleted. Closing without a report needs a reason the client offers for that outcome. Bulk claim, reassign and move, where each case passes its own checks and refusals change nothing. Merging two open cases about one customer. QA scorecards with a pass mark, and a findings report by person, criterion, root cause and agent advice. Weak alerts that wait for a second alert, join its case, or close with the rule on record. | Approval of list changes by a second person, list versions, case splitting, undoing a merge, scheduled sweeps (waiting alerts close when the clock sweep runs) |
 | People and access | Each client's own versioned policy: roles, permissions, queues, people (who may hold several roles), read-only roles. Edited and published from the UI with checks: a change is refused if it would strand a workflow or lock everyone out. Every person at every kind of client is tested against every workflow step. | People and group membership synced from the client's identity provider (SCIM); today the provider proves who someone is and the policy on the Access page says what they may do. A form-based editor. |
 | Case visibility | Each role can be limited to its own queues, its own cases, or some case types; people keep cases they own or have worked on, and someone with several roles sees what any of them shows. Restricted cases are hidden from everyone not cleared, including their former owner, team leads and administrators, and cases opened from a restricted case inherit it. Enforced in the data layer, so lists, case pages, actions, the event feed, dashboards, the agent ledger and Ask all follow it; a hidden case answers "not found". Tested by signing in as every person at every client and checking every case against an independent statement of the rule. | Customers and transactions are not hidden by this rule, only cases and what hangs off them, so the Data pages and a customer lookup in Ask still show a customer whose case is restricted. Alerts closed by an agent before any case existed are visible to all. Rules by customer attribute (segment, country, relationship manager's own book). Break-glass access with a reason. Postgres row-level security as a second layer. A restricted case stays in its workflow, so someone cleared must also hold the role for the next step. |
 | Clients | Shared database with every row keyed by client. Isolation is enforced in the data layer: queries are filtered and writes stamped automatically, and statements that cannot be filtered are refused. Per-client case types and workflow versions. Templates, one-step onboarding, suspend, and an operator console that shows counts only. | Postgres row-level security as a second layer, dedicated databases or stamps per client (the choice is recorded, not acted on), per-client encryption keys, usage metering, offboarding and data export |
@@ -172,7 +173,8 @@ backend/app/
   detection/   scenario registry and engine
   alerts/      alert hub: dedupe, group into cases, prioritise
   cases/       case type registry, transition guards, conditions, tasks, assignment,
-               information requests, timers, QA sampling, publishing
+               information requests, timers, QA sampling and scorecards, bulk steps, merging, publishing
+  reference.py the code lists each client's people choose from, with the library every client starts with
   agents/      catalog, per-client policy, runtime, toolbox and extractor, ledger, alert triage, evaluation,
                copilot, lookback and tuning, oversight, model-backed mode
   ask/         ask anything: query vocabulary, read-only tools, model gateway and providers,
@@ -187,6 +189,7 @@ backend/app/
   api/         HTTP routes (the UI uses only these)
 backend/case_types/   the workflow library: one YAML file per case type
 backend/agents/       the agent catalog: one declaration per agent
+backend/reference/     the starting code lists: closing reasons, QA criteria and root causes, hibernation rules
 backend/access/       starting access policies: permissions, roles, queues, people
 backend/templates/    client templates: a starting policy plus a set of case types
 frontend/src/         React + TypeScript UI
@@ -216,6 +219,13 @@ registry, and `ChatModel` for the model that answers questions), so later milest
     record a rejection, then amend it with a corrected narrative; the original stays as it was. Try to edit the
     narrative on a case whose SAR was sent: it is locked. Switch to Alder Private Bank: the same work produces goAML
     STRs, because that client reports to a different regulator.
+
+18. **Casework at volume, at Meridian.** As Ana Ruiz, open Cases, tick several and press Claim: each case answers for
+    itself, and the ones outside her queues say why. Pick cases at the same stage and close them together with one
+    reason. Open the unassigned case for a customer who has two: Related cases offers the merge, and the alerts
+    move across. Follow "weak alerts are waiting" to Alert intake to see what a hibernation rule is holding, and
+    open a case for one. As Quinn Adeyemi, open the QA review, score it, and try to pass it below 80%. As Tara
+    Singh, read Quality assurance findings on Team. As Omar Haddad, open Lists and retire a closing reason.
 
 ## Milestones
 
@@ -251,9 +261,13 @@ customer profile and network graph, counterparty pages and one search box.
 report, amendments, the narrative lock and CTRs from cash days. Still to come here: schema validation and a
 direct connection to the regulators' systems.
 
-**10. Enterprise breadth.** Lookback projects, management reporting and the remaining case-management modules.
+**10. Casework at volume (done).** Client code lists, closing reasons, bulk steps, case merge, QA scorecards and
+findings, alert hibernation. The demo data is now identical on every run.
 
-**11. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
+**11. Enterprise breadth.** KYC and workspace depth, fraud and sanctions depth, lookback projects, management
+reporting, governance views and detection tuning.
+
+**12. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
 architecture: per-client stamps and the SaaS, dedicated, client-cloud and air-gapped deployment modes.
 
 ## Screenshots

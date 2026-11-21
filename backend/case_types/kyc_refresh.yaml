@@ -40,7 +40,7 @@ transitions:
     when: ["risk_rating != high", "pep == false"]
   - {from: review, to: edd, label: Escalate to EDD, roles: [kyc_analyst], requires: [tasks]}
   - {from: edd, to: approved, label: Approve after EDD, roles: [mlro, team_lead], requires: [tasks, note], four_eyes: true}
-  - {from: edd, to: exit, label: Recommend exit, roles: [mlro], requires: [note]}
+  - {from: edd, to: exit, label: Recommend exit, roles: [mlro], requires: [note, reason]}
 
 sla:
   clock: Periodic review due

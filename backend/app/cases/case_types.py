@@ -18,6 +18,8 @@ from . import conditions
 
 REQUIREMENTS = {
     "note": "A rationale note",
+    "reason": "A reason code from the client's list",
+    "scorecard": "A completed QA scorecard, at or above the pass mark to pass",
     "narrative": "A saved narrative",
     "tasks": "All required tasks in the current stage done",
     "open_request": "An open information request",

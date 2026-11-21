@@ -180,3 +180,15 @@ button.link{border:0;background:none;color:var(--brand);padding:0;min-height:0;t
 .top nav .setup{display:flex;gap:2px;margin-left:8px;padding-left:8px;border-left:1px solid var(--line)}.top nav .setup a{color:var(--muted)}
 .problems{margin:6px 0 12px;padding-left:18px;color:var(--crit)}.doc{max-height:560px;white-space:pre}
 .stack{display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin:10px 0}.stack .lbl{width:100%}.stack input,.stack textarea{width:100%;display:block;margin-top:4px;padding:7px 9px;border:1px solid var(--line);border-radius:8px}
+/* casework at volume: bulk bar, merge, scorecards, code lists */
+.bulk{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 12px;margin:0 0 12px;background:var(--brand-soft);border:1px solid var(--line);border-radius:10px;font-size:13px}
+.bulk select,.bulk button,.bulk input[type=search]{min-height:30px;padding:3px 10px}.bulk input[type=search]{width:220px}.bulk .msg{flex-basis:100%;margin:0}
+.bulk-result{flex-basis:100%}.bulk-result ul{margin:6px 0;padding-left:18px}.bulk-result li{margin:2px 0}
+.merge{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:6px 0;font-size:13.5px}
+.scorecard .criterion{padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}.scorecard .criterion:first-child{border-top:0}
+.seg.small{margin:6px 0 0}.seg.small button{min-height:28px;padding:2px 12px;font-size:12.5px}
+.qa-report{margin-top:14px}.qa-report h3{font-size:13px;margin:12px 0 6px;color:var(--soft)}.qa-report h3:first-child{margin-top:0}
+.bar-row.cause{grid-template-columns:minmax(140px,1fr) minmax(60px,1fr) 28px}
+table.codes input:not([type=checkbox]){width:100%;min-width:90px;min-height:30px;padding:3px 8px}table.codes tr.retired td{color:var(--muted)}table.codes td{vertical-align:middle}
+.merge button{flex:none;white-space:nowrap}.merge+input,.card input[aria-label="Why these are one matter"]{width:100%;margin-top:6px}
+td button{white-space:nowrap}

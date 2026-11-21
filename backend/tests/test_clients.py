@@ -205,7 +205,7 @@ def test_qa_sampling_follows_the_clients_own_case_types(db, monkeypatch):
             c = create_case(s, load_case_types(tid)["tm_alert_investigation"], "P1", "low")
             person = registry.runtime(tid).policy.people[who]
             complete_stage_tasks(s, c, person)
-            transition(s, c, "closed_no_sar", person, "documented")
+            transition(s, c, "closed_no_sar", person, "documented", reason="explained_by_documents")
             s.flush()
             assert s.scalar(select(func.count()).select_from(m.Case).where(m.Case.parent_id == c.id)) == (1 if tid == "bank" else 0)
 

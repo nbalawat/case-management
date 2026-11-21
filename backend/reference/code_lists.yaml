@@ -1,0 +1,48 @@
+# The code lists every client starts with. A client can replace any list with its own from the Reference data page.
+disposition_reasons:
+  title: Reasons for closing a case
+  about: Chosen when a case is closed without a report or with an adverse outcome, so closures can be counted and challenged.
+  fields: {applies_to: list}
+  codes:
+    - {code: explained_by_business, label: Activity explained by the customer's known business or occupation, applies_to: [no_sar, genuine]}
+    - {code: explained_by_documents, label: Activity explained by documents the customer supplied, applies_to: [no_sar, genuine, false_positive]}
+    - {code: consistent_with_history, label: Consistent with the customer's established pattern, applies_to: [no_sar, genuine]}
+    - {code: one_off_event, label: 'One-off event with a clear cause, such as a property sale or inheritance', applies_to: [no_sar]}
+    - {code: data_quality, label: Alert caused by a data error or duplicate, applies_to: [no_sar, false_positive, genuine]}
+    - {code: name_only_match, label: Name matches but date of birth, country or other identifiers do not, applies_to: [false_positive]}
+    - {code: weak_match, label: Match strength too low after review, applies_to: [false_positive]}
+    - {code: customer_confirmed, label: Customer confirmed making the transaction, applies_to: [genuine, claim_declined]}
+    - {code: no_evidence_of_fraud, label: No evidence the customer was deceived or the payment unauthorised, applies_to: [claim_declined]}
+    - {code: outside_policy, label: Claim falls outside the reimbursement policy, applies_to: [claim_declined]}
+    - {code: unacceptable_risk, label: Risk outside appetite, applies_to: [declined, exit]}
+    - {code: could_not_verify, label: Identity or ownership could not be verified, applies_to: [declined, exit]}
+    - {code: customer_unresponsive, label: Customer did not provide what was asked for, applies_to: [declined, exit]}
+qa_criteria:
+  title: QA scorecard criteria
+  about: What a reviewer scores on every sampled case. The weights set how much each one counts.
+  fields: {weight: number}
+  codes:
+    - {code: decision_supported, label: The decision is supported by the evidence on file, weight: 30}
+    - {code: rationale_clear, label: The rationale is clear enough for a regulator to follow, weight: 25}
+    - {code: procedure_followed, label: Required steps were completed and in order, weight: 20}
+    - {code: evidence_complete, label: 'Evidence is complete: transactions, documents and requests are on the case', weight: 15}
+    - {code: timely, label: The case was worked within its deadlines, weight: 10}
+qa_root_causes:
+  title: QA root causes
+  about: Why a case fell short, chosen for each criterion that was not fully met.
+  codes:
+    - {code: insufficient_research, label: Not enough research into the customer or counterparties}
+    - {code: weak_rationale, label: Rationale does not explain the decision}
+    - {code: missed_red_flag, label: A red flag in the data was not addressed}
+    - {code: procedure_gap, label: A required step was skipped or done out of order}
+    - {code: missing_evidence, label: Evidence relied on is not on the case}
+    - {code: late, label: Deadline missed without a recorded reason}
+    - {code: training_need, label: Analyst needs coaching on this typology}
+alert_hibernation:
+  title: Alert hibernation rules
+  about: >-
+    A weak alert with no open case can wait instead of opening one. If another alert arrives for the same customer in
+    time, the waiting ones join its case; if none does, they close with the rule recorded. Empty means every alert opens a case.
+  optional: true
+  fields: {scenario: text, below: number, days: number}
+  codes: []

@@ -18,8 +18,8 @@ states:
   failed: {label: Failed and returned, kind: closed, disposition: qa_failed}
 
 transitions:
-  - {from: review, to: passed, label: Pass, roles: [qa_reviewer], requires: [tasks]}
-  - {from: review, to: failed, label: Fail and reopen the case, roles: [qa_reviewer], requires: [note]}
+  - {from: review, to: passed, label: Pass, roles: [qa_reviewer], requires: [tasks, scorecard]}
+  - {from: review, to: failed, label: Fail and reopen the case, roles: [qa_reviewer], requires: [note, scorecard]}
 
 sla:
   clock: QA review target

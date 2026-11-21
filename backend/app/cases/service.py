@@ -66,6 +66,9 @@ def facts(s: Session, case: Case) -> dict:
 
 
 # --- stage tasks -----------------------------------------------------------------
+MERGED = "merged"  # closed by being folded into another case, whatever stage it was in
+
+
 def stage_tasks(case: Case, defn: dict | None = None) -> list[dict]:
     defn = defn or definition(case)
     done = (case.data or {}).get("tasks", {}).get(case.state, {})
@@ -123,6 +126,12 @@ def _blocked(s: Session, case: Case, t: dict, persona: Persona, note: str | None
         return "Raise an information request first"
     if "requests_answered" in req and _open_requests(s, case):
         return "An information request is still open"
+    if "scorecard" in req:
+        from .scorecard import blocks
+
+        why = blocks(case, passing=definition(case)["states"][t["to"]].get("disposition") == "qa_passed")
+        if why:
+            return why
     if note is not None and "note" in req and not note.strip():
         return "A rationale note is required"
     return None
@@ -137,6 +146,8 @@ def applicable_targets(s: Session, case: Case) -> set[str]:
 
 @system_work
 def allowed_transitions(s: Session, case: Case, persona: Persona) -> list[dict]:
+    if case.disposition == MERGED:
+        return []  # its work carries on in the case it was merged into
     defn = definition(case)
     f = facts(s, case)
     out = []
@@ -146,13 +157,24 @@ def allowed_transitions(s: Session, case: Case, persona: Persona) -> list[dict]:
         blocked = "Read-only access" if persona.read_only else _blocked(s, case, t, persona, None)
         out.append({"to": t["to"], "label": t["label"], "to_label": defn["states"][t["to"]]["label"],
                     "needs_note": "note" in t.get("requires", []), "blocked": blocked,
+                    "reasons": reasons_for(s, defn["states"][t["to"]].get("disposition")) if "reason" in t.get("requires", []) else [],
                     "when": conditions.describe(t.get("when")), "four_eyes": bool(t.get("four_eyes"))})
     return out
 
 
 @system_work
-def transition(s: Session, case: Case, to: str, persona: Persona, note: str = "", ts: datetime | None = None) -> Case:
+def reasons_for(s: Session, disposition: str | None) -> list[dict]:
+    """The reason codes this client offers for an outcome."""
+    from .. import reference
+
+    return [c for c in reference.codes(s, "disposition_reasons") if disposition in c.get("applies_to", [])]
+
+
+@system_work
+def transition(s: Session, case: Case, to: str, persona: Persona, note: str = "", ts: datetime | None = None, reason: str = "") -> Case:
     """Move a case to a new state. Only people call this; agents have no path to it."""
+    if case.disposition == MERGED:
+        raise TransitionError(f"This case was merged into {(case.data or {}).get('merged_into')}; work continues there")
     defn = definition(case)
     f = facts(s, case)
     candidates = [x for x in defn["transitions"] if x["from"] == case.state and x["to"] == to]
@@ -163,13 +185,22 @@ def transition(s: Session, case: Case, to: str, persona: Persona, note: str = ""
         raise TransitionError(f"'{candidates[0]['label']}' does not apply to this case: {conditions.describe(candidates[0].get('when'))}")
     if persona.read_only:
         raise TransitionError("Read-only access")
-    reason = _blocked(s, case, t, persona, note)
-    if reason:
-        raise TransitionError(reason)
+    why_not = _blocked(s, case, t, persona, note)
+    if why_not:
+        raise TransitionError(why_not)
+    chosen = None
+    if "reason" in t.get("requires", []):
+        offered = reasons_for(s, defn["states"][to].get("disposition"))
+        chosen = next((c for c in offered if c["code"] == reason), None)
+        if offered and chosen is None:
+            raise TransitionError("Choose a reason for this outcome: " + "; ".join(c["label"] for c in offered))
     ts = ts or now()
     prev = case.state
+    if chosen:
+        case.data = dict(case.data or {}) | {"reason_code": chosen["code"]}
     record(s, case.id, persona.id, "human", "case.state_changed",
-           {"from": prev, "to": to, "label": t["label"], "note": note, "agent_recommendation": case.agent_recommendation}, ts=ts)
+           {"from": prev, "to": to, "label": t["label"], "note": note, "agent_recommendation": case.agent_recommendation,
+            **({"reason_code": chosen["code"], "reason": chosen["label"]} if chosen else {})}, ts=ts)
     enter_state(s, case, defn, to, ts, actor=persona.id)
     target = defn["states"][to]
     if target.get("kind") == "closed":

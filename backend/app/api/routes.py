@@ -119,13 +119,14 @@ def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depen
 class TransitionIn(BaseModel):
     to: str
     note: str = ""
+    reason: str = ""
 
 
 @router.post("/cases/{case_id}/transition")
 def post_transition(case_id: str, body: TransitionIn, s: Session = Depends(get_session), p: Persona = Depends(actor)):
     c = _get_case(s, case_id)
     try:
-        transition(s, c, body.to, p, body.note)
+        transition(s, c, body.to, p, body.note, reason=body.reason)
     except TransitionError as e:
         raise HTTPException(409, str(e)) from e
     return {"ok": True, "state": c.state}

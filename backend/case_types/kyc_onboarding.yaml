@@ -51,9 +51,9 @@ transitions:
     roles: [kyc_analyst]
     requires: [tasks]
     when: [{any: ["risk_rating == high", "pep == true"]}]
-  - {from: risk_assessment, to: declined, label: Decline, roles: [kyc_analyst], requires: [note]}
+  - {from: risk_assessment, to: declined, label: Decline, roles: [kyc_analyst], requires: [note, reason]}
   - {from: edd_approval, to: approved, label: Approve high-risk account, roles: [mlro, team_lead], requires: [tasks, note], four_eyes: true}
-  - {from: edd_approval, to: declined, label: Decline, roles: [mlro, team_lead], requires: [note]}
+  - {from: edd_approval, to: declined, label: Decline, roles: [mlro, team_lead], requires: [note, reason]}
 
 sla:
   clock: Onboarding decision target

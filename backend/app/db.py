@@ -45,7 +45,7 @@ def init_db(eng=None) -> None:
     Base.metadata.create_all(eng or engine)
 
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 11
 
 
 def ensure_schema(eng=None) -> None:

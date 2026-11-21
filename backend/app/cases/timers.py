@@ -44,4 +44,6 @@ def run_timers(s: Session, at: datetime | None = None) -> dict:
         record(s, c.id, "timers", "system", "request.overdue", {"request_id": r.id, "recipient": r.recipient, "due": r.due.isoformat()}, ts=at)
         overdue += 1
     s.flush()
-    return {"stage_breaches": breached, "requests_overdue": overdue, "at": at.isoformat()}
+    from ..alerts.hub import sweep_hibernated
+
+    return {"stage_breaches": breached, "requests_overdue": overdue, "alerts_expired": sweep_hibernated(s, at), "at": at.isoformat()}

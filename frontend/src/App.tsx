@@ -20,6 +20,8 @@ import Counterparty from './pages/Counterparty'
 import Entities from './pages/Entities'
 import Filings from './pages/Filings'
 import Filing from './pages/Filing'
+import Alerts from './pages/Alerts'
+import Reference from './pages/Reference'
 import Search from './components/Search'
 
 type Meta = { tenant: { id: string; name: string }; personas: Persona[]; default_person: string; sample_data: boolean }
@@ -41,7 +43,7 @@ const NAV = [
   ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/entities', 'Entities'], ['/filings', 'Reports'], ['/team', 'Team'], ['/agents', 'Agents'],
 ]
 // Setting the platform up, as opposed to working in it.
-const SETUP = [['/workflows', 'Workflows'], ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations']]
+const SETUP = [['/workflows', 'Workflows'], ['/reference', 'Lists'], ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations']]
 
 /** Switching client is a clean break: nothing from one client may linger on screen for the next. */
 export function switchClient(id: string) {
@@ -128,6 +130,8 @@ export default function App() {
           <Route path="/overview" element={<Overview />} />
           <Route path="/cases" element={<Cases />} />
           <Route path="/cases/:id" element={<CaseWorkspace />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/reference" element={<Reference />} />
           <Route path="/entities" element={<Entities />} />
           <Route path="/filings" element={<Filings />} />
           <Route path="/filings/:id" element={<Filing />} />

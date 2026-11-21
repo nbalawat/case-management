@@ -31,7 +31,7 @@ def _sample_on_close(s: Session, case: Case, defn: dict, actor: Persona, ts: dat
     if (case.data or {}).get("qa_done") or not sampled(case.id, float(qa.get("sample_rate", 0))):
         return
     review = create_case(s, load_case_types(case.tenant_id)[QA_CASE_TYPE], case.party_id, "low", created=ts, parent_id=case.id, actor="qa-sampler")
-    review.data = {"closed_by": actor.id}
+    review.data = {"closed_by": actor.id, "closed_as": case.disposition}
     case.data = dict(case.data or {}) | {"qa_done": True}
     record(s, case.id, "qa-sampler", "system", "qa.sampled", {"review_case": review.id, "sample_rate": qa.get("sample_rate")}, ts=ts)
 

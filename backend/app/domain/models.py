@@ -5,6 +5,9 @@ from the client's own systems, so they are only unique within a client: their ke
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import random
 import uuid
 from datetime import datetime, timezone
 
@@ -19,8 +22,22 @@ def now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+_id_source: contextvars.ContextVar[random.Random | None] = contextvars.ContextVar("id_source", default=None)
+
+
 def new_id(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:10]}"
+    source = _id_source.get()
+    return f"{prefix}-{source.getrandbits(40):010x}" if source is not None else f"{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+@contextlib.contextmanager
+def repeatable_ids(seed: str):
+    """Inside this block ids come from a seeded stream, so synthetic data is identical on every run. Never used for live work."""
+    token = _id_source.set(random.Random(seed))
+    try:
+        yield
+    finally:
+        _id_source.reset(token)
 
 
 class Tenant(Base):
@@ -98,6 +115,8 @@ class Alert(TenantScoped, Base):
     status: Mapped[str] = mapped_column(String(20), default="new")
     case_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    wake_by: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # while hibernated: when it closes if nothing else arrives
+    policy_note: Mapped[str] = mapped_column(String(300), default="")  # what a rule did with it, in words
     # The triage agent's reading of the alert: score, reasons, linked alerts and what it did or proposed.
     triage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Set when an agent closed the alert on its own (status auto_closed). qa_sample marks the ones a person must check.
@@ -176,6 +195,16 @@ class Feed(TenantScoped, Base):
     created: Mapped[datetime] = mapped_column(DateTime, default=now)
     mapping: Mapped[dict] = mapped_column(JSON, default=dict)
     stats: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class CodeList(TenantKeyed, Base):
+    """A client's own version of a reference list, such as its reasons for closing a case. Absent means the library's list applies."""
+
+    __tablename__ = "code_list"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    codes: Mapped[list] = mapped_column(JSON, default=list)
+    updated_by: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
 class Filing(TenantScoped, Base):

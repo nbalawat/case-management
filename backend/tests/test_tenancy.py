@@ -25,6 +25,7 @@ FACTORY = {
     "CaseEvent": lambda k: m.CaseEvent(case_id=f"case-{k}", actor="x", actor_kind="system", kind="note"),
     "AgentRun": lambda k: m.AgentRun(id=f"run-{k}", case_id=f"case-{k}"),
     "Feed": lambda k: m.Feed(id=f"feed-{k}", name="f", source_system="core"),
+    "CodeList": lambda k: m.CodeList(id="disposition_reasons", codes=[{"code": k, "label": k}], updated_by="x"),
     "Filing": lambda k: m.Filing(id=f"sar-{k}", case_id=f"case-{k}", kind="SAR", filed_by="x", sha256="0" * 64),
     "InfoRequest": lambda k: m.InfoRequest(id=f"rfi-{k}", case_id=f"case-{k}", recipient="customer", question="q", raised_by="x", due=NOW),
     "WorkflowVersion": lambda k: m.WorkflowVersion(case_type="tm_alert_investigation", version="9.0.0", source="x", published_by="x"),
