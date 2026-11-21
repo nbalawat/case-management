@@ -23,6 +23,7 @@ services:
     build: .
     environment: &app-env
       DATABASE_URL: postgresql+psycopg://caseforge:caseforge-local-only@db:5432/caseforge
+      DATABASE_ROLE: caseforge_app                 # requests run as a role Postgres row-level security binds (app/rls.py)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # optional: a model behind the Ask page and the agents
       OPEN_MODEL_URL: ${OPEN_MODEL_URL:-}        # optional: an open-weight model on vLLM or Ollama, e.g. http://host.docker.internal:11434/v1
       OPEN_MODEL: ${OPEN_MODEL:-}

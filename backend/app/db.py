@@ -10,6 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from .config import settings
+from . import rls as _rls  # noqa: E402,F401  registers the hook that tells Postgres whose transaction each one is
 
 
 class Base(DeclarativeBase):
@@ -77,6 +78,7 @@ def ensure_schema(eng=None) -> None:
         empty = not migrations.has_tables(conn)
     head = migrations.head()
     if managed and at == head:
+        secure(eng)  # a database already at the newest schema may still predate a policy or the request role
         return
     if managed:
         if not settings.migrate_on_start:
@@ -97,6 +99,18 @@ def ensure_schema(eng=None) -> None:
             conn.execute(text("DROP TABLE IF EXISTS schema_version"))
             conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
     migrations.upgrade(eng)
+
+
+def secure(eng=None) -> list[str]:
+    """Postgres row-level security on every client table, and the request role (app/rls.py). A no-op on SQLite."""
+    from . import migrations, rls
+
+    eng = eng or engine
+    if eng.dialect.name != "postgresql":
+        return []
+    with eng.begin() as conn:
+        migrations.lock(conn)
+        return rls.apply(conn)
 
 
 @contextmanager

@@ -197,3 +197,28 @@ def test_answers_dropped_in_the_inbox_are_recorded_once(client):
     assert client.post("/api/filings/answers/collect", headers=h("meridian", "ana")).status_code == 403
     with appdb.session_scope("meridian") as s:
         assert answers.collect(s, policy_of("meridian").people["maya"])["files"] == 0
+
+
+def test_the_inbox_is_also_read_on_a_schedule_as_the_regulator_inbox(client, monkeypatch):
+    """What Temporal's answers schedule (and the in-process scheduler) calls: each client's inbox, as a system actor."""
+    import json
+
+    from app.filing import answers
+    from app.ingest import scheduler
+    from app.ingest.locations import store_for
+    from test_client_api import h
+
+    sent = [r for r in client.get("/api/filings", headers=h("meridian", "maya")).json()["filings"] if r["status"] == "submitted"]
+    assert sent, "the demo has a report waiting for its answer"
+    store_for("meridian", "landing").write("regulatory/inbox/answers-scheduled.jsonl",
+                                           json.dumps({"filing_id": sent[0]["id"], "status": "accepted", "reference": "31000111222333"}).encode())
+    assert scheduler.collect_answers().get("meridian") == 1
+    shown = client.get(f"/api/filings/{sent[0]['id']}", headers=h("meridian", "maya")).json()
+    assert shown["reference"] == "31000111222333" and shown["status"] == "acknowledged"
+    assert answers.collect_for("meridian")["files"] == 0  # read once, whoever reads it
+
+    def unreadable(*_a, **_k):
+        raise KeyError("landing")
+
+    monkeypatch.setattr("app.ingest.locations.store_for", unreadable)
+    assert "cannot be read" in answers.collect_for("meridian")["skipped"]  # skipped with the reason, tried again next pass

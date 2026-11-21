@@ -32,6 +32,13 @@ api:
 # an explanation. `rebuild` drops every table and starts again: it exists for demos and must never meet real data.
 schemaOnMismatch: refuse
 
+# Postgres row-level security keeps every client to its own rows in the database itself, under the application's own
+# filter. Requests run as this role (SET LOCAL ROLE), which the application creates with no superuser or BYPASSRLS
+# right, because Postgres lets those past every policy. The database user in the secret needs CREATEROLE once, or an
+# administrator creates the role (NOLOGIN NOBYPASSRLS) and grants it to that user. Empty: requests run as the user in
+# DATABASE_URL, and the health check says whether row-level security binds it.
+databaseRole: caseforge_app
+
 # Schema changes are versioned migrations. With the job on (the default), a hook runs `python -m app.migrate` before
 # each install and upgrade, and the pods refuse to start against a database that is behind. With it off, the pods
 # migrate as they start, taking a database lock so only one does the work.
