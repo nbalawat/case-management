@@ -270,7 +270,7 @@ Mac the Compose broker is `localhost:29092`; publish a canonical transaction to 
 and watch the Integrations page. Gated tests run against real engines when `TEST_POSTGRES_URL`, `TEST_KAFKA_URL`,
 `TEST_OPENSEARCH_URL` or `TEST_FLINK_URL` is set.
 
-The API reference is at <http://localhost:8000/docs>. Every setting is listed in
+The public API for other teams and third parties is at <http://localhost:8000/api/v1/docs> (see [docs/public-api.md](docs/public-api.md); applications are registered on the Developer page). The internal API the web interface uses is at <http://localhost:8000/docs>. Every setting is listed in
 [docs/configuration.md](docs/configuration.md).
 
 ## Deploying to AWS, Azure and GCP

@@ -5,7 +5,7 @@
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import {
-  BarChart3, Bot, Boxes, CreditCard, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
+  BarChart3, Bot, Boxes, Code2, CreditCard, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
   Radar, ScrollText, ShieldAlert, ShieldCheck, Siren, Sparkles, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { anyOf, can, desk, everyone, readOnly, type Rule } from './access'
@@ -101,7 +101,9 @@ export const MODULES: Module[] = [
     page: page(() => import('../pages/Data')), visible: can('load_data'), keywords: ['ingest', 's3', 'adls', 'gcs', 'feed'],
     children: [{ path: '/onboarding', page: page(() => import('../pages/Onboarding')) }] },
   { id: 'platform', path: '/platform', label: 'Integrations', description: 'Connected systems, events and scale', icon: Plug, group: 'admin',
-    page: page(() => import('../pages/Platform')), visible: can('manage_access', 'load_data'), keywords: ['api', 'kafka', 'webhook'] },
+    page: page(() => import('../pages/Platform')), visible: can('manage_access', 'load_data'), keywords: ['kafka', 'connectors'] },
+  { id: 'developer', path: '/developer', label: 'Developer', description: 'Applications on the public API: credentials, scopes, calls and webhooks', icon: Code2, group: 'admin',
+    page: page(() => import('../pages/Developer')), visible: can('manage_access'), keywords: ['api', 'oauth', 'webhook', 'openapi', 'integration', 'sdk'] },
 ]
 
 /** The module a path belongs to, matching detail routes to their parent. */

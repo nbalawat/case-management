@@ -25,6 +25,8 @@ from .api.sanctions import router as sanctions_router
 from .api.operations import router as operations_router
 from .auth import dev_idp
 from .api.data import router as data_router
+from .api.developer import router as developer_router
+from .public import app as public_api
 from .api.navigation import router as navigation_router
 from .api.case_list import router as case_list_router
 from .api.platform import router as platform_router
@@ -50,6 +52,11 @@ async def lifespan(_: FastAPI):
         from .ingest import scheduler
 
         task = asyncio.create_task(scheduler.run_forever())
+    hooks = None
+    if settings.webhook_workers:
+        from .public.webhooks import worker as webhook_worker
+
+        hooks = asyncio.create_task(webhook_worker.run_forever())
     backbone = None
     if settings.backbone_workers:
         from .backbone import worker
@@ -58,6 +65,8 @@ async def lifespan(_: FastAPI):
     yield
     if task:
         task.cancel()
+    if hooks:
+        hooks.cancel()
     if backbone:
         backbone[1].set()
 
@@ -68,6 +77,9 @@ for r in (router, work_router, workflows_router, access_router, platform_router,
     app.include_router(r, dependencies=[Depends(signed_in)])
 app.include_router(auth_router)
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1
+app.include_router(developer_router, dependencies=[Depends(signed_in)])
+# The public API: its own application, credentials, OpenAPI document (/api/v1/openapi.json) and reference (/api/v1/docs).
+app.mount(public_api.PREFIX, public_api.asgi)
 
 DIST = Path(ROOT / "frontend" / "dist")
 if DIST.exists():

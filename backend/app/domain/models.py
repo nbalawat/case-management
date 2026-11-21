@@ -805,3 +805,5 @@ class StreamStat(TenantScoped, Base):
 
 
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox
+
+from ..public import models as _public  # noqa: E402,F401  the public API's tables
