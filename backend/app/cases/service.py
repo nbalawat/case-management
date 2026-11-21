@@ -303,3 +303,15 @@ def _file_sar(s: Session, case: Case, persona: Persona, ts: datetime) -> Filing:
     f = prepare_suspicion(s, case, persona, ts)
     record(s, case.id, persona.id, "human", "sar.filed", {"filing_id": f.id, "sha256": f.sha256, "status": f.status, "format": f.format}, ts=ts)
     return f
+
+
+def _register_extensions() -> None:
+    """Facts and requirements other modules add: decision-table answers as conditions, completed forms as a requirement."""
+    from ..decisions import case_facts
+    from ..forms import requirement
+
+    case_facts.register_library()
+    requirement.register()
+
+
+_register_extensions()
