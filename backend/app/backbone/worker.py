@@ -51,7 +51,7 @@ def run(bus: EventBus, stop: threading.Event, parts: tuple[str, ...] = PARTS, re
         from ..lake.sink import LakeSink
 
         store = connect_lake()
-        sink = LakeSink(bus, store) if store is not None else None
+        sink = LakeSink(bus, store, flush_rows=settings.lake_flush_rows, flush_seconds=settings.lake_flush_seconds) if store is not None else None
     pruned = topics_at = 0.0
     while not stop.is_set():
         busy = False
@@ -94,7 +94,14 @@ def start_in_process() -> tuple[threading.Thread, threading.Event] | None:
 
 
 def main(argv: list[str]) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    import os
+
+    from ..observability import logs, metrics, tracing
+
+    logs.configure()
+    tracing.configure("caseforge-worker")
+    if os.getenv("METRICS_PORT"):  # Prometheus scrapes the worker here; the API serves its own on /metrics
+        metrics.serve(int(os.environ["METRICS_PORT"]))
     parts = tuple(argv) or PARTS
     if set(parts) - set(PARTS):
         print(__doc__)

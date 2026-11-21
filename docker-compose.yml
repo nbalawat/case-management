@@ -5,6 +5,7 @@
 # With Debezium publishing the outbox instead of the relay:                    make backbone-cdc
 # Everything: Kafka, the lake, OpenSearch, the graph engine and Temporal:      make full
 # Everything plus stream detection on Apache Flink:                            make streaming
+# Everything plus Prometheus, Grafana and Jaeger:                             make observability
 services:
   db:
     image: postgres:17-alpine
@@ -33,12 +34,14 @@ services:
       TEMPORAL_NAMESPACE_MODE: ${TEMPORAL_NAMESPACE_MODE:-per_client}  # each client's workflows in a namespace of its own
       FLINK_URL: ${FLINK_URL:-}                  # empty: no stream processor; scenarios run in the stream consumer
       FLINK_GATEWAY_URL: ${FLINK_GATEWAY_URL:-}  # Flink's SQL Gateway: start and stop jobs from the Integrations page
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}  # empty: no traces; make observability sends them to Jaeger
+      LOG_FORMAT: ${LOG_FORMAT:-text}            # json: one object per line, with request id, client and trace id
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
     depends_on:
       db: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/tenants')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
       interval: 5s
       retries: 60
 
@@ -73,6 +76,7 @@ services:
     environment:
       <<: *app-env
       EVENT_BUS_URL: kafka://kafka:9092
+      METRICS_PORT: "9100"  # Prometheus scrapes the worker here
     volumes: [warehouse:/app/data/warehouse]  # the API reads the same lake tables to show their totals
     depends_on:
       app: {condition: service_healthy}  # the API creates the schema and the demo clients
@@ -182,6 +186,29 @@ services:
     volumes: ["./deploy/debezium:/config:ro"]
     command: ["sh", "-c", "until curl -sf http://connect:8083/connectors > /dev/null; do sleep 3; done; curl -sf -X PUT -H 'Content-Type: application/json' --data @/config/outbox-connector.json http://connect:8083/connectors/caseforge-outbox/config"]
     depends_on: [connect]
+  # ---- seeing it run: docker compose --profile observability (make observability adds it to `make full`)
+  prometheus:
+    profiles: [observability]
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d", "--storage.tsdb.retention.size=512MB"]
+    volumes: ["./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro", "./deploy/observability/alerts.yml:/etc/prometheus/alerts.yml:ro"]
+    ports: ["9090:9090"]
+  grafana:
+    profiles: [observability]
+    image: grafana/grafana-oss:12.1.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"  # a laptop stack; a deployment signs in through the identity provider
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: caseforge-local-only
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/caseforge-platform.json
+    volumes: ["./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro", "./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro"]
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+  jaeger:  # receives OTLP traces on 4318 and shows them on http://localhost:16686
+    profiles: [observability]
+    image: jaegertracing/jaeger:2.9.0
+    ports: ["16686:16686"]
+
 volumes:
   pgdata:
   kafkadata:

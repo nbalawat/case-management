@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -38,11 +39,17 @@ from .api.workflows import router as workflows_router
 from . import workflow
 from .config import ROOT, settings
 from .db import ensure_schema, session_scope
+from . import observability
 from .tenants.onboarding import hydrate
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    from .observability import metrics
+
+    metrics.enable_platform_gauges()
+    if os.getenv("METRICS_PORT"):
+        metrics.serve(int(os.environ["METRICS_PORT"]))
     ensure_schema()
     with session_scope(platform=True) as s:
         clients = hydrate(s)
@@ -78,6 +85,7 @@ for r in (router, work_router, workflows_router, access_router, platform_router,
     app.include_router(r, dependencies=[Depends(signed_in)])
 app.include_router(auth_router)
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1
+observability.install(app)  # /healthz, /readyz, /metrics, request ids, structured logs, traces when configured
 
 DIST = Path(ROOT / "frontend" / "dist")
 if DIST.exists():
