@@ -12,10 +12,12 @@ from sqlalchemy.orm import Session
 
 from ..domain.models import Case, InfoRequest, now
 from .service import definition, record, stage_due
+from ..visibility import system_work
 
 PRIORITIES = ["low", "medium", "high", "critical"]
 
 
+@system_work
 def run_timers(s: Session, at: datetime | None = None) -> dict:
     at = at or now()
     breached = overdue = 0

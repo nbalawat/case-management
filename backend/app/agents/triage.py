@@ -21,6 +21,7 @@ from ..tenancy import tenant_of
 from . import ledger, policy as policies
 from .catalog import catalog
 from .tools import ToolDenied, Toolbox
+from ..visibility import system_work
 
 POSITIVE = {"sar_filed", "fraud_confirmed", "true_match", "exit", "declined"}  # outcomes that mean the concern was real
 SCREENING = {"sanctions_name"}
@@ -90,6 +91,7 @@ def _close(a: Alert, agent: str, why: str, proposal: dict, sample: float) -> Non
     a.triage = proposal | {"action": "closed", "by": agent, "why": why}
 
 
+@system_work
 def gate(s: Session, alerts: list[Alert]) -> list[Alert]:
     """Let each alert through to a case, or close it where an agent is allowed to. Returns the alerts that go on."""
     pol = policies.current(s)
@@ -143,6 +145,7 @@ def gate(s: Session, alerts: list[Alert]) -> list[Alert]:
     return onward
 
 
+@system_work
 def closed_by_agents(s: Session, limit: int = 200) -> list[dict]:
     rows = s.scalars(select(Alert).where(Alert.closed_by.is_not(None)).order_by(Alert.created.desc()).limit(limit))
     return [{"id": a.id, "scenario": a.scenario, "party_id": a.party_id, "party_name": a.party.name, "score": a.score,
@@ -151,6 +154,7 @@ def closed_by_agents(s: Session, limit: int = 200) -> list[dict]:
             for a in rows]
 
 
+@system_work
 def review(s: Session, alert_id: str, persona: Persona, confirm: bool) -> Alert:
     """A person checks an alert an agent closed: agree, or reopen it into a case."""
     from ..alerts.hub import route_alerts

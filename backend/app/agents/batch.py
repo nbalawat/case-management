@@ -14,6 +14,7 @@ from .evals import NEGATIVE
 from .runtime import assess
 from .tools import Toolbox
 from .triage import POSITIVE
+from ..visibility import system_work
 
 
 class BatchError(ValueError):
@@ -37,6 +38,7 @@ def _job(s: Session, kind: str, agent: str, by: str, params: dict, result: dict,
     return job
 
 
+@system_work
 def lookback(s: Session, by: str, days: int = 90, case_type: str | None = None) -> AgentJob:
     """Re-research cases closed in a period with today's agents and settings. Lists the ones worth a second look; changes none."""
     if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 3650:
@@ -69,6 +71,7 @@ def lookback(s: Session, by: str, days: int = 90, case_type: str | None = None) 
                 f"Re-researched {reviewed} closed case(s); {len(items)} worth a second look")
 
 
+@system_work
 def tuning(s: Session, by: str) -> AgentJob:
     """For each scenario: how much of what it raised mattered, and what a higher score cut-off would have cost. Proposes; changes nothing."""
     pol, box = _gate(s, "tuning_advisor")

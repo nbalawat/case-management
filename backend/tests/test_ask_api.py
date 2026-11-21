@@ -1,18 +1,22 @@
 """Ask anything over HTTP, against the seeded demo: every person at every client, asking as themselves."""
 import pytest
 
-from test_client_api import CLIENTS, EVERYONE, _permissions, h, ids  # noqa: F401  (ids is a fixture)
+from test_client_api import CLIENTS, EVERYONE, _auditor, _permissions, h, ids  # noqa: F401  (ids is a fixture)
 
 QUESTIONS = ["How many open cases are there by case type?", "Show the largest open cases by amount", "Which scenario produces the most SARs?"]
 
 
 def ask(client, tenant, who, question, **extra):
+    """`who` None: the client's auditor, who sees every case."""
+    who = who or _auditor(tenant)
     return client.post("/api/ask", headers=h(tenant, who), json={"question": question} | extra)
 
 
 @pytest.mark.parametrize("tenant,who", EVERYONE, ids=[f"{t}:{p}" for t, p in EVERYONE])
 def test_everyone_can_ask_and_only_ever_gets_their_own_clients_cases(client, ids, tenant, who):
     others = set().union(*(ids[t]["cases"] for t in CLIENTS if t != tenant))
+    mine = {c["id"] for c in client.get("/api/cases?status=all", headers=h(tenant, who)).json()}  # what this person may see
+    assert mine <= ids[tenant]["cases"]
     for q in QUESTIONS:
         out = ask(client, tenant, who, q)
         assert out.status_code == 200, out.text
@@ -21,9 +25,10 @@ def test_everyone_can_ask_and_only_ever_gets_their_own_clients_cases(client, ids
         cited = {c["id"] for c in body["cited"]}
         shown = {i for st in body["steps"] for r in st["result"].get("rows", []) for i in r["case_ids"]} \
             | {c["id"] for st in body["steps"] for c in st["result"].get("cases", [])}
-        assert cited and (cited | shown) <= ids[tenant]["cases"] and not (cited | shown) & others
+        assert (cited | shown) <= mine and not (cited | shown) & others
+        assert cited or mine != ids[tenant]["cases"]  # someone who sees everything always gets cases back
         totals = [st["result"]["matching_cases"] for st in body["steps"] if "matching_cases" in st["result"]]
-        assert totals and all(n <= len(ids[tenant]["cases"]) for n in totals)
+        assert totals and all(n <= len(mine) for n in totals)
 
 
 @pytest.mark.parametrize("tenant,who", EVERYONE, ids=[f"{t}:{p}" for t, p in EVERYONE])

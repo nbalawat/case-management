@@ -29,13 +29,22 @@ def _admin(tenant):
     return next(p for t, p in EVERYONE if t == tenant and "manage_access" in _permissions(t, p))
 
 
+def _auditor(tenant):
+    """Someone who sees every case at the client, restricted or not."""
+    return next((p["id"] for p in PEOPLE.get(tenant, {"people": []})["people"] if p.get("role") == "auditor"), None)
+
+
+def everything(tenant):
+    return h(tenant, _auditor(tenant))
+
+
 @pytest.fixture(scope="module")
 def ids(client):
     """For each client: every case id and one of each addressable thing."""
     out = {}
     for t in CLIENTS:
-        cases = client.get("/api/cases?status=all", headers=h(t)).json()
-        rfi = next((r["id"] for c in cases for r in client.get(f"/api/cases/{c['id']}", headers=h(t)).json()["requests"]), None)
+        cases = client.get("/api/cases?status=all", headers=everything(t)).json()
+        rfi = next((r["id"] for c in cases for r in client.get(f"/api/cases/{c['id']}", headers=everything(t)).json()["requests"]), None)
         out[t] = {"cases": {c["id"] for c in cases}, "open": next(c["id"] for c in cases if c["open"]), "rfi": rfi,
                   "parties": {c["party_name"] for c in cases}}
     return out
@@ -177,7 +186,7 @@ def test_the_operator_sees_counts_and_never_client_content(client, ids):
     rows = {r["id"]: r for r in overview["tenants"]}
     assert set(CLIENTS) <= set(rows)
     for t in CLIENTS:
-        cases = client.get("/api/cases?status=all", headers=h(t)).json()
+        cases = client.get("/api/cases?status=all", headers=everything(t)).json()
         assert rows[t]["cases"] == len(cases) and rows[t]["open_cases"] == sum(c["open"] for c in cases)
         assert rows[t]["transactions"] == client.get("/api/dashboard", headers=h(t)).json()["kpis"]["transactions"]
     assert overview["totals"]["open_cases"] == sum(r["open_cases"] for r in rows.values())
@@ -190,7 +199,7 @@ def test_the_operator_sees_counts_and_never_client_content(client, ids):
 def test_onboarding_a_client_from_the_console_and_suspending_it(client):
     body = {"id": "northwind", "name": "Northwind Credit Union", "template": "fintech_payments", "region": "us-west", "sample_data": True}
     assert client.post("/api/platform/tenants/check", json=body, headers=OP).json() == {
-        "ok": True, "case_types": ["fraud_claim", "tm_alert_investigation", "sanctions_hit"], "people": 8, "roles": 9, "queues": 8}
+        "ok": True, "case_types": ["fraud_claim", "tm_alert_investigation", "sanctions_hit"], "people": 8, "roles": 10, "queues": 8}
     for bad, message in ((body | {"id": "meridian"}, "already exists"), (body | {"id": "No"}, "Client id"),
                          (body | {"case_types": ["kyc_refresh"]}, "unknown queue"), (body | {"template": "x"}, "Unknown template")):
         assert message in client.post("/api/platform/tenants/check", json=bad, headers=OP).json()["error"]

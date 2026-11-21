@@ -128,6 +128,10 @@ class Case(TenantScoped, Base):
     queue: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     state_entered: Mapped[datetime] = mapped_column(DateTime, default=now)
     parent_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # A restricted case is visible only to people holding the view_restricted permission (insiders, sensitive subjects,
+    # law-enforcement requests). Enforced in the data layer, like the client boundary.
+    restricted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    restricted_reason: Mapped[str] = mapped_column(Text, default="")
     # Workflow working data: completed tasks, escalation markers. Replace the dict to persist a change.
     data: Mapped[dict] = mapped_column(JSON, default=dict)
     party: Mapped[Party] = relationship()

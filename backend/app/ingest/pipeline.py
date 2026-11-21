@@ -22,6 +22,7 @@ from . import locations
 from .datasets import DATASETS, in_dependency_order
 from .formats import FORMATS, FormatError, detect, read_records
 from .mapping import HeuristicProposer, proposals_as_dicts
+from ..visibility import system_work
 
 RULES = {  # name -> (default, description)
     "max_reject_rate": (0.05, "A file with a larger share of unusable records than this is quarantined whole"),
@@ -303,6 +304,7 @@ def _write_rejects(s: Session, source: DataSource, run: PipelineRun, key: str, r
         return None  # the samples kept on the run still say what was wrong
 
 
+@system_work
 def run_source(s: Session, source: DataSource, by: str, trigger: str = "manual", batch_id: str | None = None) -> PipelineRun:
     """Run one source now. Never raises for a problem with the data or the storage: the run records it."""
     from ..agents.investigator import investigate
@@ -378,6 +380,7 @@ def _finish(s: Session, source: DataSource, run: PipelineRun, totals: dict) -> P
     return run
 
 
+@system_work
 def run_many(s: Session, sources: list[DataSource], by: str, trigger: str = "manual") -> list[PipelineRun]:
     """Run several sources as one batch, each dataset after the ones it depends on.
 
@@ -408,6 +411,7 @@ def run_many(s: Session, sources: list[DataSource], by: str, trigger: str = "man
     return runs
 
 
+@system_work
 def run_due(s: Session, by: str = "scheduler") -> list[PipelineRun]:
     due = [x for x in s.scalars(select(DataSource).where(DataSource.enabled.is_(True))) if health(x)["due"]]
     return run_many(s, due, by, "schedule") if due else []

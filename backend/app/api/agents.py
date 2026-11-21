@@ -12,7 +12,7 @@ from ..agents.investigator import investigate
 from ..domain.models import Case
 from ..domain.personas import Persona, policy_of
 from ..tenants.registry import TenantRuntime
-from .deps import get_session, persona, require, tenant
+from .deps import get_case_or_404, get_session, persona, require, tenant
 
 router = APIRouter(prefix="/api")
 MANAGE = "manage_agents"
@@ -144,9 +144,7 @@ class QuestionIn(BaseModel):
 
 @router.post("/cases/{case_id}/copilot")
 def ask_copilot(case_id: str, body: QuestionIn, s: Session = Depends(get_session), p: Persona = Depends(persona)):
-    case = s.get(Case, case_id)
-    if case is None:
-        raise HTTPException(404, "Case not found")
+    case = get_case_or_404(s, case_id)
     try:
         return copilot.ask(s, case, p, body.question)
     except copilot.CopilotOff as e:

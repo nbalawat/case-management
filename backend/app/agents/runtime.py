@@ -19,6 +19,7 @@ from .catalog import AgentSpec, catalog
 from .llm import LLMProvider, get_provider
 from .steps import AGENTS, Context, Step, _f, decide
 from .tools import ToolDenied, Toolbox, extract, media_search
+from ..visibility import system_work
 
 NEEDS_NO_ALERT = {"adverse_media", "kyc_refresh"}  # agents that have something to say about a case with no alerted activity
 DETERMINISTIC = "rules"  # recorded as the model for agents that do not call one
@@ -53,6 +54,7 @@ class Assessment:
     shadow: dict | None = None
 
 
+@system_work
 def context(s: Session, case: Case) -> Context:
     alerts = list(s.scalars(select(Alert).where(Alert.case_id == case.id).order_by(Alert.created)))
     ids = {i for a in alerts for i in a.txn_ids}
@@ -120,6 +122,7 @@ def _qa(ctx: Context, steps: list[StepResult]) -> Step:
     return Step("qa_critic", "QA check", "Checked completeness and citation coverage.", checks)
 
 
+@system_work
 def assess(s: Session, case: Case, pol: policies.Policy | None = None, *, requested: bool = False, provider: LLMProvider | None = None,
            decision: dict | None = None, chat: ChatModel | None = None) -> Assessment:
     """Work out the briefing for a case under a policy. Reads only. `chat` overrides the configured model for the specialists."""
@@ -182,6 +185,7 @@ def assess(s: Session, case: Case, pol: policies.Policy | None = None, *, reques
     return out
 
 
+@system_work
 def brief(s: Session, case: Case, provider: LLMProvider | None = None, ts: datetime | None = None, requested_by: str | None = None,
           chat: ChatModel | None = None) -> AgentRun:
     """Run the agents a case type declares, inside the client's policy, and store the briefing and its ledger."""

@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 from ..domain.models import Case, InfoRequest, new_id, now
 from ..domain.personas import Persona
 from .service import TransitionError, record
+from ..visibility import system_work
 
 RECIPIENTS = {"customer": "Customer", "branch": "Branch", "relationship_manager": "Relationship manager",
               "payment_ops": "Payment operations", "merchant": "Merchant or card scheme"}
 
 
+@system_work
 def raise_request(s: Session, case: Case, persona: Persona, recipient: str, question: str, due_days: int = 5,
                   ts: datetime | None = None) -> InfoRequest:
     if persona.read_only or not persona.can("work"):
@@ -32,6 +34,7 @@ def raise_request(s: Session, case: Case, persona: Persona, recipient: str, ques
     return r
 
 
+@system_work
 def answer_request(s: Session, r: InfoRequest, persona: Persona, response: str, ts: datetime | None = None) -> InfoRequest:
     if persona.read_only or not persona.can("work"):
         raise TransitionError("This role cannot record responses")

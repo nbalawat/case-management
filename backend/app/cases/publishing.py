@@ -8,6 +8,7 @@ from ..domain.personas import Persona, policy_of
 from ..tenancy import tenant_of
 from . import case_types as registry
 from .case_types import CaseTypeError
+from ..visibility import system_work
 
 
 def check(tenant_id: str, source: str) -> dict:
@@ -41,6 +42,7 @@ def diff(old: dict, new: dict) -> list[str]:
     return out or ["No structural change"]
 
 
+@system_work
 def publish(s: Session, source: str, persona: Persona, note: str = "") -> dict:
     if not persona.can("publish_workflow"):
         raise CaseTypeError("Publishing a workflow needs the 'publish workflow' permission")

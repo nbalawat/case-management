@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..domain.models import AgentStep, now
+from ..visibility import system_work
 
 CHAINED = ("run_id", "case_id", "alert_id", "agent", "agent_version", "level", "policy_version", "model", "prompt_sha", "outcome",
            "summary", "tools", "findings", "rejected", "shadow")
@@ -39,6 +40,7 @@ def append(s: Session, *, run_id: str, agent: str, agent_version: str, level: st
     return row
 
 
+@system_work
 def verify(s: Session) -> dict:
     """Recompute the whole chain for this client."""
     prev, n = "", 0
@@ -62,6 +64,7 @@ def entries(s: Session, *, case_id: str | None = None, agent: str | None = None,
              "rejected": r.rejected, "shadow": r.shadow, "hash": r.hash} for r in s.scalars(q)]
 
 
+@system_work
 def usage(s: Session) -> dict[str, dict]:
     """Per agent: how often it ran, acted, was refused, and how many claims were dropped for citing nothing."""
     out: dict[str, dict] = {}

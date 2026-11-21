@@ -18,6 +18,7 @@ from ..tenancy import tenant_of
 from . import policy as policies
 from .runtime import assess
 from .triage import POSITIVE, SCREENING, match_strength, reading
+from ..visibility import system_work
 
 NEGATIVE = {"no_sar", "false_positive", "genuine", "claim_declined", "refreshed", "onboarded"}
 THRESHOLDS = {
@@ -112,6 +113,7 @@ SETS = {"case_dispositions": case_dispositions, "alert_outcomes": alert_outcomes
         "copilot_questions": copilot_questions}
 
 
+@system_work
 def run(s: Session, by: str, body: dict | None = None) -> AgentJob:
     """Evaluate the policy in force, or a draft. Reads the client's history; changes nothing but the job record."""
     cur = policies.current(s)
@@ -127,6 +129,7 @@ def run(s: Session, by: str, body: dict | None = None) -> AgentJob:
     return job
 
 
+@system_work
 def latest(s: Session, fingerprint: str | None = None) -> dict | None:
     for job in s.scalars(select(AgentJob).where(AgentJob.kind == "evaluation").order_by(AgentJob.started.desc(), AgentJob.id.desc())):
         if fingerprint is None or job.result.get("fingerprint") == fingerprint:
@@ -134,6 +137,7 @@ def latest(s: Session, fingerprint: str | None = None) -> dict | None:
     return None
 
 
+@system_work
 def challenger(s: Session) -> dict | None:
     """Champion against challenger on closed cases, both measured against what people decided."""
     pol = policies.current(s)

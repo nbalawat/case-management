@@ -14,6 +14,7 @@ from ..domain.personas import Persona, queue_members
 from ..tenancy import tenant_of
 from . import conditions
 from .case_types import get_definition
+from ..visibility import system_work
 
 
 class TransitionError(Exception):
@@ -35,6 +36,7 @@ def record(s: Session, case_id: str, actor: str, actor_kind: str, kind: str, pay
     return ev
 
 
+@system_work
 def create_case(s: Session, case_type: dict, party_id: str, priority: str, created: datetime | None = None,
                 parent_id: str | None = None, actor: str = "alert-hub") -> Case:
     created = created or now()
@@ -43,6 +45,9 @@ def create_case(s: Session, case_type: dict, party_id: str, priority: str, creat
              party_id=party_id, priority=priority, created=created, state_entered=created, parent_id=parent_id,
              queue=case_type["states"][initial].get("queue"), data={},
              sla_due=created + timedelta(days=case_type.get("sla", {}).get("due_days", 30)))
+    parent = s.get(Case, parent_id) if parent_id else None
+    if parent is not None and parent.restricted:  # a case opened from a restricted case is restricted too
+        c.restricted, c.restricted_reason = True, parent.restricted_reason
     s.add(c)
     record(s, c.id, actor, "system", "case.created",
            {"case_type": c.case_type, "version": c.type_version, "state": c.state, "priority": priority,
@@ -50,6 +55,7 @@ def create_case(s: Session, case_type: dict, party_id: str, priority: str, creat
     return c
 
 
+@system_work
 def facts(s: Session, case: Case) -> dict:
     """The case facts that transition conditions may test."""
     alerts = list(s.scalars(select(Alert).where(Alert.case_id == case.id)))
@@ -68,6 +74,7 @@ def stage_tasks(case: Case, defn: dict | None = None) -> list[dict]:
             for t in defn["states"][case.state].get("tasks", [])]
 
 
+@system_work
 def set_task(s: Session, case: Case, task_id: str, persona: Persona, done: bool = True, ts: datetime | None = None) -> None:
     if case.closed is not None:
         raise TransitionError("The case is closed")
@@ -84,6 +91,7 @@ def set_task(s: Session, case: Case, task_id: str, persona: Persona, done: bool 
     record(s, case.id, persona.id, "human", "task.completed" if done else "task.reopened", {"task": task_id, "stage": case.state}, ts=ts)
 
 
+@system_work
 def complete_stage_tasks(s: Session, case: Case, persona: Persona, ts: datetime | None = None) -> None:
     for t in stage_tasks(case):
         if not t["done"]:
@@ -120,12 +128,14 @@ def _blocked(s: Session, case: Case, t: dict, persona: Persona, note: str | None
     return None
 
 
+@system_work
 def applicable_targets(s: Session, case: Case) -> set[str]:
     """The stages this case could move to next, whoever takes the step."""
     f = facts(s, case)
     return {t["to"] for t in definition(case)["transitions"] if t["from"] == case.state and conditions.evaluate(t.get("when"), f)}
 
 
+@system_work
 def allowed_transitions(s: Session, case: Case, persona: Persona) -> list[dict]:
     defn = definition(case)
     f = facts(s, case)
@@ -140,6 +150,7 @@ def allowed_transitions(s: Session, case: Case, persona: Persona) -> list[dict]:
     return out
 
 
+@system_work
 def transition(s: Session, case: Case, to: str, persona: Persona, note: str = "", ts: datetime | None = None) -> Case:
     """Move a case to a new state. Only people call this; agents have no path to it."""
     defn = definition(case)
@@ -187,6 +198,7 @@ def enter_state(s: Session, case: Case, defn: dict, state: str, ts: datetime, ac
             case.owner = None
 
 
+@system_work
 def save_narrative(s: Session, case: Case, text: str, persona: Persona, ts: datetime | None = None) -> None:
     if persona.read_only:
         raise TransitionError("Read-only access")

@@ -15,6 +15,7 @@ from ..config import settings
 from ..db import session_scope
 from ..domain.models import Case, now
 from ..domain.personas import Persona, policy_of
+from ..visibility import bind_viewer, find_case
 from ..tenants.registry import TenantRuntime, UnknownTenant, all_runtimes, runtime
 
 # Demo platform staff. A real deployment keeps these in the provider's own identity system, apart from any client.
@@ -33,8 +34,8 @@ def tenant(x_tenant: str | None = Header(default=None)) -> TenantRuntime:
     return rt
 
 
-def get_session(rt: TenantRuntime = Depends(tenant)) -> Iterator[Session]:
-    """A database session that can only see and write this client's rows."""
+def machine_session(rt: TenantRuntime = Depends(tenant)) -> Iterator[Session]:
+    """A session for a system calling in (a monitoring engine pushing alerts): this client's rows, no person's view."""
     with session_scope(rt.id) as s:
         yield s
 
@@ -56,6 +57,12 @@ def persona(rt: TenantRuntime = Depends(tenant), x_persona: str | None = Header(
     return rt.policy.person(x_persona)
 
 
+def get_session(rt: TenantRuntime = Depends(tenant), p: Persona = Depends(persona)) -> Iterator[Session]:
+    """A database session that can only see this client's rows, and of those only the cases this person may see."""
+    with session_scope(rt.id) as s:
+        yield bind_viewer(s, p)
+
+
 def actor(p: Persona = Depends(persona)) -> Persona:
     """A persona allowed to change something. Read-only roles are stopped here."""
     if p.read_only:
@@ -72,7 +79,7 @@ def require(permission: str):
 
 
 def get_case_or_404(s: Session, case_id: str) -> Case:
-    c = s.get(Case, case_id)
+    c = find_case(s, case_id)
     if c is None:
         raise HTTPException(404, "Case not found")
     return c
@@ -89,4 +96,4 @@ def case_row(c: Case) -> dict:
             "sla_due": c.sla_due.isoformat() if c.sla_due else None, "sla_clock": ct.get("sla", {}).get("clock"),
             "stage_entered": c.state_entered.isoformat(), "stage_due": due.isoformat() if due else None,
             "stage_breached": bool(due and due < now()), "parent_id": c.parent_id,
-            "disposition": c.disposition, "agent_recommendation": c.agent_recommendation}
+            "disposition": c.disposition, "restricted": c.restricted, "agent_recommendation": c.agent_recommendation}
