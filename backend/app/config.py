@@ -61,6 +61,9 @@ class Settings:
     # OpenSearch behind the same interface; SEARCH_CONFIG is a JSON object of extra client options (http_auth, ca_certs).
     search_url: str = os.getenv("SEARCH_URL", "")
     search_config: str = os.getenv("SEARCH_CONFIG", "")
+    # The payment network on a graph engine: age://user:password@host:5432/database (Apache AGE in Postgres). Empty:
+    # routes between customers are found in the operational database.
+    graph_url: str = os.getenv("GRAPH_URL", "")
     # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. Read-only here;
     # the platform page shows whether each client's jobs are running.
     flink_url: str = os.getenv("FLINK_URL", "")

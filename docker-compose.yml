@@ -3,7 +3,7 @@
 #
 # With the event backbone (Kafka, the outbox relay and the stream consumers):  make backbone
 # With Debezium publishing the outbox instead of the relay:                    make backbone-cdc
-# Everything: Kafka, the lake and OpenSearch:                                  make full
+# Everything: Kafka, the lake, OpenSearch and the graph engine:                make full
 # Everything plus stream detection on Apache Flink:                            make streaming
 services:
   db:
@@ -27,6 +27,7 @@ services:
       OUTBOX_PUBLISHER: ${OUTBOX_PUBLISHER:-relay}
       SEARCH_URL: ${SEARCH_URL:-}                # empty: names are searched in the database
       LAKE_CATALOG: ${LAKE_CATALOG:-}            # empty: no lake; make backbone sets an Iceberg catalog in Postgres
+      GRAPH_URL: ${GRAPH_URL:-}                  # empty: routes between customers are found in the database
       FLINK_URL: ${FLINK_URL:-}                  # empty: no stream processor; scenarios run in the stream consumer
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
@@ -88,6 +89,20 @@ services:
       interval: 5s
       retries: 40
 
+  # ---- the payment network on Apache AGE: docker compose --profile graph, with GRAPH_URL=age://caseforge:caseforge-local-only@graph:5432/graph
+  graph:
+    profiles: [graph]
+    image: apache/age:release_PG16_1.5.0
+    environment:
+      POSTGRES_USER: caseforge
+      POSTGRES_PASSWORD: caseforge-local-only
+      POSTGRES_DB: graph
+    volumes: [graphdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caseforge -d graph"]
+      interval: 3s
+      retries: 20
+
   # ---- stream detection on Apache Flink: docker compose --profile streaming, with FLINK_URL=http://flink-jobmanager:8081
   # A client's job is rendered and submitted with:  make flink-job CLIENT=meridian   (see deploy/flink/README.md)
   flink-jobmanager:
@@ -142,4 +157,5 @@ volumes:
   kafkadata:
   warehouse:
   searchdata:
+  graphdata:
   evidence:

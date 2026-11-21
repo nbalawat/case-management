@@ -26,6 +26,7 @@ def view(s: Session) -> dict:
     return {
         "lake": lake(tenant),
         "search": search_engine(tenant),
+        "graph": graph_engine(tenant),
         "stream_jobs": stream_jobs(s, tenant),
         "bus": {"kind": kind, "note": note, "workers": settings.backbone_workers},
         "publisher": "debezium" if cdc else "relay",
@@ -81,3 +82,18 @@ def stream_jobs(s: Session, tenant_id: str) -> dict:
 
     on = {j.scenario: tuning.current(s, j.scenario)[1] for j in JOBS.values()} if settings.flink_url else {}
     return flink.status(tenant_id, on)
+
+
+def graph_engine(tenant_id: str) -> dict:
+    """Where routes through this client's payment network are found. An engine that cannot be reached is reported, not raised."""
+    if not settings.graph_url:
+        return {"engine": "database", "entities": None, "links": None, "note": "Routes between customers are found in the operational database."}
+    try:
+        from ..entities import graphstore
+
+        size = graphstore.current().size(tenant_id)
+    except Exception:  # noqa: BLE001
+        return {"engine": "database", "entities": None, "links": None, "note": "The graph engine did not answer, so routes are being found in the database."}
+    if size is None:
+        return {"engine": "age", "entities": None, "links": None, "note": "Apache AGE is connected. This client's graph is built at its next entity resolution; until then routes are found in the database."}
+    return {"engine": "age", "entities": size[0], "links": size[1], "note": "Apache AGE, one graph per client, rebuilt after each entity resolution."}
