@@ -16,12 +16,12 @@ export const usePersona = () => useContext(PeopleContext).persona
 /** Turns a user id from the API into a display name. */
 export const useNameOf = () => useContext(PeopleContext).nameOf
 
-export function makePeople(all: Persona[], pid: string): People {
+export function makePeople(all: Persona[], pid: string, former: Record<string, string> = {}): People {
   const byId = new Map(all.map(p => [p.id, p]))
   const persona = byId.get(pid) ?? null
   return {
     persona,
-    nameOf: id => (id ? byId.get(id)?.name ?? id : ''),
+    nameOf: id => (id ? byId.get(id)?.name ?? former[id] ?? id : ''),
     can: permission => !!persona?.permissions.includes(permission),
     holder: permission => { const p = all.find(x => x.permissions.includes(permission)); return p ? `${p.name} (${p.title})` : 'nobody' },
   }

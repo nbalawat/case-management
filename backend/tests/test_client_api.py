@@ -54,7 +54,8 @@ def test_each_client_has_its_own_people_work_and_configuration(client, ids):
     seen = []
     for t in CLIENTS:
         meta = client.get("/api/meta", headers=h(t)).json()
-        assert {p["id"] for p in meta["personas"]} == {p["id"] for p in PEOPLE[t]["people"]}
+        own = {p["id"] for p in meta["personas"] if not p["id"].startswith("ms.")}  # ms.: the provider's staff, under an engagement
+        assert own == {p["id"] for p in PEOPLE[t]["people"]}
         types = {ct["case_type"]: ct["version"] for ct in client.get("/api/case-types", headers=h(t)).json()}
         assert set(types) == set(templates()[next(c["template"] for c in DEMO_CLIENTS if c["tenant_id"] == t)].case_types)
         seen.append((ids[t]["cases"], types))

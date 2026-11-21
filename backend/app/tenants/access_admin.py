@@ -14,6 +14,7 @@ from ..cases.service import record
 from ..domain.access import AccessPolicy, AccessPolicyError, Persona, parse_policy
 from ..domain.models import AccessPolicyVersion, Case
 from ..tenancy import tenant_of
+from . import provider
 from .registry import runtime
 from ..visibility import system_work
 
@@ -41,8 +42,9 @@ def _definitions_in_use(s: Session, tenant_id: str) -> list[dict]:
 def _displaced(s: Session, policy: AccessPolicy) -> list[Case]:
     """Open cases whose owner would no longer be a member of the queue the case is in."""
     members = {q: {p.id for p in policy.queue_members(q)} for q in policy.queues}
+    # Provider staff are not in a draft; their cases follow their engagement (provider.after_policy_change).
     return [c for c in s.scalars(select(Case).where(Case.closed.is_(None), Case.owner.is_not(None)))
-            if c.owner not in members.get(c.queue or "", set())]
+            if c.owner not in members.get(c.queue or "", set()) and not provider.is_provider(c.owner)]
 
 
 def _check_views(policy: AccessPolicy, case_types: dict[str, dict]) -> list[str]:
@@ -73,6 +75,11 @@ def _check_views(policy: AccessPolicy, case_types: dict[str, dict]) -> list[str]
 
 def diff(old: AccessPolicy, new: AccessPolicy) -> list[str]:
     out = []
+    if old.managed_service != new.managed_service:
+        if new.managed_service is None:
+            out.append("Stops the provider's staff working here; every engagement ends")
+        else:
+            out += [f"Managed service: {line}" for line in new.managed_service.describe()]
     for rid, r in new.roles.items():
         if rid not in old.roles:
             out.append(f"Adds role '{r.title}'")
@@ -90,8 +97,8 @@ def diff(old: AccessPolicy, new: AccessPolicy) -> list[str]:
     out += [f"Removes role '{r.title}'" for rid, r in old.roles.items() if rid not in new.roles]
     out += [f"Adds queue '{label}'" for q, label in new.queues.items() if q not in old.queues]
     out += [f"Removes queue '{label}'" for q, label in old.queues.items() if q not in new.queues]
-    for pid, p in new.people.items():
-        before = old.people.get(pid)
+    for pid, p in new.own_people.items():
+        before = old.own_people.get(pid)
         if before is None:
             out.append(f"Adds {p.name} ({p.title})")
             continue
@@ -102,7 +109,7 @@ def diff(old: AccessPolicy, new: AccessPolicy) -> list[str]:
             out.append(f"{p.name} joins: {', '.join(new.queues[q] for q in joined)}")
         if left:
             out.append(f"{p.name} leaves: {', '.join(old.queues.get(q, q) for q in left)}")
-    out += [f"Removes {p.name} ({p.title})" for pid, p in old.people.items() if pid not in new.people]
+    out += [f"Removes {p.name} ({p.title})" for pid, p in old.own_people.items() if pid not in new.people]
     return out or ["No change to roles, queues or people"]
 
 
@@ -128,12 +135,13 @@ def check(s: Session, source: str) -> dict:
     displaced = _displaced(s, policy)
     warnings = [f"{len(displaced)} open case(s) go back to their queue because the owner is no longer a member"] if displaced else []
     warnings += _check_views(policy, registry.load_case_types(tenant))
+    warnings += provider.impact(s, rt, policy)
     return {"policy": policy, "changes": diff(rt.policy, policy), "warnings": warnings, "displaced": displaced}
 
 
 @system_work
 def publish(s: Session, source: str, persona: Persona, note: str = "") -> dict:
-    if not persona.can("manage_access"):
+    if persona.external or not persona.can("manage_access"):
         raise AccessPolicyError("Changing the access policy needs the 'manage access' permission")
     result = check(s, source)
     policy = result["policy"]
@@ -143,5 +151,7 @@ def publish(s: Session, source: str, persona: Persona, note: str = "") -> dict:
                {"from_owner": c.owner, "queue": c.queue, "reason": f"access policy {policy.version}"})
         c.owner = None
     s.flush()
-    runtime(tenant_of(s)).policy = policy
+    rt = runtime(tenant_of(s))
+    rt.policy = policy
+    provider.after_policy_change(s, rt, persona.id)
     return result

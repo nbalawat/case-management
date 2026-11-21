@@ -1,6 +1,6 @@
 // Thin API client. In this demo the active client and person travel in headers; a real deployment takes both
 // from the sign-in token, so a user can never name a client they do not belong to.
-export type Persona = { id: string; name: string; role: string; title: string; about: string; read_only: boolean; permissions: string[] }
+export type Persona = { id: string; name: string; role: string; title: string; about: string; read_only: boolean; permissions: string[]; org?: 'client' | 'provider' }
 
 import { authMode, bearer, signOut } from './auth'
 
@@ -11,10 +11,15 @@ export const getTenantId = () => tenantId
 export const isOperator = () => tenantId === OPERATOR
 export const setTenantId = (id: string) => { tenantId = id; localStorage.setItem('tenant', id) }
 export const getPersonaId = () => localStorage.getItem(personaKey()) || ''
+// Signed in as a member of the provider's staff: the token says who, and the client they are working at travels in
+// X-Tenant. The server lets that through only where the client has approved an engagement for them.
+let staffMode = false
+export const setStaffMode = (on: boolean) => { staffMode = on }
+export const isStaff = () => staffMode
 export const setPersonaId = (id: string) => localStorage.setItem(personaKey(), id)
 
 function identity(): Record<string, string> {
-  if (authMode() === 'oidc') return bearer() // signed in: the token says which client and who
+  if (authMode() === 'oidc') return { ...bearer(), ...(staffMode && !isOperator() ? { 'X-Tenant': tenantId } : {}) } // the token says who
   if (isOperator()) return { 'X-Operator': 'olivia' }
   const who = getPersonaId()
   return { 'X-Tenant': tenantId, ...(who ? { 'X-Persona': who } : {}) }
@@ -44,8 +49,35 @@ async function download(path: string) {
   URL.revokeObjectURL(url)
 }
 
+/** POST and read the reply as server-sent events, calling `onEvent` with each event's name and parsed data. */
+async function stream(path: string, body: unknown, onEvent: (event: string, data: unknown) => void): Promise<void> {
+  const r = await fetch(`/api${path}`, { method: 'POST', body: JSON.stringify(body ?? {}),
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...identity() } })
+  if (r.status === 401 && authMode() === 'oidc') signOut()
+  if (!r.ok || !r.body) {
+    const detail = await r.json().catch(() => ({}))
+    throw new Error(detail.detail || `Request failed (${r.status})`)
+  }
+  const reader = r.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += value
+    let cut: number
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const block = buffer.slice(0, cut)
+      buffer = buffer.slice(cut + 2)
+      const event = /^event: (.*)$/m.exec(block)?.[1] ?? 'message'
+      const data = block.split('\n').filter(l => l.startsWith('data: ')).map(l => l.slice(6)).join('\n')
+      if (data) onEvent(event, JSON.parse(data))
+    }
+  }
+}
+
 export const api = {
   download,
+  stream,
   get: <T,>(path: string) => req<T>(path),
   post: <T,>(path: string, body?: unknown) => req<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
   put: <T,>(path: string, body?: unknown) => req<T>(path, { method: 'PUT', body: JSON.stringify(body ?? {}) }),

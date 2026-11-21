@@ -52,6 +52,16 @@ roles:
   restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
   auditor:              {title: Internal auditor, permissions: [view_team, view_restricted], read_only: true}
 
+# The platform provider's managed-service team may work here. Each engagement names one member of their staff, the
+# roles and queues they hold (only from the list below; never access control) and an end date, and waits for someone
+# here with manage_access to approve it. Steps under client_signoff need one of this client's own people as checker.
+managed_service:
+  provider: CaseForge Managed Services
+  roles: [kyc_analyst, analyst, investigator]
+  approval: client
+  max_days: 180
+  client_signoff: [four_eyes, submit_filings]
+
 people:
   - {id: mira, name: Mira Solberg, role: kyc_analyst, queues: [kyc],
      about: Onboards clients and runs periodic reviews.}

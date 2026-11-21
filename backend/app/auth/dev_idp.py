@@ -53,11 +53,13 @@ def _people(realm: str) -> list[tuple[str, str, str]]:
     if not settings.dev_idp:
         raise HTTPException(404, "Not found")
     if realm == "platform":
-        from ..api.deps import OPERATORS
+        from ..db import session_scope
+        from ..tenants.provider import directory
 
-        return [(o["id"], o["name"], o["title"]) for o in OPERATORS.values()]
-    try:
-        return [(p.id, p.name, p.title) for p in runtime(realm).policy.people.values()]
+        with session_scope(platform=True) as s:
+            return [(m.id, m.name, m.title) for m in directory(s) if m.active]
+    try:  # a client's realm holds only the client's own people; provider staff sign in through the platform realm
+        return [(p.id, p.name, p.title) for p in runtime(realm).policy.own_people.values()]
     except UnknownTenant:
         raise HTTPException(404, "No such realm") from None
 

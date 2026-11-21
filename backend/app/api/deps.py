@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..auth.identity import Identity, authenticate
@@ -18,10 +18,20 @@ from ..db import session_scope
 from ..domain.models import Case, now
 from ..domain.personas import Persona, policy_of
 from ..visibility import bind_viewer, find_case
+from ..tenants import provider
 from ..tenants.registry import TenantRuntime, UnknownTenant, all_runtimes, runtime
 
-# Demo platform staff. A real deployment keeps these in the provider's own identity system, apart from any client.
-OPERATORS = {"olivia": {"id": "olivia", "name": "Olivia Grant", "title": "Platform operations"}}
+# Requests by provider staff that are only the shell keeping itself up to date; everything else they do is logged.
+QUIET = ("/api/navigation", "/api/me", "/api/auth/", "/api/provider/")
+
+
+def staff_member(sid: str | None) -> dict | None:
+    """An active member of the provider's staff, from the provider's own directory."""
+    if not sid:
+        return None
+    with session_scope(platform=True) as s:
+        m = provider.staff(s, sid)
+        return provider.staff_out(m) if m is not None and m.active else None
 
 
 def identity(authorization: str | None = Header(default=None)) -> Identity | None:
@@ -35,9 +45,17 @@ def identity(authorization: str | None = Header(default=None)) -> Identity | Non
 
 
 def tenant(x_tenant: str | None = Header(default=None), who: Identity | None = Depends(identity)) -> TenantRuntime:
-    if who is not None:  # signed in: the client is whoever's identity provider issued the token, whatever the headers say
-        if who.tenant is None:
-            raise HTTPException(403, "Platform staff have no access to client data")
+    if who is not None and who.operator:
+        # Provider staff reach a client only through an engagement the client agreed to; the header names which one.
+        if not x_tenant:
+            raise HTTPException(403, "Platform staff have no access to client data except where they are engaged. Choose a client.")
+        try:
+            rt = runtime(x_tenant)
+        except UnknownTenant:
+            raise HTTPException(404, "Unknown client") from None
+        if provider.persona_id(who.subject) not in rt.policy.people:
+            raise HTTPException(403, f"You have no engagement at {rt.name}")
+    elif who is not None:  # signed in: the client is whoever's identity provider issued the token, whatever the headers say
         rt = who.tenant
     else:
         try:
@@ -59,9 +77,19 @@ def machine_session(rt: TenantRuntime = Depends(tenant)) -> Iterator[Session]:
 
 def operator(x_operator: str | None = Header(default=None), who: Identity | None = Depends(identity)) -> dict:
     name = (who.subject if who.operator else None) if who is not None else x_operator
-    if name not in OPERATORS:
+    member = staff_member(name)
+    if member is None or not member["console"]:
         raise HTTPException(403, "The operator console is for platform staff")
-    return OPERATORS[name]
+    return member
+
+
+def staff(x_operator: str | None = Header(default=None), who: Identity | None = Depends(identity)) -> dict:
+    """Any active member of the provider's staff, console or not: for the list of clients they are engaged at."""
+    name = (who.subject if who.operator else None) if who is not None else x_operator
+    member = staff_member(name)
+    if member is None:
+        raise HTTPException(403, "This is for the provider's staff")
+    return member
 
 
 def platform_session(_: dict = Depends(operator)) -> Iterator[Session]:
@@ -69,15 +97,35 @@ def platform_session(_: dict = Depends(operator)) -> Iterator[Session]:
         yield s
 
 
-def persona(rt: TenantRuntime = Depends(tenant), x_persona: str | None = Header(default=None),
+def persona(request: Request, rt: TenantRuntime = Depends(tenant), x_persona: str | None = Header(default=None),
             who: Identity | None = Depends(identity)) -> Persona:
     if who is not None:  # no default person and no switching: you are who your token says, or you are nobody here
-        if who.subject not in rt.policy.people:
+        pid = provider.persona_id(who.subject) if who.operator else who.subject
+        if not who.operator and provider.is_provider(pid):
+            # Only the provider's own identity system speaks for its staff; a client's provider cannot name one of them.
+            raise HTTPException(403, f"'{who.subject}' is a name kept for the provider's staff")
+        if pid not in rt.policy.people:
             raise HTTPException(403, f"'{who.subject}' is signed in but has no role at {rt.name}. Ask an administrator to add you on the Access page.")
-        return rt.policy.people[who.subject]
-    if x_persona and x_persona not in rt.policy.people:
-        raise HTTPException(403, f"'{x_persona}' is not a user of {rt.name}")
-    return rt.policy.person(x_persona)
+        p = rt.policy.people[pid]
+    else:
+        if x_persona and x_persona not in rt.policy.people:
+            raise HTTPException(403, f"'{x_persona}' is not a user of {rt.name}")
+        p = rt.policy.person(x_persona)
+    if p.external:
+        _provider_request(rt, p, request)
+    return p
+
+
+def _provider_request(rt: TenantRuntime, p: Persona, request: Request) -> None:
+    """Provider staff act at a client only while their engagement lasts, and the client sees everything they do."""
+    with session_scope(rt.id) as s:
+        live = provider.still_live(s, p)
+        if not live.ok:
+            provider.expire(s, rt.id)
+            raise HTTPException(403, live.reason)
+        path = request.url.path
+        if not path.startswith(QUIET):
+            provider.log(s, rt.id, p.id, "provider", "provider.request", f"{request.method} {path}"[:200], engagement=p.engagement)
 
 
 def signed_in(who: Identity | None = Depends(identity)) -> None:

@@ -1,6 +1,8 @@
 """Versioned migrations: what a starting application does to an empty database, a current one, an old one."""
 from __future__ import annotations
 
+import re
+
 import pytest
 from sqlalchemy import inspect, text
 
@@ -72,7 +74,9 @@ def test_the_migrations_form_one_line_from_the_baseline():
     scripts = ScriptDirectory.from_config(migrations.config())
     line = [r.revision for r in scripts.walk_revisions()][::-1]
     assert line[0] == migrations.BASELINE == f"{SCHEMA_VERSION:04d}" and len(scripts.get_heads()) == 1
-    assert line == sorted(line) and all(len(r) == 4 and r.isdigit() for r in line)
+    # Ids are unique and either a number (to 0031, some reserved for branches and landing in any order) or the time
+    # a migration was written. The order is the down_revision chain, not the id, so ids need not ascend along it.
+    assert len(set(line)) == len(line) and all(re.fullmatch(r"\d{4}|\d{14}", r) for r in line)
 
 
 # ---- starting up

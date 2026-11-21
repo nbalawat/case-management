@@ -126,6 +126,9 @@ class Settings:
     # The Kafka brokers as the Flink cluster reaches them, when that differs from how this application does.
     flink_kafka_bootstrap: str = os.getenv("FLINK_KAFKA_BOOTSTRAP", "")
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
+    # The first member of the provider's staff, created at start-up if the staff directory is empty, so a fresh
+    # installation has someone who can open the operator console: "id:Full name". Empty: create nobody.
+    bootstrap_operator: str = os.getenv("BOOTSTRAP_OPERATOR", "olivia:Olivia Grant")
     # A database holding another schema version: "rebuild" drops every table and starts again (demos), "refuse"
     # stops the application with an explanation and changes nothing. The Helm chart sets refuse.
     schema_on_mismatch: str = os.getenv("SCHEMA_ON_MISMATCH", "rebuild")

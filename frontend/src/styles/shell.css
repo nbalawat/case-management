@@ -5,3 +5,4 @@
 .shell .sample{border-bottom:1px solid var(--line)}
 .side-link:focus-visible,.identity:focus-visible,.palette-trigger:focus-visible,.collapse-btn:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
 [cmdk-input]{min-height:0}
+.shell .sample.engagement{background:var(--serious-soft, #fff4e5);color:var(--text, inherit);text-align:center}
