@@ -5,7 +5,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +35,7 @@ from .api.platform import router as platform_router
 from .api.routes import router
 from .api.work import router as work_router
 from .api.workflows import router as workflows_router
+from . import workflow
 from .config import ROOT, settings
 from .db import ensure_schema, session_scope
 from .tenants.onboarding import hydrate
@@ -49,7 +51,7 @@ async def lifespan(_: FastAPI):
 
         seed_demo()
     task = None
-    if settings.pipeline_scheduler:
+    if settings.pipeline_scheduler and workflow.engine().in_process:  # on Temporal a schedule per client starts due pipelines instead
         from .ingest import scheduler
 
         task = asyncio.create_task(scheduler.run_forever())
@@ -66,6 +68,11 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="CaseForge demo API", version="0.26.0", lifespan=lifespan)
+
+
+@app.exception_handler(workflow.EngineUnavailable)
+async def _engine_unavailable(_: Request, e: workflow.EngineUnavailable) -> JSONResponse:
+    return JSONResponse({"detail": str(e)}, status_code=503, headers={"Retry-After": "5"})
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, backbone_router, navigation_router, case_list_router, decisions_router, forms_router, lake_router):
     app.include_router(r, dependencies=[Depends(signed_in)])

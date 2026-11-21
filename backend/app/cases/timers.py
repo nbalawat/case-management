@@ -1,7 +1,7 @@
 """Stage clocks. A sweep finds breaches and applies the escalation a case type declares.
 
-The sweep runs on demand and when work lists load. With TEMPORAL_URL set, every open case also has a durable
-timer in Temporal (app/durable), so a breach fires at the moment it happens whether or not anyone is looking.
+The sweep runs on demand and when work lists load. On Temporal (app/durable) every open case's workflow also holds a
+durable timer, so a breach fires at the moment it happens whether or not anyone is looking.
 """
 from __future__ import annotations
 
@@ -58,7 +58,9 @@ def run_timers(s: Session, at: datetime | None = None) -> dict:
     from ..kyc import triggers  # here, not at the top: perpetual KYC opens cases, so it imports this package
 
     from .. import holds
+    from ..filing import followups
     from ..fraud import disputes
 
     return {"stage_breaches": breached, "requests_overdue": overdue, "alerts_expired": sweep_hibernated(s, at), "kyc_triggers": triggers.scan(s, at),
-            "holds_overdue": holds.sweep(s, at), "dispute_deadlines": disputes.sweep(s, at), "at": at.isoformat()}
+            "holds_overdue": holds.sweep(s, at), "dispute_deadlines": disputes.sweep(s, at), "filing_follow_ups": followups.sweep(s, at),
+            "at": at.isoformat()}

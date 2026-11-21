@@ -7,7 +7,7 @@ from ..domain.models import new_id
 from ..domain.personas import Persona, policy_of
 from ..visibility import find_case
 from . import assignments
-from .service import TransitionError, allowed_transitions, complete_stage_tasks, record, transition
+from .service import TransitionError, allowed_transitions, record
 
 ACTIONS = ("claim", "reassign", "transition")
 LIMIT = 200
@@ -21,11 +21,22 @@ def run(s: Session, case_ids: list[str], action: str, persona: Persona, *, owner
     ids = list(dict.fromkeys(case_ids))
     if not ids or len(ids) > LIMIT:
         raise TransitionError(f"Choose between 1 and {LIMIT} cases")
-    batch, results = new_id("bulk"), []
+    from ..workflow import Action, engine
+
+    batch, results, runner = new_id("bulk"), [], engine()
     for cid in ids:
         case = find_case(s, cid)
         if case is None:
             results.append({"id": cid, "ok": False, "message": "Not found"})
+            continue
+        if action == "transition" and not runner.in_process:
+            # The case's own workflow takes the step, in its own transaction, with the batch recorded alongside it
+            step = Action("transition", persona.id, to=to, note=note, reason=reason, tick_tasks=tick_tasks, batch={"batch": batch, "of": len(ids)})
+            try:
+                runner.perform(s, case, persona, step)
+                results.append({"id": cid, "ok": True, "message": ""})
+            except TransitionError as e:
+                results.append({"id": cid, "ok": False, "message": str(e)})
             continue
         point = s.begin_nested()
         try:
@@ -34,9 +45,7 @@ def run(s: Session, case_ids: list[str], action: str, persona: Persona, *, owner
             elif action == "reassign":
                 assignments.reassign(s, case, owner, persona, note)
             else:
-                if tick_tasks:
-                    complete_stage_tasks(s, case, persona)
-                transition(s, case, to, persona, note, reason=reason)
+                runner.perform(s, case, persona, Action("transition", persona.id, to=to, note=note, reason=reason, tick_tasks=tick_tasks))
             record(s, case.id, persona.id, "human", "bulk.applied", {"batch": batch, "action": action, "of": len(ids)})
             s.flush()
             point.commit()
