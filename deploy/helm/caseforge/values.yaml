@@ -83,6 +83,17 @@ storage:
   evidenceUrl: ""       # s3://bucket/prefix, abfss://..., gs://... Required: pods keep nothing on local disk.
   quarantineUrl: ""
 
+# Per-client keys: customer documents are sealed under their client's own key (envelope encryption, app/keys).
+#   transit  OpenBao or Vault Transit holds the keys. TRANSIT_TOKEN goes in existingSecret. Required unless demoTenants.
+#   none     documents are stored as given (demos only).
+# The local keyring is not offered here: pods keep nothing on local disk, and a lost keyring is lost data.
+keys:
+  provider: transit
+  transit:
+    addr: ""            # https://openbao.security.svc:8200
+    mount: transit
+    prefix: caseforge-
+
 llm:
   agentMode: rules      # rules | model
   askProvider: auto

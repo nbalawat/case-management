@@ -20,6 +20,7 @@ from ..config import settings
 from ..domain.models import Case, Evidence, Party, new_id, now
 from ..domain.personas import Persona
 from ..storage import ObjectStore, open_store
+from ..storage.sealed import sealed
 from ..tenancy import tenant_of
 from ..visibility import find_case, system_work
 
@@ -41,7 +42,8 @@ class EvidenceError(ValueError):
 
 
 def store(tenant_id: str) -> ObjectStore:
-    return open_store(f"{settings.evidence_url.rstrip('/')}/{tenant_id}/")
+    """The client's document store. Documents are sealed under the client's own key (app/keys) before they are written."""
+    return sealed(open_store(f"{settings.evidence_url.rstrip('/')}/{tenant_id}/"), tenant_id)
 
 
 def clear(tenant_id: str) -> None:

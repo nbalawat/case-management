@@ -92,6 +92,10 @@ policy says what they may do.
 | Variable | Default | Meaning |
 |---|---|---|
 | `EVIDENCE_URL` | local `data/evidence` | Customer documents and sent filings, per client under `<url>/<client>/`; `s3://`, `abfss://`, `gs://` |
+| `KEY_PROVIDER` | `local` | Per-client keys that seal customer documents (envelope encryption, `app/keys`). `local`: a keyring under `KEYS_DIR`; `transit`: OpenBao or Vault Transit; `none`: stored as given. Helm offers only `transit`, or `none` for demos |
+| `KEYS_DIR` | `data/keys` | The local keyring. Keep it on a persistent volume, apart from the documents: a lost keyring is lost documents |
+| `KEYS_MASTER_KEY` | empty | 32 bytes, base64, sealing the local keyring. Empty: a random one is written beside the keyring (demos) |
+| `TRANSIT_ADDR`, `TRANSIT_TOKEN`, `TRANSIT_MOUNT`, `TRANSIT_PREFIX` | empty, empty, `transit`, `caseforge-` | The OpenBao or Vault Transit engine; one key per client named `<prefix><client>`. Put the token in the secret |
 | `QUARANTINE_URL` | local `data/quarantine` | Rejected rows and held files |
 | `LAKE_DIR` | local `data/lake` | Demo landing zone for the seeded clients |
 | `PIPELINE_SCHEDULER` | `0` | In-process schedule timer; one process only |
