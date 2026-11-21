@@ -14,8 +14,13 @@ downstream knows which engine raised an alert.
 | Job | The rule | Alerts carry the source |
 |---|---|---|
 | `structuring` | A number of cash deposits just under the reporting threshold by one customer inside a window of days. The same rule and the same thresholds as the application's `structuring` scenario. | `flink-structuring` |
+| `rapid_movement` | A large payment in that is not cash, followed within a number of hours by payments out adding up to a set share of it. The alert is raised at the payment that reaches the share and lists the payments out up to then. The application reads the whole window afterwards and lists every payment out in it. | `flink-rapid-movement` |
+| `high_risk_geo` | One customer's outbound wires to the platform's high-risk countries reaching a monthly total. The alert is raised once per customer and calendar month, at the wire that crosses the total, and lists the wires up to then. The application lists the whole month. | `flink-high-risk-geo` |
 
-One job per client and rule, like the topics. Its name on the cluster is `caseforge structuring <client>`.
+The fourth scenario, watchlist name matching, stays in the application. It scores how alike two names are, and Flink
+SQL has no such function without custom Java code, which this project does not ship.
+
+One job per client and rule, like the topics. Its name on the cluster is `caseforge <job> <client>`. The jobs share one definition of the two topics (`backend/app/streamjobs/common.sql`).
 
 ## Render and submit
 
@@ -31,7 +36,7 @@ that client has approved under Detection, and refuses any value that could chang
 `flink-sql-connector-kafka` in its `lib` directory (the `Dockerfile` here adds it to the official image).
 
 With Docker: `make streaming` starts the demo with Kafka, the lake, OpenSearch and a Flink cluster, and
-`make flink-job CLIENT=meridian` renders and submits that client's job. Flink's own console is on
+`make flink-job CLIENT=meridian` renders and submits that client's structuring job (`JOB=rapid_movement` or `JOB=high_risk_geo` for the others). Flink's own console is on
 http://localhost:8081.
 
 Set `FLINK_URL` (the cluster's REST address) on the application and the Integrations page shows each client whether

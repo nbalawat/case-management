@@ -1,4 +1,4 @@
-"""The structuring job on a real Apache Flink cluster, reading and writing a real Kafka broker.
+"""The stream jobs on a real Apache Flink cluster, reading and writing a real Kafka broker.
 
 Runs when all three are set:
     TEST_KAFKA_URL=kafka://127.0.0.1:9092      a disposable broker
@@ -41,16 +41,17 @@ def jobs(world, tmp_path):  # noqa: F811
     object.__setattr__(settings, "flink_url", FLINK)
     started: list[str] = []
 
-    def submit(tenant=T, params=None):
-        path = tmp_path / f"{tenant}.sql"
-        path.write_text(render("structuring", tenant, params))
+    def submit(tenant=T, params=None, job="structuring"):
+        path = tmp_path / f"{tenant}-{job}.sql"
+        path.write_text(render(job, tenant, params))
         done = subprocess.run([os.path.join(HOME, "bin", "sql-client.sh"), "-f", str(path)], capture_output=True, text=True, timeout=180, check=False)
         assert "Job ID:" in done.stdout, done.stdout[-3000:] + done.stderr[-2000:]
         started.append(done.stdout.split("Job ID:")[1].split()[0])
+        state = lambda: next(j["state"] for j in flink.status(tenant)["jobs"] if j["job"] == job)  # noqa: E731
         end = time.monotonic() + 60
-        while flink.status(tenant)["jobs"][0]["state"] != "RUNNING" and time.monotonic() < end:
+        while state() != "RUNNING" and time.monotonic() < end:
             time.sleep(1)
-        assert flink.status(tenant)["jobs"][0]["state"] == "RUNNING"
+        assert state() == "RUNNING"
 
     yield submit
     object.__setattr__(settings, "flink_url", "")
@@ -177,3 +178,83 @@ def test_a_deposit_that_arrives_after_event_time_has_moved_on_is_not_counted_by_
     send(world, topics.TRANSACTIONS, [txn(3, day=3)])
     found, _ = alerts(world, T, 1, seconds=30, day=11)
     assert found == []
+
+
+# ---- rapid movement of funds
+
+def wire(i, amount, direction="out", hours=0.0, **over):
+    return txn(i, amount=amount, direction=direction, channel="wire", **over) | {"ts": (NOW + timedelta(hours=hours, minutes=i)).isoformat()}
+
+
+def test_money_that_leaves_again_within_the_window_raises_one_alert_at_the_payment_that_tips_it(world, jobs):  # noqa: F811
+    jobs(job="rapid_movement")
+    send(world, topics.TRANSACTIONS, [
+        wire(1, 50000, "in", counterparty="Volkov Maritime Trading"), wire(2, 15000, hours=2), wire(3, 300, "in", hours=3), wire(4, 20000, hours=5),
+        wire(5, 9000, hours=9), wire(6, 4000, hours=10),                                   # 40,000 is reached at T5, so T6 is not in the alert
+        wire(7, 60000, "in", party="P2"), wire(8, 60000, party="P3"),                      # one customer's money in, another's out
+        txn(9, party="P4", amount=50000), wire(10, 50000, party="P4", hours=1),            # cash in is the structuring rule's business
+        wire(11, 30000, "in", party="P5"), wire(12, 30000, party="P5", hours=60)])         # left, but after the 48 hours
+    found, raw = alerts(world, T, 1, seconds=60, day=5)
+    assert found == [{"source": "flink-rapid-movement", "external_id": "P1:T1", "scenario": "rapid_movement", "party_id": "P1", "score": 0.78,
+                      "explanation": "$50000 received from Volkov Maritime Trading, $44000 (88%) sent out within 48 hours.",
+                      "txn_ids": ["T1", "T2", "T4", "T5"]}]
+    assert raw[0].key == "P1"
+
+
+def test_two_large_receipts_close_together_are_followed_separately(world, jobs):  # noqa: F811
+    jobs(job="rapid_movement", params={"min_in": 10000, "out_ratio": 0.5, "hours": 24})
+    send(world, topics.TRANSACTIONS, [wire(1, 20000, "in"), wire(2, 12000, "in", hours=1), wire(3, 7000, hours=2), wire(4, 4000, hours=3)])
+    found, _ = alerts(world, T, 2, seconds=60, day=5)
+    assert sorted((a["external_id"], a["txn_ids"], a["score"]) for a in found) == [("P1:T1", ["T1", "T3", "T4"], 0.71), ("P1:T2", ["T2", "T3"], 0.72)]
+    assert "within 24 hours" in found[0]["explanation"]
+
+
+def test_a_rapid_movement_alert_opens_a_case_through_the_ordinary_alert_stream(world, jobs):  # noqa: F811
+    customer(world)
+    jobs(job="rapid_movement")
+    send(world, topics.TRANSACTIONS, [wire(1, 50000, "in"), wire(2, 45000, hours=4)])
+    found, _ = alerts(world, T, 1, seconds=60, day=5)
+    assert len(found) == 1
+    loader, hub = StreamConsumer(world.bus, topics.TRANSACTIONS), StreamConsumer(world.bus, topics.ALERTS_IN)
+    end = time.monotonic() + 60
+    while not _from(world, "flink-rapid-movement") and time.monotonic() < end:
+        loader.step(timeout=1.0), hub.step(timeout=1.0)
+    loader.close(), hub.close()
+    (alert,) = _from(world, "flink-rapid-movement")
+    assert (alert.scenario, alert.party_id, alert.txn_ids) == ("rapid_movement", "P1", ["T1", "T2"]) and count(world, m.Case) == 1
+
+
+def _from(world, source):  # noqa: F811
+    with world.tenant(T) as s:
+        return s.scalars(select(m.Alert).where(m.Alert.source == source)).all()
+
+
+# ---- wires to high-risk jurisdictions
+
+def abroad(i, amount, country="IR", day=0, **over):
+    return txn(i, **({"amount": amount, "direction": "out", "channel": "wire", "day": day, "counterparty_country": country} | over))
+
+
+def test_wires_to_listed_countries_raise_one_alert_when_the_months_total_crosses_the_threshold(world, jobs):  # noqa: F811
+    jobs(job="high_risk_geo")
+    send(world, topics.TRANSACTIONS, [
+        abroad(1, 4000), abroad(2, 3000, "KP", day=1), abroad(3, 9000, "DE", day=1), abroad(4, 2500, "SY", day=2, channel="ach"),
+        abroad(5, 3500, "SY", day=3),                                                      # 10,500 with T1 and T2: over
+        abroad(6, 8000, day=4),                                                            # already raised this month
+        abroad(7, 9000, party="P2"), abroad(8, 9000, "IR", party="P3", direction="in")])
+    found, raw = alerts(world, T, 1, seconds=60, day=6)
+    month = NOW.strftime("%Y-%m")
+    assert found == [{"source": "flink-high-risk-geo", "external_id": f"P1:{month}", "scenario": "high_risk_geo", "party_id": "P1", "score": 0.55,
+                      "explanation": f"3 outbound wires totalling $10500 to high-risk jurisdictions in {month}.", "txn_ids": ["T1", "T2", "T5"]}]
+    assert raw[0].key == "P1"
+    more, _ = alerts(world, T, 2, seconds=25, day=7)
+    assert len(more) <= 1  # the wire after the crossing raised nothing further
+
+
+def test_each_calendar_month_is_totalled_on_its_own_and_on_the_clients_threshold(world, jobs):  # noqa: F811
+    jobs(job="high_risk_geo", params={"min_total": 5000})
+    first = (NOW.replace(day=1) + timedelta(days=32)).replace(day=1)  # the first of next month
+    late, early = (first - NOW).days - 1, (first - NOW).days + 1
+    send(world, topics.TRANSACTIONS, [abroad(1, 3000, day=late - 1), abroad(2, 3000, day=early), abroad(3, 2500, day=early + 1)])
+    found, _ = alerts(world, T, 1, seconds=60, day=early + 5)
+    assert [(a["external_id"], a["txn_ids"]) for a in found] == [(f"P1:{first.strftime('%Y-%m')}", ["T2", "T3"])]
