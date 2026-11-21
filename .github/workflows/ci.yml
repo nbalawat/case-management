@@ -117,7 +117,7 @@ jobs:
           TEST_OPENSEARCH_URL: opensearch://localhost:9200
           TEST_AGE_URL: age://caseforge:ci-only@localhost:5455/graph
           TEST_TEMPORAL_URL: temporal://localhost:7233
-        run: uv run pytest -q tests/test_postgres.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
+        run: uv run pytest -q tests/test_postgres.py tests/test_rls.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
 
   frontend:
     name: Frontend lint and build
