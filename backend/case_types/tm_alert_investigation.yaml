@@ -83,5 +83,5 @@ qa:
   dispositions: [no_sar]
   reopen_to: investigation
 agents:
-  on_create: [data_assembly, entity_research, typology_analyst, narrative_writer, qa_critic]
+  on_create: [data_assembly, entity_research, adverse_media, typology_analyst, narrative_writer, qa_critic]
   autonomy: L2

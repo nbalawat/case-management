@@ -46,5 +46,5 @@ sla:
   clock: Periodic review due
   due_days: 45
 agents:
-  on_create: [data_assembly, entity_research]
+  on_create: [data_assembly, entity_research, adverse_media, kyc_refresh]
   autonomy: L2

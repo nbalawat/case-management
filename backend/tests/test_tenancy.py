@@ -33,6 +33,10 @@ FACTORY = {
     "PipelineRun": lambda k: m.PipelineRun(id=f"run-{k}", source_id=f"src-{k}", batch_id="b", started_by="x"),
     "IngestedObject": lambda k: m.IngestedObject(id=f"obj-{k}", source_id=f"src-{k}", run_id=f"run-{k}", key="same/key.csv",
                                                  fingerprint="same", status="loaded"),
+    "AgentPolicyVersion": lambda k: m.AgentPolicyVersion(version=9, body={}, published_by="x"),
+    "AgentStep": lambda k: m.AgentStep(run_id=f"run-{k}", agent="triage", agent_version="1", level="L2"),
+    "AgentJob": lambda k: m.AgentJob(id=f"job-{k}", kind="evaluation", started_by="x"),
+    "MediaItem": lambda k: m.MediaItem(id=f"med-{k}", party_id="P1", source="s", title="t", body="b"),
     "AskLog": lambda k: m.AskLog(id=f"q-{k}", conversation_id=f"ask-{k}", asked_by="x", role="analyst", question="q"),
 }
 ORDER = ["Party", "Account", "Transaction", "Case", "Alert"]  # parents first; the rest in any order

@@ -62,5 +62,5 @@ escalation:
   raise_priority: true
   notify: team_lead
 agents:
-  on_create: [data_assembly, entity_research]
+  on_create: [data_assembly, entity_research, adverse_media, kyc_refresh]
   autonomy: L2

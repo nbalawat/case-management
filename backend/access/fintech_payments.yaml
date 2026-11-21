@@ -11,6 +11,7 @@ permissions:
   publish_workflow: Publish new versions of case types
   load_data: Load data feeds onto the platform
   manage_access: Manage access - change the roles, queues and people in this policy
+  manage_agents: Manage agents - set autonomy, switch agents off, run evaluations and batch reviews
 
 queues:
   fraud: Fraud claims
@@ -29,8 +30,8 @@ roles:
   sanctions_officer: {title: Sanctions officer, permissions: [work]}
   team_lead:         {title: Operations lead, permissions: [work, view_team, reassign, run_timers]}
   mlro:              {title: MLRO, permissions: [work, view_team]}
-  head_fiu:          {title: Chief risk officer, permissions: [work, view_team]}
-  admin:             {title: Operations engineer, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access]}
+  head_fiu:          {title: Chief risk officer, permissions: [work, view_team, manage_agents]}
+  admin:             {title: Operations engineer, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents]}
   auditor:           {title: External auditor, permissions: [view_team], read_only: true}
 
 people:
