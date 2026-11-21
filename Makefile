@@ -1,4 +1,4 @@
-.PHONY: full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset
+.PHONY: migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -36,6 +36,9 @@ dev-api:         ## API with reload (pair with dev-ui)
 
 dev-ui:          ## UI dev server on http://localhost:5173
 	cd frontend && npm run dev
+
+migration:       ## After changing a model: make migration m="what changed" writes the next file in backend/app/migrations/versions
+	cd backend && uv run python -m app.migrate revision "$(m)"
 
 test:
 	cd backend && uv run pytest -q

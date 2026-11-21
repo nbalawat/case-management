@@ -28,9 +28,16 @@ api:
     enabled: true
     minAvailable: 1
 
-# What a database holding an older schema does to a starting pod. `refuse` stops the pod with an explanation.
-# `rebuild` drops every table and starts again: it exists for demos and must never be used with real data.
+# What happens to a database from before versioned migrations existed that is too old to adopt. `refuse` stops with
+# an explanation. `rebuild` drops every table and starts again: it exists for demos and must never meet real data.
 schemaOnMismatch: refuse
+
+# Schema changes are versioned migrations. With the job on (the default), a hook runs `python -m app.migrate` before
+# each install and upgrade, and the pods refuse to start against a database that is behind. With it off, the pods
+# migrate as they start, taking a database lock so only one does the work.
+migrations:
+  job: true
+  timeoutSeconds: 600
 
 # Demo clients and their synthetic data. Off for anything but a demo.
 demoTenants: false

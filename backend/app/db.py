@@ -46,7 +46,7 @@ def init_db(eng=None) -> None:
     Base.metadata.create_all(eng or engine)
 
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 16  # the last schema from before versioned migrations. It never changes again: write a migration.
 
 
 class SchemaMismatch(RuntimeError):
@@ -54,32 +54,49 @@ class SchemaMismatch(RuntimeError):
 
 
 def ensure_schema(eng=None) -> None:
-    """Demo-grade migration: if the stored schema differs from the code's, rebuild it. The seed then refills it.
+    """Make the database hold the schema this code expects, by versioned migrations (app/migrations).
 
-    That drops every table, so it only happens when SCHEMA_ON_MISMATCH=rebuild (the default, for demos). With
-    SCHEMA_ON_MISMATCH=refuse the application stops instead and the data is left alone. A real deployment needs
-    versioned migrations; there are none yet.
+    - An empty database is built by running every migration.
+    - A database that migrations already manage is brought to the newest revision when MIGRATE_ON_START=1 (the
+      default). With MIGRATE_ON_START=0 the application stops instead if it is behind, and something else, such as
+      the Helm chart's migration job, runs `python -m app.migrate`.
+    - A database from before migrations existed is adopted if it holds the last pre-migration schema, version 16.
+      Anything older cannot be migrated: with SCHEMA_ON_MISMATCH=rebuild (demos) every table is dropped and built
+      again, otherwise the application stops and changes nothing.
     """
     from sqlalchemy import inspect, text
 
-    eng = eng or engine
-    with eng.begin() as conn:
-        tables = inspect(conn).get_table_names()
-        current = conn.execute(text("SELECT version FROM schema_version")).scalar() if "schema_version" in tables else None
-        if tables and current != SCHEMA_VERSION:
-            if settings.schema_on_mismatch != "rebuild":
-                raise SchemaMismatch(
-                    f"This database holds schema version {current} and the application expects {SCHEMA_VERSION}. Nothing was changed. "
-                    "There are no in-place migrations yet: move the data, or set SCHEMA_ON_MISMATCH=rebuild to drop every table (demos only).")
-            from .domain import models  # noqa: F401
+    from . import migrations
 
+    eng = eng or engine
+    with eng.connect() as conn:
+        tables = set(inspect(conn).get_table_names())
+        managed = "alembic_version" in tables
+        at = migrations.current(conn) if managed else None
+        legacy = conn.execute(text("SELECT version FROM schema_version")).scalar() if "schema_version" in tables and not managed else None
+        empty = not migrations.has_tables(conn)
+    head = migrations.head()
+    if managed and at == head:
+        return
+    if managed:
+        if not settings.migrate_on_start:
+            raise SchemaMismatch(f"This database is at migration {at} and the application expects {head}. Nothing was changed. Run `python -m app.migrate`.")
+    elif empty:
+        pass
+    elif legacy == SCHEMA_VERSION:
+        migrations.stamp(eng, migrations.BASELINE)  # the tables are exactly the baseline's; record that and carry on
+    else:
+        if settings.schema_on_mismatch != "rebuild":
+            raise SchemaMismatch(
+                f"This database holds schema version {legacy}, from before versioned migrations, and only version {SCHEMA_VERSION} can be adopted. "
+                "Nothing was changed. Move the data, or set SCHEMA_ON_MISMATCH=rebuild to drop every table (demos only).")
+        from .domain import models  # noqa: F401
+
+        with eng.begin() as conn:
             Base.metadata.drop_all(conn)
             conn.execute(text("DROP TABLE IF EXISTS schema_version"))
-            tables = []
-        if "schema_version" not in tables:
-            conn.execute(text("CREATE TABLE schema_version (version INTEGER NOT NULL)"))
-            conn.execute(text("INSERT INTO schema_version (version) VALUES (:v)"), {"v": SCHEMA_VERSION})
-    init_db(eng)
+            conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    migrations.upgrade(eng)
 
 
 @contextmanager
