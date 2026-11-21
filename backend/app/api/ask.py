@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..ask import service
-from ..ask.gateway import resolve_provider
+from ..ai import gateway as ai
+from ..ai import policy as ai_policy
 from ..domain.personas import Persona
 from .deps import get_session, persona
 
@@ -29,7 +30,9 @@ def post_ask(body: AskIn, s: Session = Depends(get_session), p: Persona = Depend
 
 @router.get("/start")
 def get_start(s: Session = Depends(get_session), p: Persona = Depends(persona)):
-    return {"suggestions": service.suggestions(s, p), "scope": service.scope(s, p), "provider": resolve_provider()}
+    res = ai.resolve(ai_policy.for_session(s), "ask")
+    return {"suggestions": service.suggestions(s, p), "scope": service.scope(s, p), "provider": res.endpoint.id if res.endpoint else "offline",
+            "model": res.describe()}
 
 
 @router.get("/log")

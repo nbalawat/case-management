@@ -14,7 +14,8 @@ import os
 from collections import Counter
 from contextlib import contextmanager
 
-from ..ask.gateway import ChatModel, ModelUnavailable, ToolOutput, ToolSpec, get_model, resolve_provider
+from ..ai import gateway as ai
+from ..ai.types import ChatModel, ModelUnavailable, ToolOutput, ToolSpec
 from ..config import settings
 from ..detection.scenarios import HIGH_RISK_COUNTRIES, REGISTRY
 from .catalog import AgentSpec
@@ -73,12 +74,20 @@ def suspended():
         _suspended = before
 
 
-def chat_model() -> ChatModel | None:
-    """The model specialists should use, or None for the rule-based agents."""
-    if _suspended or mode() != "model" or resolve_provider() == "offline":
+def chat_model(s=None, *, ref: str = "") -> ChatModel | None:
+    """The model specialists should use, or None for the rule-based agents.
+
+    With a session, the client's model policy decides (and the calls are metered against its limits); without one,
+    the deployment default does: AGENT_MODE=model and a configured endpoint."""
+    if _suspended:
         return None
     try:
-        return get_model()
+        if s is not None:
+            return ai.model_for(s, "agents", actor="agents", ref=ref)
+        from ..ai import endpoints, policy
+
+        chosen = policy.deployment_default("agents")
+        return None if chosen == "rules" else endpoints.get(chosen).connect()
     except ModelUnavailable:
         return None
 
