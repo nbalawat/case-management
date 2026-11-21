@@ -6,17 +6,19 @@ import random
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .agents.investigator import investigate
-from .alerts.hub import route_alerts
-from .cases.case_types import load_case_types
-from .cases.service import create_case, save_narrative, transition
+from .alerts.hub import ingest_external_alert, route_alerts
+from .cases import assignments, requests
+from .cases.case_types import load_case_types, reset_published
+from .cases.service import allowed_transitions, complete_stage_tasks, create_case, save_narrative, transition
+from .cases.timers import run_timers
 from .config import settings
-from .db import Base, engine, init_db, session_scope
+from .db import Base, engine, ensure_schema, session_scope
 from .detection.engine import run_detection
-from .domain.models import Account, Case, Party, Transaction, now
+from .domain.models import Account, Case, Party, Transaction, WorkflowVersion, now
 from .domain.personas import PERSONAS
 
 FIRST = ["Elena", "Marcus", "Priya", "Tomás", "Aisha", "Daniel", "Mei", "Jonas", "Fatima", "Lucas", "Ingrid", "Kwame", "Sofia",
@@ -115,37 +117,228 @@ class Gen:
         return p
 
 
-def _simulate_handling(s: Session, cases: list[Case], g: Gen) -> None:
-    """Walk older cases through their workflow as the demo personas would, mostly following the agent."""
-    ana, ivan, maya = PERSONAS["ana"], PERSONAS["ivan"], PERSONAS["maya"]
-    for c in cases:
-        age = (g.end - c.created).days
-        if age < 6 or g.r.random() < 0.12:
-            if age >= 3 and c.case_type == "tm_alert_investigation" and g.r.random() < 0.6:
-                transition(s, c, "investigation", ana, ts=c.created + timedelta(hours=g.r.randint(4, 30)))
-                c.owner = "ivan"
-            continue
+class Desk:
+    """Plays the demo personas: claims a case, ticks the stage tasks, takes the step. Every guard still applies."""
+
+    def __init__(self, s: Session, g: Gen):
+        self.s, self.g = s, g
+
+    def step(self, c: Case, to: str, who: str, at: datetime, note: str = "") -> datetime:
+        at = min(at, self.g.end - timedelta(minutes=self.g.r.randint(3, 50)))
+        p = PERSONAS[who]
+        if c.queue in p.queues and c.owner != p.id:
+            assignments.claim(self.s, c, p, ts=at - timedelta(minutes=20))
+        complete_stage_tasks(self.s, c, p, ts=at - timedelta(minutes=5))
+        transition(self.s, c, to, p, note, ts=at)
+        return at
+
+    def own(self, c: Case, who: str, at: datetime) -> None:
+        assignments.claim(self.s, c, PERSONAS[who], ts=min(at, self.g.end - timedelta(minutes=30)))
+
+    def ask(self, c: Case, who: str, recipient: str, question: str, at: datetime, due_days: int = 5, answer: str | None = None,
+            answered_after_h: int = 30):
+        r = requests.raise_request(self.s, c, PERSONAS[who], recipient, question, due_days, ts=at)
+        if answer:
+            requests.answer_request(self.s, r, PERSONAS[who], answer, ts=min(at + timedelta(hours=answered_after_h), self.g.end - timedelta(minutes=40)))
+        return r
+
+
+def _work_monitoring(d: Desk, cases: list[Case]) -> None:
+    """Walk monitoring and sanctions cases through their workflows, mostly following the agent."""
+    g = d.g
+    for n, c in enumerate(cases):
+        age_h = (g.end - c.created).total_seconds() / 3600
+        l2 = "ivan" if n % 2 else "lena"
         follow = g.r.random() < 0.88
         escalate = (c.agent_recommendation == "escalate") == follow
-        t = c.created + timedelta(hours=g.r.randint(3, 20))
+        t = c.created + timedelta(hours=g.r.randint(2, 20))
         if c.case_type == "sanctions_hit":
+            if age_h < 30:
+                if age_h > 8:
+                    d.own(c, "ana", c.created + timedelta(hours=1))
+                continue
+            t = c.created + timedelta(hours=g.r.randint(1, 3))
             if escalate:
-                transition(s, c, "escalated", ana, ts=t)
-                transition(s, c, "blocked", maya, "Match confirmed on name and jurisdiction; payment blocked.", ts=t + timedelta(hours=5))
+                d.step(c, "escalated", "ana", t)
+                if age_h > 60:
+                    d.step(c, "blocked", "sofia", t + timedelta(hours=g.r.randint(4, 18)), "Match confirmed on name and jurisdiction; payment blocked and reported.")
             else:
-                transition(s, c, "discounted", ana, "Name differs; no secondary identifier matches.", ts=t)
+                d.step(c, "discounted", "ana", t, "Name differs in a distinguishing token; no secondary identifier matches.")
             continue
-        c.owner = "ivan"
-        transition(s, c, "investigation", ana, ts=t)
+        if age_h < 40:
+            if age_h > 20 and n % 3 == 0:
+                d.own(c, "ana", c.created + timedelta(hours=3))
+            continue
+        if not escalate and n % 4 == 0:
+            d.step(c, "closed_no_sar", "ana", t, "Activity matches the documented business profile; agent briefing reviewed and agreed.")
+            continue
+        d.step(c, "investigation", "ana", t)
+        if age_h < 100:
+            if n % 3:
+                d.own(c, l2, t + timedelta(hours=5))
+            continue
+        d.own(c, l2, t + timedelta(hours=5))
+        if n % 5 == 0:  # the investigator needs something from outside the team
+            asked = t + timedelta(hours=20)
+            old = age_h > 400
+            r = d.ask(c, l2, "relationship_manager" if n % 2 else "customer",
+                      "Please confirm the source of the funds received and the purpose of the onward payments, with supporting documents.",
+                      asked, due_days=5)
+            d.step(c, "awaiting_information", l2, asked + timedelta(minutes=30))
+            if not old:
+                continue
+            requests.answer_request(d.s, r, PERSONAS[l2], "Customer provided a sale agreement and bank confirmation covering the incoming funds.",
+                                    ts=asked + timedelta(hours=38))
+            d.step(c, "investigation", l2, asked + timedelta(hours=40))
         t += timedelta(days=g.r.randint(1, 4))
-        if not escalate:
-            transition(s, c, "closed_no_sar", ivan, "Activity consistent with customer profile and documented purpose.", ts=t)
+        if age_h < 150:
             continue
-        transition(s, c, "sar_drafting", ivan, ts=t)
-        save_narrative(s, c, c.narrative, ivan, ts=t + timedelta(hours=3))
-        transition(s, c, "mlro_review", ivan, ts=t + timedelta(hours=4))
-        if age >= 9:
-            transition(s, c, "filed", maya, ts=t + timedelta(days=g.r.randint(1, 3)))
+        if not escalate:
+            d.step(c, "closed_no_sar", l2, t, "Activity is consistent with the customer profile and the documented purpose.")
+            continue
+        d.step(c, "sar_drafting", l2, t)
+        if age_h < 200:
+            continue
+        save_narrative(d.s, c, c.narrative, PERSONAS[l2], ts=min(t + timedelta(hours=3), g.end - timedelta(hours=1)))
+        d.step(c, "mlro_review", l2, t + timedelta(hours=4))
+        if age_h < 260:
+            continue
+        options = {x["to"] for x in allowed_transitions(d.s, c, PERSONAS["maya"])}
+        t += timedelta(days=g.r.randint(1, 2))
+        if "filed" in options:
+            d.step(c, "filed", "maya", t)
+        else:
+            d.step(c, "senior_approval", "maya", t)
+            if age_h > 420:
+                d.step(c, "filed", "hugo", t + timedelta(hours=g.r.randint(6, 30)))
+
+
+def _work_qa(d: Desk) -> None:
+    """Quinn reviews most sampled cases; one fails and sends its case back to the investigators."""
+    reviews = sorted(d.s.scalars(select(Case).where(Case.case_type == "qa_review")), key=lambda c: c.created)
+    for n, c in enumerate(reviews):
+        age_h = (d.g.end - c.created).total_seconds() / 3600
+        if age_h < 48:
+            continue
+        at = c.created + timedelta(hours=d.g.r.randint(20, 44))
+        if n == 1:
+            d.own(c, "quinn", at - timedelta(hours=1))
+            transition(d.s, c, "failed", PERSONAS["quinn"],
+                       "Closure rationale does not address the two first-time counterparties. Returned for a documented explanation.", ts=at)
+        elif n % 4 != 3:
+            d.step(c, "passed", "quinn", at)
+
+
+def _seed_kyc(d: Desk) -> None:
+    g, s = d.g, d.s
+    types = load_case_types()
+    low = g.r.sample(list(s.scalars(select(Party).where(Party.risk_rating == "low").limit(80))), 5)
+    high = list(s.scalars(select(Party).where(Party.risk_rating == "high").limit(2)))
+    ask = "Your periodic review is due. Please upload current identification, proof of address and confirm your occupation."
+    for n, p in enumerate(low + high):
+        c = create_case(s, types["kyc_refresh"], p.id, "medium" if p.risk_rating == "high" else "low", created=g.when(3, 24), actor="kyc-scheduler")
+        age_h = (g.end - c.created).total_seconds() / 3600
+        d.own(c, "kai", c.created + timedelta(hours=2))
+        if n in (0, 3):  # still waiting on the customer
+            d.ask(c, "kai", "customer", ask, c.created + timedelta(hours=3), due_days=10 if n else 3)
+            continue
+        d.ask(c, "kai", "customer", ask, c.created + timedelta(hours=3), due_days=10,
+              answer="Customer uploaded passport, utility bill and employer letter.", answered_after_h=50)  # answered before the step out of outreach
+        t = d.step(c, "review", "kai", c.created + timedelta(hours=60))
+        if age_h < 150:
+            continue
+        if p.risk_rating == "high":
+            t = d.step(c, "edd", "kai", t + timedelta(hours=20))
+            if n == len(low):
+                d.step(c, "approved", "maya", t + timedelta(hours=30), "Source of wealth evidenced by audited accounts; relationship retained at high risk.")
+        else:
+            d.step(c, "approved", "kai", t + timedelta(hours=20), "Documents current, screening clear, activity matches the stated occupation.")
+    applicants = [("Helena Brandt", "architect", "low", False, 30), ("Rashid Al-Amin", "import-export trader", "high", False, 70),
+                  ("Odile Fontaine", "government minister", "medium", True, 50), ("Mateo Aguilar", "student", "low", False, 6),
+                  ("Bianca Roth", "dentist", "low", False, 20), ("Tobias Lindgren", "crypto trader", "high", False, 110)]
+    for n, (name, job, risk, pep, hours_ago) in enumerate(applicants):
+        g.n += 1
+        p = Party(id=f"P{10000 + g.n}", name=name, occupation=job, risk_rating=risk, pep=pep, onboarded=g.end)
+        s.add(p)
+        s.add(Account(id=f"A{p.id[1:]}", party_id=p.id))
+        s.flush()
+        c = create_case(s, types["kyc_onboarding"], p.id, "high" if pep or risk == "high" else "medium",
+                        created=g.end - timedelta(hours=hours_ago), actor="onboarding-portal")
+        if n == 3:
+            continue  # fresh application, nobody has picked it up
+        d.own(c, "kai", c.created + timedelta(hours=1))
+        if n == 4:
+            d.ask(c, "kai", "customer", "The proof of address is older than three months. Please send a recent one.", c.created + timedelta(hours=2), due_days=7)
+            d.step(c, "awaiting_customer", "kai", c.created + timedelta(hours=2, minutes=10))
+            continue
+        t = d.step(c, "risk_assessment", "kai", c.created + timedelta(hours=5))
+        if n == 0:
+            d.step(c, "approved", "kai", t + timedelta(hours=3))
+        elif n in (1, 2):
+            t = d.step(c, "edd_approval", "kai", t + timedelta(hours=4))
+            if n == 1:
+                d.step(c, "approved", "tara", t + timedelta(hours=20), "Trade documents and audited accounts support the declared source of wealth.")
+
+
+FRAUD = [  # (scenario, minutes ago, [(amount, payee, country, channel, hour or None)], stage to reach)
+    ("account_takeover", 35, [(1850, "QuickSend Transfer", "RO", "p2p", 3), (2400, "QuickSend Transfer", "RO", "p2p", 3)], "triage"),
+    ("card_fraud", 300, [(412, "Nova Electronics Online", "US", "card", None), (389, "Nova Electronics Online", "US", "card", None)], "triage"),
+    ("account_takeover", 60 * 30, [(4200, "Marek Dvorak", "CZ", "wire", 2), (3900, "Marek Dvorak", "CZ", "wire", 2)], "customer_contact"),
+    ("card_fraud", 60 * 50, [(96, "Harbor Grocers", "US", "card", None), (61, "Atlas Fuel", "US", "card", None)], "closed_no_fraud"),
+    ("account_takeover", 60 * 70, [(7400, "Selim Kaya", "TR", "wire", 4), (2100, "Selim Kaya", "TR", "wire", 4)], "refund_approval"),
+    ("card_fraud", 60 * 90, [(640, "LuxeGoods Outlet", "GB", "card", 1), (720, "LuxeGoods Outlet", "GB", "card", 1)], "refunded"),
+    ("account_takeover", 60 * 130, [(6800, "Priority Crypto Desk", "LT", "wire", 5)], "refunded"),
+    ("card_fraud", 60 * 100, [(240, "Corner Cafe", "US", "card", None), (180, "Lakeside Fitness", "US", "card", None)], "declined"),
+]
+
+
+def _plant_fraud(g: Gen, victims: list[Party]) -> list[tuple]:
+    planted = []
+    for p, (scenario, mins, items, stage) in zip(victims, FRAUD):
+        base = g.end - timedelta(minutes=mins)
+        txns = []
+        for k, (amount, payee, country, channel, hour) in enumerate(items):
+            ts = base + timedelta(minutes=4 * k) if hour is None or mins < 120 else (base - timedelta(days=0)).replace(hour=hour, minute=10 + 6 * k)
+            txns.append(g.txn(p, ts, amount, "out", channel, payee, country))
+        planted.append((p, scenario, txns, stage))
+    return planted
+
+
+def _seed_fraud(d: Desk, planted: list[tuple]) -> None:
+    s, g = d.s, d.g
+    for n, (p, scenario, txns, stage) in enumerate(planted):
+        total = sum(t.amount for t in txns)
+        last = max(t.ts for t in txns)
+        text = (f"Customer reported {len(txns)} payment(s) totalling ${total:,.0f} as not made by them."
+                if scenario == "card_fraud" else
+                f"Login from a new device was followed by {len(txns)} payment(s) totalling ${total:,.0f} to a new payee.")
+        _, c = ingest_external_alert(s, source="fraud-engine", external_id=f"FR-{88000 + n}", scenario=scenario, party_id=p.id,
+                                     score=0.9 if scenario == "account_takeover" else 0.7, explanation=text,
+                                     txn_ids=[t.id for t in txns], created=last + timedelta(minutes=12))
+        investigate(s, c, ts=c.created + timedelta(minutes=1))
+        if stage == "triage":
+            continue
+        t0 = c.created + timedelta(minutes=25)
+        if stage == "closed_no_fraud":
+            d.own(c, "fran", t0)
+            transition(s, c, "closed_no_fraud", PERSONAS["fran"], "Customer recognised both payments after speaking with a family member.", ts=t0 + timedelta(hours=2))
+            continue
+        if stage == "customer_contact":
+            d.own(c, "fran", t0)
+            complete_stage_tasks(s, c, PERSONAS["fran"], ts=t0)
+            d.ask(c, "fran", "customer", "Please confirm whether you shared a one-time passcode or approved a new device.", t0 + timedelta(minutes=10), due_days=2)
+            transition(s, c, "customer_contact", PERSONAS["fran"], ts=t0 + timedelta(minutes=15))
+            continue
+        t = d.step(c, "investigation", "fran", t0)
+        if stage == "declined":
+            d.step(c, "declined", "fran", t + timedelta(hours=20), "Payments were chip-and-PIN at merchants the customer uses weekly; device and location match.")
+        elif total >= 5000:
+            t = d.step(c, "refund_approval", "fran", t + timedelta(hours=18), "Device and location do not match the customer; credentials were phished.")
+            if stage == "refunded":
+                d.own(c, "tara", t + timedelta(hours=2))
+                transition(s, c, "refunded", PERSONAS["tara"], "Approved. Liability sits with the bank under the unauthorised payment rules.", ts=t + timedelta(hours=6))
+        else:
+            d.step(c, "refunded", "fran", t + timedelta(hours=16), "Card was used online at a merchant with no prior history while the customer was travelling.")
 
 
 def write_sample_feed(path: Path, end: datetime, seed: int = 11) -> int:
@@ -190,8 +383,11 @@ def write_sample_feed(path: Path, end: datetime, seed: int = 11) -> int:
 
 def seed(s: Session, n_baseline: int = 260) -> dict:
     g = Gen(s)
+    ordinary = []
     for _ in range(n_baseline):
-        g.baseline(g.party())
+        p = g.party()
+        g.baseline(p)
+        ordinary.append(p)
     for _ in range(9):
         g.structuring(1, 40)
     for _ in range(4):
@@ -206,24 +402,32 @@ def seed(s: Session, n_baseline: int = 260) -> dict:
     g.sanctions(8, 30, "Darya Shipping Lines", "IR")
     for name in ["Volkov Maritime Trading Co", "Darya Shipping Line LLC", "Zarin Exchange Houses", "Northgate Petrochem FZC"]:
         g.sanctions(1, 35, name, g.r.choice(["DE", "SG", "AE", "GB"]))
+    planted = _plant_fraud(g, g.r.sample(ordinary, len(FRAUD)))
     g.settle()
     s.flush()
     alerts = run_detection(s)
     cases = route_alerts(s, alerts)
     for c in cases:
         investigate(s, c, ts=c.created + timedelta(minutes=2))
-    kyc = load_case_types()["kyc_refresh"]
-    for p in g.r.sample(list(s.scalars(select(Party).where(Party.risk_rating == "low").limit(60))), 6):
-        create_case(s, kyc, p.id, "low", created=g.when(1, 20))
-    _simulate_handling(s, sorted(cases, key=lambda c: c.created), g)
+    desk = Desk(s, g)
+    _work_monitoring(desk, sorted(cases, key=lambda c: c.created))
+    _seed_fraud(desk, planted)
+    _seed_kyc(desk)
+    s.flush()
+    _work_qa(desk)
+    sweep = run_timers(s, at=g.end)
     n = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", g.end)
-    return {"parties": g.n, "alerts": len(alerts), "cases": len(cases), "sample_feed_rows": n}
+    total = len(list(s.scalars(select(Case.id))))
+    return {"parties": g.n, "alerts": len(alerts) + len(planted), "cases": total, "stage_breaches": sweep["stage_breaches"],
+            "sample_feed_rows": n}
 
 
 def main() -> None:
     Base.metadata.drop_all(engine)
-    init_db()
+    ensure_schema()
     with session_scope() as s:
+        s.execute(delete(WorkflowVersion))
+        reset_published()
         print("Seeded:", seed(s))
 
 

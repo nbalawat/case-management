@@ -1,27 +1,24 @@
-"""Demo personas. A real deployment federates to the client's identity provider instead."""
+"""The active access policy, exposed in the shapes the rest of the code uses.
+
+Everything here is read from the policy file (see access.py and backend/access/default.yaml).
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from ..config import settings
+from .access import AccessPolicy, Persona, load_policy
 
-
-@dataclass(frozen=True)
-class Persona:
-    id: str
-    name: str
-    role: str
-    title: str
-
-
-PERSONAS: dict[str, Persona] = {
-    p.id: p
-    for p in [
-        Persona("ana", "Ana Ruiz", "analyst", "L1 alert analyst"),
-        Persona("ivan", "Ivan Petrov", "investigator", "L2 investigator"),
-        Persona("maya", "Maya Chen", "mlro", "MLRO / BSA officer"),
-        Persona("omar", "Omar Haddad", "admin", "Platform admin"),
-    ]
-}
+POLICY: AccessPolicy = load_policy(settings.access_policy)
+QUEUES: dict[str, str] = POLICY.queues
+PERMISSIONS: dict[str, frozenset[str]] = {r.id: r.permissions for r in POLICY.roles.values()}
+PERSONAS: dict[str, Persona] = POLICY.people
 
 
 def get_persona(pid: str | None) -> Persona:
-    return PERSONAS.get(pid or "", PERSONAS["ivan"])
+    return POLICY.person(pid)
+
+
+def queue_members(queue: str | None) -> list[Persona]:
+    return POLICY.queue_members(queue)
+
+
+__all__ = ["PERMISSIONS", "PERSONAS", "POLICY", "QUEUES", "Persona", "get_persona", "queue_members"]

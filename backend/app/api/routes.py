@@ -1,40 +1,30 @@
 """HTTP API. Everything the UI does goes through these endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..agents.investigator import investigate
 from ..alerts.hub import ingest_external_alert, route_alerts
-from ..cases.case_types import load_case_types
-from ..cases.service import TransitionError, allowed_transitions, record, save_narrative, transition
+from ..cases.assignments import can_claim
+from ..cases.requests import RECIPIENTS
+from ..cases.service import TransitionError, allowed_transitions, definition, facts, record, save_narrative, stage_tasks, transition
 from ..config import settings
 from ..db import get_session
 from ..detection.engine import run_detection
-from ..detection.scenarios import REGISTRY
-from ..domain.models import AgentRun, Alert, Case, CaseEvent, Feed, Filing, Party, Transaction
-from ..domain.personas import PERSONAS, Persona, get_persona
+from ..detection.scenarios import REGISTRY, describe
+from ..domain.models import AgentRun, Alert, Case, CaseEvent, Feed, Filing, InfoRequest, Party, Transaction
+from ..domain.personas import PERSONAS, QUEUES, Persona, queue_members
 from ..ingest.connectors import CONNECTOR_CATALOGUE, CsvConnector
 from ..ingest.service import profile, run_feed
 from ..reporting.metrics import dashboard
 from ..scale import benchmark
+from .deps import actor, case_row, persona, require
+from .deps import get_case_or_404 as _get_case
 
 router = APIRouter(prefix="/api")
-
-
-def persona(x_persona: str | None = Header(default=None)) -> Persona:
-    return get_persona(x_persona)
-
-
-def _case_row(c: Case, types: dict) -> dict:
-    ct = types[c.case_type]
-    return {"id": c.id, "case_type": c.case_type, "type_title": ct["title"], "state": c.state,
-            "state_label": ct["states"][c.state]["label"], "open": c.closed is None, "priority": c.priority, "owner": c.owner,
-            "party_id": c.party_id, "party_name": c.party.name, "created": c.created.isoformat(),
-            "sla_due": c.sla_due.isoformat() if c.sla_due else None, "sla_clock": ct.get("sla", {}).get("clock"),
-            "disposition": c.disposition, "agent_recommendation": c.agent_recommendation}
 
 
 def _txn(t: Transaction, alerted: set[str]) -> dict:
@@ -44,7 +34,7 @@ def _txn(t: Transaction, alerted: set[str]) -> dict:
 
 @router.get("/meta")
 def meta():
-    return {"tenant": settings.tenant, "personas": [p.__dict__ for p in PERSONAS.values()],
+    return {"tenant": settings.tenant, "personas": [{"id": p.id, "name": p.name, "role": p.role, "title": p.title, "about": p.about} for p in PERSONAS.values()],
             "sample_data": True, "llm_provider": settings.llm_provider}
 
 
@@ -55,55 +45,59 @@ def get_dashboard(s: Session = Depends(get_session)):
 
 @router.get("/cases")
 def list_cases(status: str = "open", s: Session = Depends(get_session)):
-    types = load_case_types()
     q = select(Case).order_by(Case.created.desc())
     q = q.where(Case.closed.is_(None)) if status == "open" else q.where(Case.closed.is_not(None)) if status == "closed" else q
     cases = list(s.scalars(q))
     n_alerts: dict[str, int] = {}
     for cid in s.scalars(select(Alert.case_id).where(Alert.case_id.is_not(None))):
         n_alerts[cid] = n_alerts.get(cid, 0) + 1
-    return [_case_row(c, types) | {"alerts": n_alerts.get(c.id, 0)} for c in cases]
-
-
-def _get_case(s: Session, case_id: str) -> Case:
-    c = s.get(Case, case_id)
-    if c is None:
-        raise HTTPException(404, "Case not found")
-    return c
+    return [case_row(c) | {"alerts": n_alerts.get(c.id, 0)} for c in cases]
 
 
 @router.get("/cases/{case_id}")
 def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depends(persona)):
     c = _get_case(s, case_id)
-    types = load_case_types()
     alerts = list(s.scalars(select(Alert).where(Alert.case_id == c.id).order_by(Alert.created)))
     alerted = {i for a in alerts for i in a.txn_ids}
     txns = list(s.scalars(select(Transaction).where(Transaction.party_id == c.party_id).order_by(Transaction.ts.desc()).limit(400)))
     shown = [t for t in txns if t.id in alerted] + [t for t in txns if t.id not in alerted][:60]
     run = s.scalars(select(AgentRun).where(AgentRun.case_id == c.id).order_by(AgentRun.started.desc())).first()
     filing = s.scalars(select(Filing).where(Filing.case_id == c.id)).first()
-    others = [x for x in s.scalars(select(Case).where(Case.party_id == c.party_id, Case.id != c.id))]
-    ct = types[c.case_type]
+    related = [x for x in s.scalars(select(Case).where(Case.party_id == c.party_id, Case.id != c.id).order_by(Case.created.desc()))]
+    ct = definition(c)
     return {
-        "case": _case_row(c, types) | {"narrative": c.narrative, "drafted_by": c.drafted_by, "type_version": c.type_version},
+        "case": case_row(c) | {"narrative": c.narrative, "drafted_by": c.drafted_by, "type_version": c.type_version},
         "party": {"id": c.party.id, "name": c.party.name, "kind": c.party.kind, "occupation": c.party.occupation,
                   "country": c.party.country, "risk_rating": c.party.risk_rating, "pep": c.party.pep,
                   "onboarded": c.party.onboarded.date().isoformat(), "accounts": [a.id for a in c.party.accounts]},
-        "alerts": [{"id": a.id, "scenario": a.scenario, "title": REGISTRY[a.scenario]["title"], "version": a.scenario_version,
-                    "typology": REGISTRY[a.scenario]["typology"], "score": a.score, "explanation": a.explanation,
-                    "created": a.created.isoformat(), "source": a.source, "txn_ids": a.txn_ids} for a in alerts],
+        "alerts": [{"id": a.id, "scenario": a.scenario, "version": a.scenario_version, "score": a.score,
+                    "explanation": a.explanation, "created": a.created.isoformat(), "source": a.source, "txn_ids": a.txn_ids}
+                   | describe(a.scenario) for a in alerts],
         "transactions": [_txn(t, alerted) for t in sorted(shown, key=lambda t: t.ts, reverse=True)],
         "agent_run": None if run is None else {"id": run.id, "provider": run.provider, "recommendation": run.recommendation,
                                                "confidence": run.confidence, "steps": run.steps,
                                                "finished": run.finished.isoformat() if run.finished else None},
         "events": [{"id": e.id, "ts": e.ts.isoformat(), "actor": e.actor, "actor_kind": e.actor_kind, "kind": e.kind, "payload": e.payload}
                    for e in s.scalars(select(CaseEvent).where(CaseEvent.case_id == c.id).order_by(CaseEvent.ts, CaseEvent.id))],
-        "transitions": allowed_transitions(c, p),
-        "workflow": {"states": [{"id": k, "label": v["label"], "kind": v.get("kind")} for k, v in ct["states"].items()],
-                     "autonomy": ct.get("agents", {}).get("autonomy")},
+        "transitions": allowed_transitions(s, c, p),
+        "tasks": stage_tasks(c, ct),
+        "requests": [{"id": r.id, "recipient": r.recipient, "recipient_label": RECIPIENTS.get(r.recipient, r.recipient),
+                      "question": r.question, "status": r.status, "raised_by": r.raised_by, "created": r.created.isoformat(),
+                      "due": r.due.isoformat(), "response": r.response, "answered": r.answered.isoformat() if r.answered else None,
+                      "answered_by": r.answered_by}
+                     for r in s.scalars(select(InfoRequest).where(InfoRequest.case_id == c.id).order_by(InfoRequest.created))],
+        "facts": facts(s, c),
+        "workflow": {"states": [{"id": k, "label": v["label"], "kind": v.get("kind", "open")} for k, v in ct["states"].items()],
+                     "autonomy": ct.get("agents", {}).get("autonomy"), "recipients": RECIPIENTS},
+        "access": {"can_work": p.can("work") and not p.read_only, "can_claim": can_claim(c, p) and c.owner != p.id,
+                   "can_reassign": p.can("reassign") and c.closed is None, "read_only": p.read_only,
+                   "queue_members": [{"id": m.id, "name": m.name} for m in queue_members(c.queue)],
+                   "queue_label": QUEUES.get(c.queue or "", "")},
         "filing": None if filing is None else {"id": filing.id, "kind": filing.kind, "filed_by": filing.filed_by,
                                                "filed_at": filing.filed_at.isoformat(), "sha256": filing.sha256},
-        "other_cases": [_case_row(x, types) for x in others],
+        "parent": case_row(s.get(Case, c.parent_id)) if c.parent_id and s.get(Case, c.parent_id) else None,
+        "children": [case_row(x) for x in s.scalars(select(Case).where(Case.parent_id == c.id))],
+        "other_cases": [case_row(x) for x in related if x.id != c.parent_id and x.parent_id != c.id],
     }
 
 
@@ -113,14 +107,12 @@ class TransitionIn(BaseModel):
 
 
 @router.post("/cases/{case_id}/transition")
-def post_transition(case_id: str, body: TransitionIn, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+def post_transition(case_id: str, body: TransitionIn, s: Session = Depends(get_session), p: Persona = Depends(actor)):
     c = _get_case(s, case_id)
     try:
         transition(s, c, body.to, p, body.note)
     except TransitionError as e:
         raise HTTPException(409, str(e)) from e
-    if c.owner is None:
-        c.owner = p.id
     return {"ok": True, "state": c.state}
 
 
@@ -129,30 +121,17 @@ class NarrativeIn(BaseModel):
 
 
 @router.post("/cases/{case_id}/narrative")
-def post_narrative(case_id: str, body: NarrativeIn, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+def post_narrative(case_id: str, body: NarrativeIn, s: Session = Depends(get_session), p: Persona = Depends(require("work"))):
     save_narrative(s, _get_case(s, case_id), body.text, p)
     return {"ok": True}
 
 
-@router.post("/cases/{case_id}/assign")
-def post_assign(case_id: str, s: Session = Depends(get_session), p: Persona = Depends(persona)):
-    c = _get_case(s, case_id)
-    c.owner = p.id
-    record(s, c.id, p.id, "human", "case.assigned", {"owner": p.id})
-    return {"ok": True}
-
-
 @router.post("/cases/{case_id}/agents/run")
-def post_agent_run(case_id: str, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+def post_agent_run(case_id: str, s: Session = Depends(get_session), p: Persona = Depends(require("work"))):
     c = _get_case(s, case_id)
     record(s, c.id, p.id, "human", "agent.requested", {})
     run = investigate(s, c)
     return {"ok": True, "run_id": run.id}
-
-
-@router.get("/case-types")
-def get_case_types():
-    return [{k: v for k, v in ct.items() if k != "source"} | {"yaml": ct["source"]} for ct in load_case_types().values()]
 
 
 @router.get("/scenarios")
@@ -190,7 +169,7 @@ def post_profile(body: FeedIn):
 
 
 @router.post("/feeds/run")
-def post_run(body: FeedIn, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+def post_run(body: FeedIn, s: Session = Depends(get_session), p: Persona = Depends(require("load_data"))):
     if not body.mapping:
         raise HTTPException(422, "mapping is required")
     before = set(s.scalars(select(Party.id)))
@@ -231,8 +210,9 @@ def integrations():
         "connectors": CONNECTOR_CATALOGUE,
         "interfaces": [
             {"name": "REST API (OpenAPI)", "status": "live", "note": "Interactive docs at /docs"},
-            {"name": "Audit event stream", "status": "live", "note": "GET /api/events; Kafka CloudEvents in milestone 2"},
-            {"name": "MCP tool server for agents", "status": "planned", "note": "Milestone 2"},
+            {"name": "Audit event stream", "status": "live", "note": "GET /api/events; Kafka CloudEvents next"},
+            {"name": "Workflow configuration API", "status": "live", "note": "Check and publish case type versions"},
+            {"name": "MCP tool server for agents", "status": "planned", "note": "With the model gateway"},
             {"name": "SSO via OIDC (Keycloak)", "status": "planned", "note": "Milestone 3; demo uses a persona switch"},
             {"name": "SAR e-filing (FinCEN BSA XML, goAML)", "status": "planned", "note": "Milestone 3; demo files a hashed JSON record"},
         ],

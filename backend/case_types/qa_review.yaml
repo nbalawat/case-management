@@ -1,0 +1,29 @@
+case_type: qa_review
+title: QA review
+domain: Quality
+version: 1.0.0
+scenarios: []
+initial_state: review
+
+states:
+  review:
+    label: QA review
+    queue: qa
+    sla_hours: 120
+    tasks:
+      - {id: decision_supported, label: Decision is supported by the evidence on file}
+      - {id: rationale_clear, label: Rationale is clear enough for a regulator to follow}
+      - {id: procedure_followed, label: Required steps were completed in order}
+  passed: {label: Passed, kind: closed, disposition: qa_passed}
+  failed: {label: Failed and returned, kind: closed, disposition: qa_failed}
+
+transitions:
+  - {from: review, to: passed, label: Pass, roles: [qa_reviewer], requires: [tasks]}
+  - {from: review, to: failed, label: Fail and reopen the case, roles: [qa_reviewer], requires: [note]}
+
+sla:
+  clock: QA review target
+  due_days: 10
+agents:
+  on_create: []
+  autonomy: L0

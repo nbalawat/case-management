@@ -1,21 +1,43 @@
 case_type: sanctions_hit
 title: Sanctions screening hit
-version: 1.4.0
+domain: Sanctions
+version: 2.0.0
 scenarios: [sanctions_name]
 initial_state: adjudication
+
 states:
-  adjudication:   {label: Adjudication, kind: open}
-  escalated:      {label: Escalated to sanctions officer, kind: open}
-  blocked:        {label: Blocked and reported, kind: closed, disposition: true_match}
-  discounted:     {label: Discounted, kind: closed, disposition: false_positive}
+  adjudication:
+    label: Adjudication
+    queue: sanctions-l1
+    sla_hours: 4
+    tasks:
+      - {id: compare_identifiers, label: Compare name, country and secondary identifiers}
+      - {id: payment_held, label: Confirm the payment is held}
+  escalated:
+    label: Sanctions officer review
+    queue: sanctions-l2
+    sla_hours: 24
+    tasks:
+      - {id: list_entry, label: Check the full list entry and aliases}
+  blocked:    {label: Blocked and reported, kind: closed, disposition: true_match}
+  discounted: {label: Discounted, kind: closed, disposition: false_positive}
+
 transitions:
-  - {from: adjudication, to: discounted, label: Discount as false positive, roles: [analyst, investigator], requires: [note]}
-  - {from: adjudication, to: escalated, label: Escalate possible match, roles: [analyst, investigator]}
-  - {from: escalated, to: blocked, label: Confirm match and block, roles: [mlro], requires: [note], four_eyes: true}
-  - {from: escalated, to: discounted, label: Discount after review, roles: [mlro], requires: [note]}
+  - {from: adjudication, to: discounted, label: Discount as false positive, roles: [analyst, sanctions_officer], requires: [tasks, note]}
+  - {from: adjudication, to: escalated, label: Escalate possible match, roles: [analyst, sanctions_officer], requires: [tasks]}
+  - {from: escalated, to: blocked, label: Confirm match and block, roles: [sanctions_officer, mlro], requires: [tasks, note], four_eyes: true}
+  - {from: escalated, to: discounted, label: Discount after review, roles: [sanctions_officer, mlro], requires: [note], four_eyes: true}
+
 sla:
   clock: OFAC blocked-property report
   due_days: 10
+escalation:
+  raise_priority: true
+  notify: team_lead
+qa:
+  sample_rate: 0.5
+  dispositions: [false_positive]
+  reopen_to: adjudication
 agents:
   on_create: [data_assembly, sanctions_adjudicator, qa_critic]
   autonomy: L2

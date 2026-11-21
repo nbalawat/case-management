@@ -1,12 +1,14 @@
 """Alert hub: turns alerts from any engine into entity-centric cases."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..cases.case_types import case_type_for_scenario, load_case_types
 from ..cases.service import create_case, record
-from ..domain.models import Account, Alert, Case, Party, new_id
+from ..domain.models import Account, Alert, Case, Party, new_id, now
 
 PRIORITY_ORDER = ["low", "medium", "high", "critical"]
 
@@ -22,7 +24,7 @@ def route_alerts(s: Session, alerts: list[Alert]) -> list[Case]:
     types = load_case_types()
     for a in sorted(alerts, key=lambda x: x.created):
         ct = case_type_for_scenario(a.scenario)
-        open_states = [k for k, v in ct["states"].items() if v.get("kind") == "open"]
+        open_states = [k for k, v in ct["states"].items() if v.get("kind", "open") != "closed"]
         case = s.scalars(select(Case).where(Case.party_id == a.party_id, Case.case_type == ct["case_type"],
                                             Case.state.in_(open_states))).first()
         if case is None:
@@ -41,7 +43,8 @@ def route_alerts(s: Session, alerts: list[Alert]) -> list[Case]:
 
 
 def ingest_external_alert(s: Session, *, source: str, external_id: str, scenario: str, party_id: str, score: float,
-                          explanation: str, party_name: str | None = None, txn_ids: list[str] | None = None) -> tuple[Alert, Case | None]:
+                          explanation: str, party_name: str | None = None, txn_ids: list[str] | None = None,
+                          created: datetime | None = None) -> tuple[Alert, Case | None]:
     """Overlay mode: accept an alert from an incumbent engine in the canonical format.
 
     Idempotent on (source, external_id): a replayed alert returns the stored one and opens nothing.
@@ -55,7 +58,7 @@ def ingest_external_alert(s: Session, *, source: str, external_id: str, scenario
         s.add(Account(id=f"A-{party_id}", party_id=party_id))
         s.flush()
     alert = Alert(id=new_id("alr"), dedupe_key=key, source=source, scenario=scenario, scenario_version="external",
-                  party_id=party_id, score=round(max(0.0, min(score, 1.0)), 2), explanation=explanation, txn_ids=txn_ids or [])
+                  party_id=party_id, score=round(max(0.0, min(score, 1.0)), 2), explanation=explanation, txn_ids=txn_ids or [], created=created or now())
     s.add(alert)
     s.flush()
     return alert, route_alerts(s, [alert])[0]
