@@ -54,6 +54,15 @@ jobs:
           helm install kyverno kyverno/kyverno --version "$KYVERNO_CHART" -n kyverno --create-namespace --wait --timeout 10m \
             --set admissionController.replicas=1 --set backgroundController.replicas=1 \
             --set cleanupController.replicas=1 --set reportsController.replicas=1
+          # --wait returns once the pods run, but the admission webhook only answers after it has made its TLS
+          # certificate. Installing policies before then fails with "connection refused" on Kyverno's own webhook,
+          # so wait until a server-side dry run of the policies passes through the webhook.
+          helm template policies deploy/helm/caseforge-policies --set podSecurity.action=Enforce > /tmp/policies.yaml
+          for i in $(seq 1 36); do
+            if kubectl apply --dry-run=server -f /tmp/policies.yaml > /dev/null 2>&1; then break; fi
+            [ "$i" = 36 ] && { kubectl apply --dry-run=server -f /tmp/policies.yaml; exit 1; }
+            sleep 5
+          done
           helm install policies deploy/helm/caseforge-policies --wait --set podSecurity.action=Enforce
           kubectl wait --for=condition=Ready clusterpolicy --all --timeout=5m
       - name: Postgres for the stamp (a stand-in for the managed database)
