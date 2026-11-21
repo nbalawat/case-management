@@ -42,7 +42,7 @@ def current(conn: Connection) -> str | None:
     return MigrationContext.configure(conn).get_current_revision()
 
 
-def _lock(conn: Connection) -> None:
+def lock(conn: Connection) -> None:
     if conn.dialect.name == "postgresql":
         conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": LOCK})
 
@@ -50,15 +50,18 @@ def _lock(conn: Connection) -> None:
 def upgrade(eng: Engine, to: str = "head") -> str:
     """Bring a database up to a revision, in one transaction where the database allows it. Returns where it ended."""
     with eng.begin() as conn:
-        _lock(conn)
+        lock(conn)
         command.upgrade(config(conn), to)
+        from .. import rls
+
+        rls.apply(conn)  # a table the migration added gets its policy in the same transaction
         return current(conn)
 
 
 def stamp(eng: Engine, revision: str) -> None:
     """Record that a database already holds a revision's schema, without running anything."""
     with eng.begin() as conn:
-        _lock(conn)
+        lock(conn)
         command.stamp(config(conn), revision)
 
 

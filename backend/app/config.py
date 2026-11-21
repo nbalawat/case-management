@@ -130,6 +130,11 @@ class Settings:
     # Bring the database to the newest migration when the application starts. Off where a separate step migrates
     # (the Helm chart): the application then refuses to start against a database that is behind.
     migrate_on_start: bool = os.getenv("MIGRATE_ON_START", "1") == "1"
+    # Postgres only. The role every request's transaction runs as (SET LOCAL ROLE), so that row-level security binds
+    # it even when DATABASE_URL names the tables' owner or a superuser, which RLS would otherwise let through. The
+    # application creates the role (no login, no superuser, no BYPASSRLS) and grants it the tables. Empty: requests run
+    # as the connecting user, and the health check reports whether that user is held by row-level security.
+    database_role: str = os.getenv("DATABASE_ROLE", "")
 
 
 settings = Settings()

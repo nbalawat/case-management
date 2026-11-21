@@ -75,6 +75,20 @@ def _schema() -> str:
     return want
 
 
+def _tenant_wall() -> str:
+    """Postgres row-level security under the application's own tenant filter. Not required: the application's filter
+    holds on its own, and SQLite has no such thing. Raises, so the console shows it, when it is on Postgres but does
+    not bind requests or a client table lacks its policy."""
+    from .. import rls
+    from ..db import engine
+
+    with engine.connect() as conn:
+        st = rls.status(conn)
+    if not st.enabled:
+        raise RuntimeError(st.describe())
+    return st.describe()
+
+
 def _tcp(url: str, default_port: int) -> Callable[[], str]:
     """Can a connection be opened to the host and port in a service URL. Says nothing about credentials, which the
     service's own page reports; it does tell an operator in a second whether the thing is there at all."""
@@ -98,6 +112,8 @@ def _lake() -> str:
 
 def checks() -> list[Check]:
     out = [Check("database", True, _database, "Operational database"), Check("schema", True, _schema, "Schema at the newest migration")]
+    if settings.database_url.startswith("postgresql"):  # SQLite has no row-level security to report
+        out.append(Check("row_security", False, _tenant_wall, "Row-level security between clients"))
     if settings.event_bus_url.startswith("kafka://"):
         out.append(Check("bus", False, _tcp(settings.event_bus_url.removeprefix("kafka://"), 9092), "Event bus (Kafka)"))
     if settings.lake_catalog:
