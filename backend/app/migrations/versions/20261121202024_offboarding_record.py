@@ -1,14 +1,14 @@
 """Offboarding: the record of a client handed its data and then erased
 
 Revision: 20261121202024
-Follows: 0029
+Follows: 20261121194109
 """
 from alembic import op
 import sqlalchemy as sa
 
 
 revision = '20261121202024'
-down_revision = '0029'
+down_revision = '20261121194109'
 branch_labels = None
 depends_on = None
 
