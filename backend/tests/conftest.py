@@ -169,6 +169,31 @@ class _Worker:
         self.thread.join(timeout=30)
 
 
+@contextmanager
+def app_database(engine, factory):
+    """Point the application's own sessions (app.db.engine and SessionLocal) at a test's database for a while.
+
+    On the Temporal engine, a module's `client` fixture keeps a durable worker running beside the tests, and its
+    activities open sessions through app.db from threads of their own, whenever Temporal hands them work. A test
+    that repointed app.db at its in-memory database would share that database's one connection with them, and
+    their commits would land in the middle of the test's transactions. So the worker stops first and starts again,
+    on the application's database, once the test is done. On the built-in engine there is no worker; nothing stops.
+    """
+    import app.db as appdb
+
+    worker = _SUITE.pop("worker", None)
+    if worker is not None:
+        worker.close()
+    old = appdb.engine, appdb.SessionLocal
+    appdb.engine, appdb.SessionLocal = engine, factory
+    try:
+        yield
+    finally:
+        appdb.engine, appdb.SessionLocal = old
+        if worker is not None:
+            _SUITE["worker"] = _Worker()
+
+
 def _engine_for_the_app():
     """The application under test runs on the suite's engine: Temporal when asked for, otherwise the built-in one."""
     from app.workflow import use

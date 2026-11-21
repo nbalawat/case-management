@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..customers import service as customers
 from ..domain.models import Entity, MatchCandidate
 from ..domain.personas import Persona
 from ..entities import graph, profile, resolution, search
@@ -26,6 +27,62 @@ def get_customer(party_id: str, s: Session = Depends(get_session)):
     if out is None:
         raise HTTPException(404, "Customer not found")
     return out
+
+
+class IdentityChange(BaseModel):
+    changes: dict
+    reason: str = ""
+
+
+class IdentifierIn(BaseModel):
+    kind: str
+    value: str
+    issuer_country: str = ""
+    expires: str = ""
+
+
+class IdentifierOut(BaseModel):
+    kind: str
+    value: str
+    reason: str
+
+
+class Reason(BaseModel):
+    reason: str
+
+
+def _customers(fn):
+    try:
+        return fn()
+    except customers.CustomerError as e:
+        raise HTTPException(404 if "not found" in str(e) else 400, str(e)) from None
+
+
+@router.post("/customers/{party_id}/identity")
+def post_identity(party_id: str, body: IdentityChange, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+    """Correct a customer's identity, address or contact details. The change is kept with who made it and why."""
+    return _customers(lambda: customers.update(s, party_id, body.changes, p, body.reason))
+
+
+@router.post("/customers/{party_id}/identifiers")
+def post_identifier(party_id: str, body: IdentifierIn, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+    return _customers(lambda: customers.add_identifier(s, party_id, body.kind, body.value, p, body.issuer_country, body.expires))
+
+
+@router.post("/customers/{party_id}/identifiers/remove")
+def remove_identifier(party_id: str, body: IdentifierOut, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+    return _customers(lambda: customers.remove_identifier(s, party_id, body.kind, body.value, p, body.reason))
+
+
+@router.post("/customers/{party_id}/identifiers/reveal")
+def reveal_identifiers(party_id: str, body: Reason, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+    """The full numbers behind the masked ones. Who asked, and why, is recorded on the customer."""
+    return _customers(lambda: customers.reveal(s, party_id, p, body.reason))
+
+
+@router.get("/customers/{party_id}/history")
+def customer_history(party_id: str, s: Session = Depends(get_session)):
+    return {"events": customers.history(s, party_id)}
 
 
 @router.get("/customers/{party_id}/path/{other_id}")
