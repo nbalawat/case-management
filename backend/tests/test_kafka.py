@@ -106,6 +106,30 @@ def test_what_was_not_committed_is_delivered_again(world):
     assert [x.value for x in read(world.bus.subscribe(group, topics.pattern(topics.ALERTS)), 1)] == [b"3"]
 
 
+def test_rewinding_reads_again_from_the_last_commit_without_leaving_the_group(world):
+    name, group = topics.topic(T, topics.ALERTS), f"g-{uuid.uuid4().hex}"
+    world.bus.publish(Message(name, "k", str(i).encode()) for i in range(4))
+    sub = world.bus.subscribe(group, topics.pattern(topics.ALERTS))
+    assert [x.value for x in read(sub, 4)] == [b"0", b"1", b"2", b"3"]
+    sub.commit()  # all four dealt with
+    world.bus.publish(Message(name, "k", str(i).encode()) for i in range(4, 6))
+    assert [x.value for x in read(sub, 2)] == [b"4", b"5"]
+    held = sub._consumer.assignment()
+    sub.rewind()  # 4 and 5 were never committed: they come again, from the same member
+    assert [x.value for x in read(sub, 2)] == [b"4", b"5"] and sub._consumer.assignment() == held
+    sub.close()
+
+
+def test_rewinding_before_any_commit_starts_from_the_beginning(world):
+    name, group = topics.topic(T, topics.ALERTS), f"g-{uuid.uuid4().hex}"
+    world.bus.publish(Message(name, "k", str(i).encode()) for i in range(3))
+    sub = world.bus.subscribe(group, topics.pattern(topics.ALERTS))
+    assert len(read(sub, 3)) == 3
+    sub.rewind()
+    assert [x.value for x in read(sub, 3)] == [b"0", b"1", b"2"]
+    sub.close()
+
+
 def test_creating_topics_twice_is_harmless(world):
     names = [topics.topic(T, n) for n in topics.ALL]
     world.bus.ensure_topics(names)

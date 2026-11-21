@@ -172,9 +172,14 @@ class StreamConsumer:
         try:
             return self._step(self._sub.poll(max_messages, timeout))
         except Exception:
-            # Nothing was committed on the bus, so drop the subscription: the next step starts again from the last commit.
-            sub, self._sub = self._sub, None
-            sub.close()
+            # Nothing was committed on the bus, so the next step starts again from the last commit. Going back in place
+            # keeps this consumer in its group; leaving and rejoining would make every consumer beside it rebalance,
+            # and their commits would then fail too. Only when going back fails is the subscription dropped.
+            try:
+                self._sub.rewind()
+            except Exception:  # noqa: BLE001
+                sub, self._sub = self._sub, None
+                sub.close()
             raise
 
     def _step(self, messages: list[Message]) -> dict[str, Outcome]:

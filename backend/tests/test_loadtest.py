@@ -132,3 +132,23 @@ def test_api_load_measures_latency_per_page_and_counts_errors():
         assert not bad.complete and bad.detail["errors"] == bad.items
     finally:
         server.shutdown()
+
+
+def test_redelivered_messages_do_not_end_the_wait_before_every_payment_is_in(world, monkeypatch):
+    """After a rebalance a consumer is handed messages another one already loaded; they come back as duplicates. The
+    wait counts payments loaded, not messages received, so it ends only when the store holds every one."""
+    from app.backbone.bus import BusError, MemorySubscription
+
+    real, refused = MemorySubscription.commit, []
+
+    def lose_the_first_commit(self):
+        if not refused:  # the batch is in the database, but the bus never hears so: it is delivered again
+            refused.append(1)
+            raise BusError("Kafka did not accept the commit: Broker: Specified group generation id is not valid")
+        return real(self)
+
+    monkeypatch.setattr(MemorySubscription, "commit", lose_the_first_commit)
+    o = run(Plan(transactions=2_500, customers=50, inline=True, stall_seconds=10), bus=connect(), store=None)
+    stream = o.stage("stream")
+    assert refused and stream.complete and stream.detail["duplicates"] > 0
+    assert stream.detail["loaded"] == 2_500 and o.environment["rows_in_store"] == 2_500
