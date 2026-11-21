@@ -23,6 +23,7 @@ data:
   TEMPORAL_NAMESPACE: {{ .Values.temporal.namespace | quote }}
   TEMPORAL_TASK_QUEUE: {{ .Values.temporal.taskQueue | quote }}
   FLINK_URL: {{ .Values.flink.url | quote }}
+  FLINK_GATEWAY_URL: {{ .Values.flink.gatewayUrl | quote }}
   {{- with .Values.storage.evidenceUrl }}
   EVIDENCE_URL: {{ . | quote }}
   {{- end }}

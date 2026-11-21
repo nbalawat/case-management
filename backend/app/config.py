@@ -72,9 +72,14 @@ class Settings:
     temporal_task_queue: str = os.getenv("TEMPORAL_TASK_QUEUE", "caseforge")
     temporal_sync_seconds: float = float(os.getenv("TEMPORAL_SYNC_SECONDS", "15"))
     temporal_sweep_seconds: float = float(os.getenv("TEMPORAL_SWEEP_SECONDS", "300"))
-    # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. Read-only here;
-    # the platform page shows whether each client's jobs are running.
+    # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. The platform
+    # page shows whether each client's jobs are running.
     flink_url: str = os.getenv("FLINK_URL", "")
+    # The cluster's SQL Gateway (bin/sql-gateway.sh). With it set, people with the right to approve detection changes
+    # start, stop and restart a client's jobs from the Integrations page. Without it jobs are submitted by hand.
+    flink_gateway_url: str = os.getenv("FLINK_GATEWAY_URL", "")
+    # The Kafka brokers as the Flink cluster reaches them, when that differs from how this application does.
+    flink_kafka_bootstrap: str = os.getenv("FLINK_KAFKA_BOOTSTRAP", "")
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
     # A database holding another schema version: "rebuild" drops every table and starts again (demos), "refuse"
     # stops the application with an explanation and changes nothing. The Helm chart sets refuse.
