@@ -22,6 +22,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - name: Every model change has a migration
+        working-directory: backend
+        run: uv run python -m app.migrate check
       - name: Test
         working-directory: backend
         run: uv run pytest -q
@@ -133,6 +136,11 @@ jobs:
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true
+          # Migrations: a hook job by default and pods that wait for it; without the job, pods migrate themselves
+          helm template stamp . $ARGS | grep -q 'helm.sh/hook: pre-install,pre-upgrade'
+          helm template stamp . $ARGS | grep -q 'MIGRATE_ON_START: "0"'
+          helm template stamp . $ARGS --set migrations.job=false | grep -q 'MIGRATE_ON_START: "1"'
+          if helm template stamp . $ARGS --set migrations.job=false | grep -q 'helm.sh/hook'; then echo "no hook expected"; exit 1; fi
           # And the least it must accept
           helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e > /dev/null
           helm template demo . --set existingSecret=s --set demoTenants=true --set schemaOnMismatch=rebuild --set auth.mode=demo > /dev/null

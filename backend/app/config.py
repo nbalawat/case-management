@@ -79,6 +79,9 @@ class Settings:
     # A database holding another schema version: "rebuild" drops every table and starts again (demos), "refuse"
     # stops the application with an explanation and changes nothing. The Helm chart sets refuse.
     schema_on_mismatch: str = os.getenv("SCHEMA_ON_MISMATCH", "rebuild")
+    # Bring the database to the newest migration when the application starts. Off where a separate step migrates
+    # (the Helm chart): the application then refuses to start against a database that is behind.
+    migrate_on_start: bool = os.getenv("MIGRATE_ON_START", "1") == "1"
 
 
 settings = Settings()
