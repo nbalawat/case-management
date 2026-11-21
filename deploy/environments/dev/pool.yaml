@@ -1,0 +1,4 @@
+# What is released to stamp "pool" in dev. Changed only by pull request: the release workflow opens one for dev, and
+# promotion (.github/workflows/promote.yml) copies a tested version to the next environment.
+image:
+  tag: "0.22.0"

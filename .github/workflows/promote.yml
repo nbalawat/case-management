@@ -1,0 +1,52 @@
+# Promote what runs in one environment to the next (dev -> staging -> prod) by pull request, after checking that the
+# image is signed by this repository's release workflow. Merging the pull request is the approval; Argo CD deploys it.
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      from: {description: From, type: choice, options: [dev, staging], required: true}
+      to: {description: To, type: choice, options: [staging, prod], required: true}
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote ${{ inputs.from }} to ${{ inputs.to }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Only one step at a time
+        if: (inputs.from == 'dev' && inputs.to != 'staging') || (inputs.from == 'staging' && inputs.to != 'prod')
+        run: echo "::error::promote dev to staging, or staging to prod" && exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {ref: main, persist-credentials: false}
+      - id: version
+        name: The version running in ${{ inputs.from }}
+        env: {FROM: "${{ inputs.from }}"}
+        run: echo "version=$(python3 deploy/scripts/set-release.py "$FROM" --show)" >> "$GITHUB_OUTPUT"
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532
+      - name: The image is signed by this repository's release workflow
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cosign verify "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/caseforge:${VERSION}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "https://github.com/${GH_REPO}/.github/workflows/release.yml@refs/tags/v${VERSION}" > /dev/null
+      - name: Set it on every ${{ inputs.to }} stamp
+        env: {TO: "${{ inputs.to }}", VERSION: "${{ steps.version.outputs.version }}"}
+        run: python3 deploy/scripts/set-release.py "$TO" "$VERSION"
+      - uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1
+        with:
+          branch: release/${{ inputs.to }}-${{ steps.version.outputs.version }}
+          title: Promote ${{ steps.version.outputs.version }} from ${{ inputs.from }} to ${{ inputs.to }}
+          commit-message: Promote ${{ steps.version.outputs.version }} to ${{ inputs.to }}
+          body: |
+            Promotes `${{ steps.version.outputs.version }}`, verified as signed by the release workflow, from ${{ inputs.from }} to ${{ inputs.to }}.
+          labels: release

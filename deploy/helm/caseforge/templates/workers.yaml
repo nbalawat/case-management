@@ -12,11 +12,12 @@ spec:
       app.kubernetes.io/component: worker
   template:
     metadata:
-      labels: {{- include "caseforge.labels" . | nindent 8 }}
+      labels: {{- include "caseforge.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: worker
       annotations:
         checksum/env: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      serviceAccountName: {{ include "caseforge.serviceAccount" . }}
       {{- include "caseforge.pod" . | nindent 6 }}
       containers:
         - name: worker
@@ -39,11 +40,12 @@ spec:
       app.kubernetes.io/component: durable
   template:
     metadata:
-      labels: {{- include "caseforge.labels" . | nindent 8 }}
+      labels: {{- include "caseforge.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: durable
       annotations:
         checksum/env: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      serviceAccountName: {{ include "caseforge.serviceAccount" . }}
       {{- include "caseforge.pod" . | nindent 6 }}
       containers:
         - name: durable

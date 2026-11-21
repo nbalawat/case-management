@@ -1,0 +1,179 @@
+# Infrastructure as code and the Kubernetes charts: formatting, the stamp contract, validation, mocked tests, lint,
+# security scans and strict schema checks. None of it needs a cloud account. The optional plan job does, through OIDC
+# with a read-only identity, and runs only once repository variables say which stacks to plan (see infra/README.md).
+name: Infra
+
+on:
+  pull_request:
+    paths: ["infra/**", "deploy/**", ".github/workflows/infra.yml"]
+  push:
+    branches: [main]
+    paths: ["infra/**", "deploy/**", ".github/workflows/infra.yml"]
+
+concurrency:
+  group: infra-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TOFU_VERSION: 1.11.5
+  TFLINT_VERSION: v0.59.1
+  CHECKOV_VERSION: 3.4.6
+  HELM_VERSION: v3.19.0
+  KUBECONFORM_VERSION: v0.7.0
+  KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+
+jobs:
+  opentofu:
+    name: OpenTofu format, contract, validate and mocked tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - name: Format
+        run: tofu fmt -check -recursive -diff infra
+      - name: The stamp contract is identical on every cloud
+        run: python3 infra/contract/check.py
+      - name: Provider cache
+        run: echo "TF_PLUGIN_CACHE_DIR=$HOME/.tofu-plugins" >> "$GITHUB_ENV" && mkdir -p "$HOME/.tofu-plugins"
+      - name: Validate every module and stack
+        run: infra/bin/each.sh validate
+      - name: Tests against mocked providers
+        run: infra/bin/each.sh test
+
+  tflint:
+    name: TFLint (AWS, Azure and Google rulesets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with: {tflint_version: "${{ env.TFLINT_VERSION }}"}
+      - name: Install rulesets
+        working-directory: infra
+        env: {GITHUB_TOKEN: "${{ github.token }}"}
+        run: tflint --init --config="$PWD/.tflint.hcl"
+      - name: Lint
+        working-directory: infra
+        run: |
+          set -euo pipefail
+          tflint --recursive --chdir=modules --config="$PWD/.tflint.hcl" --format compact
+          tflint --recursive --chdir=stacks --config="$PWD/.tflint.hcl" --format compact
+
+  checkov:
+    name: Checkov security scan of the IaC
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with: {python-version: "3.12"}
+      - run: pip install --disable-pip-version-check "checkov==${CHECKOV_VERSION}"
+      - name: Scan (every skip in the code carries its reason)
+        working-directory: infra
+        run: checkov -d . --framework terraform --skip-path .tofu --quiet --compact -o cli -o sarif --output-file-path console,checkov.sarif
+      - if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with: {sarif_file: infra/checkov.sarif, category: checkov-iac}
+
+  charts:
+    name: Charts lint, render, strict schemas, pod security and Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e
+        with: {version: "${{ env.HELM_VERSION }}"}
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          curl -sSfLo /tmp/kc.tgz "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  /tmp/kc.tgz" | sha256sum -c -
+          tar -xzf /tmp/kc.tgz -C /usr/local/bin kubeconform
+      - name: Schemas from the operators' CRDs, at the pinned versions
+        run: deploy/scripts/crd-schemas.sh /tmp/schemas
+      - name: Check
+        env: {RENDER_DIR: /tmp/rendered}
+        run: deploy/scripts/check-charts.sh /tmp/schemas
+      # The gate: HIGH and CRITICAL misconfigurations fail the job, listed in the log.
+      - name: Trivy misconfiguration scan of what the charts render
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: /tmp/rendered
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          format: table
+      # Every finding, at every severity, to code scanning; this step never fails the job (the action reports all
+      # severities in SARIF regardless of `severity`).
+      - name: Trivy findings for code scanning
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: /tmp/rendered
+          exit-code: "0"
+          format: sarif
+          output: trivy-charts.sarif
+          skip-setup-trivy: true
+      - if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with: {sarif_file: trivy-charts.sarif, category: trivy-charts}
+
+  # Optional: plan real stacks on pull requests with the read-only identity. Set the repository variable
+  # INFRA_PLAN_TARGETS to a JSON list such as [{"cloud":"aws","env":"dev","layer":"platform"}]. Never applies.
+  plan:
+    name: Plan ${{ matrix.target.cloud }} ${{ matrix.target.env }} ${{ matrix.target.layer }} ${{ matrix.target.stamp }}
+    if: github.event_name == 'pull_request' && vars.INFRA_PLAN_TARGETS != '' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [opentofu, checkov]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(vars.INFRA_PLAN_TARGETS || '[]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with: {tofu_version: "${{ env.TOFU_VERSION }}", tofu_wrapper: false}
+      - uses: ./.github/actions/cloud-login
+        with:
+          cloud: ${{ matrix.target.cloud }}
+          aws-role-arn: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          azure-client-id: ${{ vars.AZURE_PLAN_CLIENT_ID }}
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          gcp-service-account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+      - name: Plan
+        env:
+          TF_VAR_state_passphrase: ${{ secrets[format('STATE_PASSPHRASE_{0}', matrix.target.env)] }}
+          STAMP: ${{ matrix.target.stamp }}
+        run: |
+          set -euo pipefail
+          args=("${{ matrix.target.cloud }}" "${{ matrix.target.env }}" "${{ matrix.target.layer }}")
+          [ -n "$STAMP" ] && args+=(--stamp "$STAMP")
+          python3 infra/bin/stack.py "${args[@]}" init
+          python3 infra/bin/stack.py "${args[@]}" plan -- -lock=false -no-color | tee plan.txt
+          { echo '### Plan'; echo '```'; grep -E '^(Plan:|No changes)' plan.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

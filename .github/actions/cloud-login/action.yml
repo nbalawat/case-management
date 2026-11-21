@@ -1,0 +1,56 @@
+# Sign in to one cloud with GitHub's OIDC token: no stored keys or client secrets anywhere. The calling job needs
+# `permissions: id-token: write`. Which identity is used (read-only plan, or an environment's apply identity) is
+# decided by the inputs the caller passes and by the trust each bootstrap stack set up (infra/stacks/*/bootstrap).
+name: Cloud login
+description: Authenticate to AWS, Azure or Google Cloud through workload identity federation
+inputs:
+  cloud: {description: "aws | azure | gcp", required: true}
+  aws-role-arn: {description: Role to assume, required: false, default: ""}
+  aws-region: {description: Region, required: false, default: ""}
+  azure-client-id: {description: Application (client) id, required: false, default: ""}
+  azure-tenant-id: {description: Tenant id, required: false, default: ""}
+  azure-subscription-id: {description: Subscription id, required: false, default: ""}
+  gcp-workload-identity-provider: {description: Full provider resource name, required: false, default: ""}
+  gcp-service-account: {description: Service account email, required: false, default: ""}
+runs:
+  using: composite
+  steps:
+    - name: Check the inputs for this cloud
+      shell: bash
+      env:
+        CLOUD: ${{ inputs.cloud }}
+        AWS_ROLE: ${{ inputs.aws-role-arn }}
+        AWS_REGION_IN: ${{ inputs.aws-region }}
+        AZ_CLIENT: ${{ inputs.azure-client-id }}
+        AZ_TENANT: ${{ inputs.azure-tenant-id }}
+        AZ_SUB: ${{ inputs.azure-subscription-id }}
+        GCP_WIP: ${{ inputs.gcp-workload-identity-provider }}
+        GCP_SA: ${{ inputs.gcp-service-account }}
+      run: |
+        set -euo pipefail
+        need() { for v in "$@"; do [ -n "${!v}" ] || { echo "::error::cloud-login: $CLOUD needs $v"; exit 1; }; done; }
+        case "$CLOUD" in
+          aws) need AWS_ROLE AWS_REGION_IN ;;
+          azure) need AZ_CLIENT AZ_TENANT AZ_SUB; { echo "ARM_USE_OIDC=true"; echo "ARM_CLIENT_ID=$AZ_CLIENT"; echo "ARM_TENANT_ID=$AZ_TENANT"; echo "ARM_SUBSCRIPTION_ID=$AZ_SUB"; } >> "$GITHUB_ENV" ;;
+          gcp) need GCP_WIP GCP_SA ;;
+          *) echo "::error::cloud-login: unknown cloud $CLOUD"; exit 1 ;;
+        esac
+    - if: inputs.cloud == 'aws'
+      uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+      with:
+        role-to-assume: ${{ inputs.aws-role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+        role-session-name: gh-${{ github.run_id }}
+        role-duration-seconds: 3600
+    - if: inputs.cloud == 'azure'
+      uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906
+      with:
+        client-id: ${{ inputs.azure-client-id }}
+        tenant-id: ${{ inputs.azure-tenant-id }}
+        subscription-id: ${{ inputs.azure-subscription-id }}
+    - if: inputs.cloud == 'gcp'
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+      with:
+        workload_identity_provider: ${{ inputs.gcp-workload-identity-provider }}
+        service_account: ${{ inputs.gcp-service-account }}
+        create_credentials_file: true

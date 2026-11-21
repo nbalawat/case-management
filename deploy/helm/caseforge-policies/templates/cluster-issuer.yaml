@@ -1,0 +1,16 @@
+{{- if .Values.clusterIssuer.acmeEmail }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.clusterIssuer.name }}
+spec:
+  acme:
+    email: {{ .Values.clusterIssuer.acmeEmail | quote }}
+    server: {{ .Values.clusterIssuer.acmeServer | quote }}
+    privateKeySecretRef:
+      name: {{ .Values.clusterIssuer.name }}-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: {{ .Values.clusterIssuer.ingressClass }}
+{{- end }}
