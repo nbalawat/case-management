@@ -3,6 +3,7 @@ import { api, fmtDateTime } from '../api'
 import { switchClient } from '../shell/switchClient'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
+import ManagedServiceConsole from '../components/platform/ManagedServiceConsole'
 import HealthCard from '../components/platform/HealthCard'
 
 type ClientRow = {
@@ -148,10 +149,12 @@ export default function Clients() {
             </tr>))}</tbody>
         </table></div>
         {msg && <p className="msg" role="status">{msg}</p>}
-        <p className="muted small">This console shows counts only. It cannot list a customer, open a case or read a narrative: that takes a sign-in at the client, under the client's own access policy.</p>
+        <p className="muted small">This console shows counts only. It cannot list a customer, open a case or read a narrative. Your staff reach client data only through an engagement the client has agreed to, under the client's own access policy.</p>
       </Card>
       <HealthCard />
       <Onboard onDone={reload} />
+      <h2 id="managed-service">Managed service</h2>
+      <ManagedServiceConsole />
       <Card title="How clients are kept apart">
         <dl className="facts wide">
           <dt>Data</dt><dd>{data.isolation.model}. Customer, account and transaction ids are unique per client, so two clients can use the same ids.</dd>

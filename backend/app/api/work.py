@@ -45,6 +45,7 @@ def _urgency(row: dict):
 
 def _persona_out(p: Persona, rt: TenantRuntime) -> dict:
     return {"id": p.id, "name": p.name, "role": p.role, "roles": list(p.roles), "title": p.title, "about": p.about, "read_only": p.read_only,
+            "org": p.org, "engagement": p.engagement,
             "queues": [{"id": q, "label": rt.policy.queues[q]} for q in p.queues], "permissions": sorted(p.permissions),
             "sees": describe_view(p, rt),
             "tenant": {"id": rt.id, "name": rt.name}}

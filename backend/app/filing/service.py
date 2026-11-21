@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..domain.models import Case, Filing, new_id, now
-from ..domain.personas import Persona
+from ..domain.personas import Persona, policy_of
 from ..tenancy import tenant_of
 from ..visibility import system_work
 from . import report as reports
@@ -152,6 +152,9 @@ def submit(s: Session, filing_id: str, persona: Persona, ts: datetime | None = N
         raise FilingError(f"This report is already {f.status}")
     if f.problems:
         raise FilingError("This report cannot be sent yet: " + "; ".join(f.problems))
+    ms = policy_of(f.tenant_id).managed_service
+    if persona.external and ms and "submit_filings" in ms.client_signoff:
+        raise FilingError(f"Client sign-off: reports are sent to the regulator by the client's own officers, not the {ms.provider} team")
     _send(s, f, persona, ts)
     if f.status != "submitted":
         if f.history and f.history[-1].get("what") == "send_failed":
