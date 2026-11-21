@@ -13,7 +13,10 @@ COPY backend/pyproject.toml backend/uv.lock backend/
 RUN cd backend && uv sync --frozen --no-dev --group llm --group s3 --group adls --group gcs --group kafka --group lake --group search --group durable
 COPY backend/ backend/
 COPY --from=ui /ui/dist frontend/dist
-RUN mkdir -p data/samples
+# Everything the app writes on disk is under /app/data. It belongs to the user Kubernetes runs the pods as, so the
+# image starts as that user (docker run --user 10001:10001) as well as root, with nothing else to set.
+RUN mkdir -p data/samples data/lake data/evidence data/quarantine data/warehouse && chown -R 10001:10001 data
+ENV UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv HOME=/tmp
 WORKDIR /app/backend
 EXPOSE 8000
 CMD ["uv", "run", "--no-dev", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

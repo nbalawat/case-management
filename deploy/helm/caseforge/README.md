@@ -15,7 +15,7 @@ That is deliberate: those are stateful systems with their own upgrade and backup
       --from-literal=DATABASE_URL='postgresql+psycopg://user:password@host:5432/caseforge'
     helm install acme deploy/helm/caseforge -n acme -f deploy/helm/caseforge/modes/dedicated.yaml \
       --set existingSecret=caseforge-secrets \
-      --set image.repository=registry.example.com/caseforge --set image.tag=0.21.0 \
+      --set image.repository=registry.example.com/caseforge --set image.tag=0.22.0 \
       --set publicUrl=https://cases.acme.example --set ingress.host=cases.acme.example \
       --set auth.operatorIssuer=https://idp.example.com/realms/ops \
       --set storage.evidenceUrl=s3://acme-caseforge/evidence --set storage.quarantineUrl=s3://acme-caseforge/quarantine
@@ -45,13 +45,13 @@ or an address has the wrong scheme.
 
 ## Before you rely on it
 
-- **There are no versioned migrations yet.** The application knows one schema version. With
-  `schemaOnMismatch=refuse` (the default here) a pod that finds an older schema stops and says so, which keeps the
-  data safe and means **an upgrade across a schema change cannot be done in place today**. The demo's behaviour
-  (`rebuild`) drops every table. Migrations are the first thing a production deployment needs.
+- **Schema changes are versioned migrations** (`backend/app/migrations`). A hook job runs them before each install
+  and upgrade, and a pod that finds the database behind stops and says so. That has been run on Postgres 16 outside
+  Kubernetes; the hook job itself has never run on a cluster. There is one migration so far, the baseline, so no
+  upgrade between two real versions has happened yet, and there are no downgrade tests. Take a backup first.
 - The pipeline schedule timer is off, because it is wrong with more than one API pod. Scheduled pipelines run when
   "Run what is due" is called; nothing calls it for you here.
-- Pods run as a non-root user with no privilege escalation and write only to `/tmp`.
+- Pods run as a non-root user with no privilege escalation and write only to `/tmp` and `/app/data`, both scratch volumes that go with the pod.
 - `networkPolicy.enabled` limits what may reach the pods. It does not limit what the pods may reach.
 - One release serves the clients in its database. A dedicated stamp per client is one release per client; nothing
   here creates the client's database, topics or bucket.
