@@ -36,7 +36,9 @@ The first start (about ten seconds) seeds three clients of different kinds: Meri
 workload, twelve people), Kestrel Payments (fraud first, a lean team where people hold two roles) and Alder
 Private Bank (due diligence first, with a workflow version of its own). Together they hold about 540 customers,
 61,000 transactions and 120 cases, already worked to different stages by each client's own people. `make seed` (or `make reset` for
-Docker) restores that starting point before each demo. `make test` runs the backend tests.
+Docker) restores that starting point before each demo. `make test` runs the backend tests. They run on SQLite
+with foreign keys enforced; to run the Postgres start-up test as well, point `TEST_POSTGRES_URL` at a disposable
+database (everything in it is dropped).
 
 For development, run `make dev-api` and `make dev-ui` in two terminals and open <http://localhost:5173>.
 

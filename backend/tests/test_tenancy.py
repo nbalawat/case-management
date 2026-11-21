@@ -93,7 +93,11 @@ def test_another_clients_primary_key_finds_nothing(two, model):
 
 @pytest.mark.parametrize("model", SCOPED_MODELS, ids=lambda c: c.__name__)
 def test_bulk_update_and_delete_stay_inside_the_client(two, model):
+    order = [t.name for t in m.Base.metadata.sorted_tables]  # parents first
+    after = [x for x in SCOPED_MODELS if order.index(x.__tablename__) > order.index(model.__tablename__)]
     with two.tenant(A) as s:
+        for dependent in sorted(after, key=lambda x: -order.index(x.__tablename__)):  # rows that point at this one go first
+            s.execute(delete(dependent))
         s.execute(delete(model))
         s.commit()
     with two.platform() as p:

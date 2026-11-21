@@ -588,6 +588,7 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     for _ in range(profile.benign_rapid):
         g.rapid(2, 40, benign=True)
     geo = [g.geo(1, 40) for _ in range(profile.geo)]
+    s.flush()  # customers must exist before anything that points at them by id alone
     _seed_media(s, g.end, geo, rapid, benign, ordinary)
     for name, country, lo, hi in SANCTIONS[:profile.sanctions]:
         g.sanctions(lo, hi, name, country or g.r.choice(["DE", "SG", "AE", "GB"]))
