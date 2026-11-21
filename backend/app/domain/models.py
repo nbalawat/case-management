@@ -327,6 +327,8 @@ class AskLog(TenantScoped, Base):
     unverified: Mapped[list] = mapped_column(JSON, default=list)
     usage: Mapped[dict] = mapped_column(JSON, default=dict)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    # The figures the answer stated and which of them matched a lookup: {stated, verified: [...], unverified: [...]}
+    figures: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class DataSource(TenantScoped, Base):
