@@ -85,6 +85,11 @@ class Settings:
     temporal_step_seconds: float = float(os.getenv("TEMPORAL_STEP_SECONDS", "20"))
     # Due data pipelines are started by a Temporal schedule this often (replaces PIPELINE_SCHEDULER on Temporal).
     temporal_pipeline_seconds: float = float(os.getenv("TEMPORAL_PIPELINE_SECONDS", "60"))
+    # 0: the worker creates no schedules (the sweep and due pipelines are then started some other way).
+    temporal_schedules: bool = os.getenv("TEMPORAL_SCHEDULES", "1") == "1"
+    # What workflow ids start with, before the client. Empty: EVENT_TOPIC_PREFIX. Two deployments sharing a Temporal
+    # namespace need different ones.
+    temporal_id_prefix: str = os.getenv("TEMPORAL_ID_PREFIX", "")
     # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. Read-only here;
     # the platform page shows whether each client's jobs are running.
     flink_url: str = os.getenv("FLINK_URL", "")

@@ -42,7 +42,7 @@ class Fleet:
                 w = Worker(client, task_queue=settings.temporal_task_queue, workflows=WORKFLOWS, activities=temporal.activities(), activity_executor=self.pool)
                 self.workers[ns] = (w, asyncio.create_task(w.run(), name=f"worker:{ns}"))
                 log.info("Durable worker polling namespace %s, queue %s", ns, settings.temporal_task_queue)
-            if tenant_id not in self.scheduled:
+            if tenant_id not in self.scheduled and settings.temporal_schedules:
                 await temporal.ensure_schedules(client, tenant_id)
                 self.scheduled.add(tenant_id)
 

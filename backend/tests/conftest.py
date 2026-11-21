@@ -117,9 +117,12 @@ def _workflow_engine():
     from app.durable.engine import TemporalEngine
 
     run = uuid.uuid4().hex[:8]
-    saved = {k: getattr(settings, k) for k in ("temporal_url", "workflow_engine", "event_topic_prefix", "temporal_task_queue", "temporal_sync_seconds",
-                                               "temporal_namespace_mode", "temporal_namespace_prefix")}
-    for k, v in {"temporal_url": url, "workflow_engine": "temporal", "event_topic_prefix": f"cfs{run}", "temporal_task_queue": f"suite-{run}",
+    saved = {k: getattr(settings, k) for k in ("temporal_url", "workflow_engine", "temporal_id_prefix", "temporal_task_queue", "temporal_sync_seconds",
+                                               "temporal_namespace_mode", "temporal_namespace_prefix", "temporal_schedules")}
+    # No schedules: a sweep or pipeline run firing in the middle of a test would change what it counts. Tests that
+    # want them (tests/test_temporal.py) make their own.
+    for k, v in {"temporal_url": url, "workflow_engine": "temporal", "temporal_id_prefix": f"cfs{run}", "temporal_task_queue": f"suite-{run}",
+                 "temporal_schedules": False,
                  "temporal_sync_seconds": 2.0, "temporal_namespace_mode": os.getenv("TEST_TEMPORAL_NAMESPACES", "shared"),
                  "temporal_namespace_prefix": f"cfs{run}-"}.items():
         object.__setattr__(settings, k, v)

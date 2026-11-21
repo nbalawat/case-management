@@ -35,7 +35,7 @@ from test_durable import breaches, case_due_in
 URL = os.getenv("TEST_TEMPORAL_URL", "")
 pytestmark = pytest.mark.skipif(not URL.startswith("temporal://"), reason="set TEST_TEMPORAL_URL to a disposable Temporal server to run")
 OTHER = "kestrel"
-KEYS = ("temporal_url", "workflow_engine", "event_topic_prefix", "temporal_task_queue", "temporal_sync_seconds", "temporal_namespace_mode",
+KEYS = ("temporal_url", "workflow_engine", "temporal_id_prefix", "temporal_task_queue", "temporal_sync_seconds", "temporal_namespace_mode",
         "temporal_namespace_prefix", "temporal_step_seconds")
 
 
@@ -51,7 +51,7 @@ def world(request, tmp_path):
     old = {k: getattr(settings, k) for k in KEYS}
     appdb.engine, appdb.SessionLocal = db.engine, db.factory
     run = uuid.uuid4().hex[:10]
-    for k, v in {"temporal_url": URL, "workflow_engine": "temporal", "event_topic_prefix": f"cft{run}", "temporal_task_queue": f"q-{run}",
+    for k, v in {"temporal_url": URL, "workflow_engine": "temporal", "temporal_id_prefix": f"cft{run}", "temporal_task_queue": f"q-{run}",
                  "temporal_sync_seconds": 0.5, "temporal_namespace_mode": request.param, "temporal_namespace_prefix": f"cft{run}-",
                  "temporal_step_seconds": 30.0}.items():
         object.__setattr__(settings, k, v)
@@ -108,6 +108,13 @@ def breach_count(world, cid, tenant=T):
 def events(world, cid, kind, tenant=T):
     with world.tenant(tenant) as s:
         return [e for e in s.scalars(select(m.CaseEvent).where(m.CaseEvent.case_id == cid).order_by(m.CaseEvent.id)) if e.kind == kind]
+
+
+async def running(client, tenant, n):
+    """Wait until Temporal's list of running case workflows shows `n` (its visibility store catches up a moment after a start)."""
+    async def check() -> bool:
+        return await temporal.running(client, tenant) == n
+    return await until(check, seconds=20)
 
 
 def handle(client, tenant, cid):
@@ -224,11 +231,11 @@ def test_a_deadline_is_acted_on_when_it_passes_with_nobody_looking(world):
         base, (client,) = await clients(T)
         async with working(base, T, OTHER):
             assert await temporal.sync(base) == {T: 1, OTHER: 0}
-            assert breach_count(world, cid) == 0 and await temporal.running(client, T) == 1
+            assert breach_count(world, cid) == 0 and await running(client, T, 1)
             await until(lambda: breach_count(world, cid))
             state = await handle(client, T, cid).query("state")
             assert state["view"]["breached"] is True and state["log"][-1] == state["log"][-1] | {"what": "deadline", "outcome": "breached"}
-            assert await temporal.running(client, T) == 1  # the case is still open: its workflow waits for the next step
+            assert await running(client, T, 1)  # the case is still open: its workflow waits for the next step
             await handle(client, T, cid).terminate("test over")
     asyncio.run(go())
     assert breach_count(world, cid) == 1
@@ -296,7 +303,7 @@ def test_two_clients_case_workflows_are_separate(world):
         async with working(base, T, OTHER):
             assert await temporal.sync(base) == {T: 1, OTHER: 1}
             await until(lambda: breach_count(world, ours))
-            assert await temporal.running(mine, T) == 1 and await temporal.running(other, OTHER) == 1
+            assert await running(mine, T, 1) and await running(other, OTHER, 1)
             if world.mode == "per_client":  # a namespace of its own: the other client's workflows are not even listed there
                 assert mine.namespace != other.namespace
                 assert await temporal.running(mine, OTHER) == 0 and await temporal.running(other, T) == 0

@@ -30,7 +30,7 @@ def target(url: str | None = None) -> str:
 def _prefix(tenant_id: str) -> str:
     if not TENANT.fullmatch(tenant_id or ""):
         raise DurableError("That is not a client id.")
-    return f"{settings.event_topic_prefix}.{tenant_id}"
+    return f"{settings.temporal_id_prefix or settings.event_topic_prefix}.{tenant_id}"
 
 
 def case_id(tenant_id: str, case: str) -> str:

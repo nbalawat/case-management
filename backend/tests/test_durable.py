@@ -170,6 +170,16 @@ def test_the_whole_sweep_runs_for_every_client(cases):
 # ---- names and addresses
 
 def test_a_case_workflow_is_named_for_its_client_and_case():
+    old = _with(temporal_id_prefix="", event_topic_prefix="caseforge")
+    try:
+        _names()
+        object.__setattr__(settings, "temporal_id_prefix", "stamp2")
+        assert temporal.case_id("meridian", "case-1") == "stamp2.meridian.case.case-1"
+    finally:
+        _with(**old)
+
+
+def _names():
     assert temporal.case_id("meridian", "case-1") == "caseforge.meridian.case.case-1"
     assert temporal.case_id("kestrel", "case-1") != temporal.case_id("meridian", "case-1")
     assert temporal.clock_id("meridian", "case-1") == "caseforge.meridian.clock.case-1"  # the old stage clocks, still finished
