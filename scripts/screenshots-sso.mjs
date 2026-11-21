@@ -11,6 +11,13 @@ page.on('console', m => m.type() === 'error' && !/401|403|404/.test(m.text()) &&
 page.on('pageerror', e => errors.push(String(e)))
 const check = (ok, what) => { if (!ok) throw new Error(`Expected: ${what}`) }
 
+// Inside a client, sign out is in the account menu; the operator console keeps a plain button.
+const signOut = async () => {
+  const account = page.getByRole('button', { name: /Open account menu/ })
+  if (await account.count()) { await account.click(); await page.getByRole('menuitem', { name: 'Sign out' }).click() }
+  else await page.getByRole('button', { name: 'Sign out' }).click()
+  await page.getByRole('heading', { name: 'Sign in' }).waitFor()
+}
 await page.goto(base + '/cases'); await page.getByRole('heading', { name: 'Sign in' }).waitFor()
 check((await fetch(`${base}/api/cases`, { headers: { 'X-Tenant': 'meridian', 'X-Persona': 'maya' } })).status === 401, 'headers alone are refused')
 await page.getByLabel('Organisation').fill('nowhere'); await page.getByRole('button', { name: 'Continue' }).click()
@@ -29,18 +36,18 @@ await page.getByText('You can see:').waitFor()
 await page.screenshot({ path: `${out}27-signed-in.png` })
 await page.goto(base + '/cases'); await page.locator('tbody tr').first().waitFor(); await page.waitForLoadState('networkidle') // still signed in after a reload
 const shown = await page.locator('tbody tr').count()
-await page.getByRole('button', { name: 'Sign out' }).click(); await page.getByRole('heading', { name: 'Sign in' }).waitFor()
+await signOut()
 
 // Platform staff sign in through their own provider and land in the operator console.
 await page.getByRole('button', { name: 'Platform staff sign in here' }).click()
 await page.getByRole('link', { name: /Olivia Grant/ }).click()
 await page.getByText('Operator console.').waitFor()
-await page.getByRole('button', { name: 'Sign out' }).click(); await page.getByRole('heading', { name: 'Sign in' }).waitFor()
+await signOut()
 
 // A different person at the same client sees a different book.
 await page.getByLabel('Organisation').fill('Meridian'); await page.getByRole('button', { name: 'Continue' }).click()
 await page.getByRole('link', { name: /Audra Klein/ }).click()
-await page.getByRole('heading', { name: 'Audra Klein' }).waitFor()
+await page.getByRole('button', { name: /Signed in as Audra Klein/ }).waitFor() // the auditor lands on the dashboard, not a work list
 await page.goto(base + '/cases'); await page.locator('tbody tr').first().waitFor(); await page.waitForLoadState('networkidle')
 check(await page.locator('tbody tr').count() > shown, 'the auditor is listed more cases than the analyst')
 await browser.close()

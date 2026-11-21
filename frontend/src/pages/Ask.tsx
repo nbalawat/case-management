@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, fmtDateTime, words } from '../api'
 import { useApi } from '../useApi'
 import { usePeople } from '../App'
@@ -162,6 +162,16 @@ export default function Ask() {
       .then(a => { setTurns(t => [...t, a]); reload() }).catch(e => { setError(e.message); setText(q) }).finally(() => setBusy(null))
   }
   const submit = (e: FormEvent) => { e.preventDefault(); ask(text) }
+  // A question handed over from the command palette (/ask?q=...) is asked once, then cleared from the address.
+  const [params, setParams] = useSearchParams()
+  const handed = params.get('q')
+  const taken = useRef<string | null>(null)
+  useEffect(() => {
+    if (!handed || taken.current === handed) return
+    taken.current = handed
+    setParams({}, { replace: true })
+    ask(handed)
+  }, [handed]) // eslint-disable-line react-hooks/exhaustive-deps
   const offline = start?.provider === 'offline'
   return (
     <>
