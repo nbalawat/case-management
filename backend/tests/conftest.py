@@ -10,6 +10,18 @@ from app.tenants.onboarding import onboard
 from support import T, TEMPLATE
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _storage(tmp_path_factory):
+    """Tests never touch the real lake: client landing zones and the quarantine area live in a temporary directory."""
+    from app.config import settings
+
+    base = tmp_path_factory.mktemp("storage")
+    object.__setattr__(settings, "lake_dir", base / "lake")
+    object.__setattr__(settings, "quarantine_url", f"file://{base / 'quarantine'}")
+    object.__setattr__(settings, "allow_memory_storage", True)
+    yield base
+
+
 class Db:
     """An empty in-memory platform. Sessions are opened the way the application opens them."""
 

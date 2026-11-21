@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import shutil
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -382,8 +383,8 @@ def _seed_fraud(d: Desk, planted: list[tuple]) -> None:
             d.step(c, "refunded", t + timedelta(hours=16), "Card was used online at a merchant with no prior history while the customer was travelling.")
 
 
-def write_sample_feed(path: Path, end: datetime, seed: int = 11) -> int:
-    """A 'legacy core' extract with awkward column names, source code lists and a few bad rows."""
+def sample_feed_rows(end: datetime, seed: int = 11, defects: int = 9) -> list[dict]:
+    """A 'legacy core' extract with awkward column names, source code lists and a few bad rows. TXN_DT is a datetime."""
     r = random.Random(seed)
     rows = []
 
@@ -392,7 +393,7 @@ def write_sample_feed(path: Path, end: datetime, seed: int = 11) -> int:
                      "TXN_AMT": f"{amt:.2f}", "CCY": "USD", "DR_CR_IND": drcr, "CHNL": chnl, "CNTRPRTY_NM": cp, "CNTRY_CD": ctry,
                      "BRANCH_CD": f"BR{r.randint(1, 40):03d}"})
 
-    custs = [f"LC-{70000 + i}" for i in range(40)]
+    custs = LEGACY_CUSTOMERS
     for c in custs:
         for d in range(45):
             day = end - timedelta(days=d, hours=r.randint(1, 10))
@@ -410,16 +411,98 @@ def write_sample_feed(path: Path, end: datetime, seed: int = 11) -> int:
         add(custs[2], start + timedelta(hours=5 + i * 8), 20600, "DR", "WIR", f"{r.choice(FIRST)} {r.choice(LAST)}", "AE")
     over = max(max(x["TXN_DT"] for x in rows) - end + timedelta(minutes=5), timedelta(0))
     for x in rows:
-        x["TXN_DT"] = (x["TXN_DT"] - over).strftime("%Y%m%d%H%M%S")
+        x["TXN_DT"] = x["TXN_DT"] - over
     r.shuffle(rows)
-    for i in r.sample(range(len(rows)), 9):  # data-quality defects
+    for i in r.sample(range(len(rows)), defects):  # data-quality defects
         rows[i]["TXN_AMT" if i % 3 else "DR_CR_IND"] = "" if i % 3 else "XX"
+    return rows
+
+
+LEGACY_CUSTOMERS = [f"LC-{70000 + i}" for i in range(40)]
+
+
+def _csv_bytes(rows: list[dict]) -> bytes:
+    import io
+
+    buf = io.StringIO(newline="")
+    w = csv.DictWriter(buf, fieldnames=list(rows[0]))
+    w.writeheader()
+    w.writerows(rows)
+    return buf.getvalue().encode()
+
+
+def write_sample_feed(path: Path, end: datetime, seed: int = 11) -> int:
+    rows = [x | {"TXN_DT": x["TXN_DT"].strftime("%Y%m%d%H%M%S")} for x in sample_feed_rows(end, seed)]
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0]))
-        w.writeheader()
-        w.writerows(rows)
+    path.write_bytes(_csv_bytes(rows))
     return len(rows)
+
+
+def land_core_banking_files(store, end: datetime, seed: int = 11) -> dict:
+    """What a core banking system drops in a client's landing zone: customers, accounts and daily transaction files.
+
+    The files are deliberately untidy: three formats, legacy column names and code lists, a marker file, a few bad
+    records, and one transaction file bad enough that it should be held back.
+    """
+    import gzip
+    import io
+    import json
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    r = random.Random(seed)
+    customers = [{"CUST_NO": c, "CUST_NM": f"{r.choice(FIRST)} {r.choice(LAST)}", "CUST_TYPE": "P", "RES_CNTRY": r.choice(["US"] * 8 + ["MX", "GB"]),
+                  "OCCUP": r.choice(["teacher", "engineer", "retired", "nurse", "shop owner", "driver", "consultant"]),
+                  "RISK_CD": r.choice(["L"] * 6 + ["M"] * 3 + ["H"]), "PEP_FLAG": "Y" if i == 7 else "N",
+                  "OPEN_DT": (end - timedelta(days=r.randint(200, 3000))).strftime("%Y%m%d")} for i, c in enumerate(LEGACY_CUSTOMERS)]
+    customers.append(customers[0] | {"CUST_NO": "LC-79999", "CUST_NM": "Test Record Do Not Use", "RISK_CD": "?"})  # a code the list does not know
+    store.write(f"core-banking/customers/customers_{end:%Y%m%d}.csv", _csv_bytes(customers))
+    accounts = [{"ACCT_NBR": f"ACC-{c[3:]}", "CUST_NO": c, "PROD_CD": r.choice(["checking", "savings"]), "ACCT_STAT": "O"} for c in LEGACY_CUSTOMERS]
+    buf = io.BytesIO()
+    pq.write_table(pa.Table.from_pylist(accounts), buf)
+    store.write("core-banking/accounts/accounts.parquet", buf.getvalue())
+
+    by_day: dict[str, list[dict]] = {}
+    for row in sample_feed_rows(end, seed, defects=0):
+        by_day.setdefault(row["TXN_DT"].strftime("%Y-%m-%d"), []).append(row)
+    days = sorted(by_day)
+    for i, day in enumerate(days):
+        rows, folder = by_day[day], f"core-banking/transactions/dt={day}"
+        kind = ("csv.gz", "jsonl", "parquet")[i % 3]
+        if kind == "csv.gz":
+            data = gzip.compress(_csv_bytes([x | {"TXN_DT": x["TXN_DT"].strftime("%Y%m%d%H%M%S")} for x in rows]), mtime=0)
+        elif kind == "jsonl":
+            data = "\n".join(json.dumps(x | {"TXN_DT": x["TXN_DT"].isoformat()}) for x in rows).encode()
+        else:  # typed columns, as a warehouse export would have
+            buf = io.BytesIO()
+            pq.write_table(pa.Table.from_pylist([x | {"TXN_AMT": float(x["TXN_AMT"]) if x["TXN_AMT"] else None} for x in rows]), buf)
+            data = buf.getvalue()
+        store.write(f"{folder}/part-0000.{kind}", data)
+        store.write(f"{folder}/_SUCCESS", b"")
+    busiest = max(days, key=lambda d: len(by_day[d]))
+    bad = [x | {"TXN_REF": f"LX{n:07d}", "TXN_DT": x["TXN_DT"].strftime("%Y%m%d%H%M%S"), "TXN_AMT": "" if n % 3 == 0 else x["TXN_AMT"],
+                "CHNL": "???" if n % 4 == 0 else x["CHNL"]} for n, x in enumerate(by_day[busiest][:40])]
+    store.write(f"core-banking/transactions/dt={days[-1]}/part-0001.csv", _csv_bytes(bad))
+    return {"customers": len(customers), "accounts": len(accounts), "transaction_files": len(days) + 1}
+
+
+def register_core_banking_sources(s: Session, by: str) -> list:
+    """The three sources that read those files, with mappings proposed from the files themselves."""
+    from .ingest import pipeline
+
+    out = []
+    for name, dataset, prefix, pattern, schedule, rules in [
+        ("Core banking customers", "customers", "core-banking/customers", "*.csv", 1440, {"max_age_hours": 48}),
+        ("Core banking accounts", "accounts", "core-banking/accounts", "*.parquet", 1440, {}),
+        ("Core banking transactions", "transactions", "core-banking/transactions", "**/part-*", 60, {"max_age_hours": 36}),
+    ]:
+        spec = {"name": name, "dataset": dataset, "root": "landing", "prefix": prefix, "pattern": pattern}
+        seen = pipeline.preview(tenant_of(s), spec)
+        mapping = {p["target"]: p["source"] for p in seen["proposals"]}
+        out.append(pipeline.save_source(s, spec | {"mapping": mapping, "columns": [c["column"] for c in seen["columns"]],
+                                                   "schedule_minutes": schedule, "rules": rules}, by))
+    return out
 
 
 @dataclass(frozen=True)
@@ -529,6 +612,15 @@ def seed_demo() -> dict:
             out[client["tenant_id"]] = seed_tenant(s, PROFILES[client["profile"]])
             if client["tenant_id"] == "alder":
                 _alder_own_workflow(s)
+    from .ingest.locations import store_for
+
+    for n, client in enumerate(DEMO_CLIENTS):
+        tid = client["tenant_id"]
+        shutil.rmtree(settings.lake_dir / tid, ignore_errors=True)
+        with session_scope(tid) as s:
+            out[tid]["landed"] = land_core_banking_files(store_for(tid, "landing"), now(), seed=11 + n)
+            admin = next(p for p in policy_of(tid).people.values() if p.can("load_data"))
+            register_core_banking_sources(s, admin.id)
     out["sample_feed_rows"] = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", now())
     return out
 

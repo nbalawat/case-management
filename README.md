@@ -11,6 +11,7 @@ This is a demo build. It is meant to be shown, not deployed. All data is synthet
 
 ![My work](docs/screenshots/01-my-work.png)
 ![Ask anything](docs/screenshots/15-ask.png)
+![Data pipelines](docs/screenshots/18-data-pipeline-run.png)
 ![Workflow designer](docs/screenshots/08-workflows.png)
 ![Operator console](docs/screenshots/14-operator-console.png)
 
@@ -65,9 +66,13 @@ each says who to be. Steps 10 to 12 show the platform running several clients.
 7. **Access, as anyone.** The role and permission matrix, every workflow step against every role, people and
    queues. All of it is the client's own policy; nothing about roles is in code.
 8. **Read-only, as Audra Klein (auditor).** Every case and audit trail opens; nothing can be changed.
-9. **Data onboarding and scale, as Omar.** Profile the legacy extract, confirm the mapping, load it: counts
-   reconcile, defective rows are held, new cases appear. Then the throughput check and the laptop-to-cloud
-   table on the last page.
+9. **Data pipelines, as Omar.** Open Data. Three sources read Meridian's core-banking files from its
+   landing zone: customers, accounts and daily transaction partitions in CSV, JSON lines and Parquet. Press
+   "Run all sources". They run in dependency order; counts and amounts reconcile; one customer record is
+   rejected and one transaction file is held whole because too many of its rows are unusable, with the
+   rejected rows written to quarantine. Open the run's details to see each file. Run again: nothing loads
+   twice. "Add a source" looks at a location, samples the newest file and proposes the mapping. The sample
+   file loader and the throughput check are still on their own pages.
 
 10. **A second client.** Switch the client to Kestrel Payments. Different people, different roles and queue
     names, three case types instead of six, no QA. Joy Tanaka holds two roles (MLRO and operations lead) and
@@ -122,7 +127,7 @@ The full API reference is at <http://localhost:8000/docs>.
 
 | Area | In this build | Not yet |
 |---|---|---|
-| Ingestion | CSV feeds, profiling, mapping proposals, code-list translation, rejects, reconciliation | Streaming, CDC, ISO 20022 |
+| Ingestion | Pipelines that read customers, accounts and transactions from a client's registered storage locations, through one interface for S3, Azure Data Lake, Google Cloud Storage and local directories. CSV, JSON lines and Parquet, gzip, saved and versioned mappings, quality rules per source, whole-file quarantine with rejected rows written out, count and amount reconciliation, each file loaded once, lineage from a transaction back to its file, schedules with stale-source flags. No credentials are stored: each driver uses the workload's own identity. | S3 is tested against an emulated S3 API, not AWS. The Azure and Google drivers have never been run; only their addresses are checked. Schedules run from a simple in-process timer (`PIPELINE_SCHEDULER=1`, one process only) or when "Run what is due" is called, not from an orchestrator such as Airflow or Temporal. A file is read into memory whole, so very large files need splitting. A local file's fingerprint is size and modified time. Streaming, CDC, ISO 20022, mappings compiled to dbt or Flink SQL. |
 | Detection | Four scenarios (structuring, rapid movement, high-risk geography, watchlist name match), versioned and idempotent | Stream processing, ML models, a real sanctions list (the watchlist is fictional) |
 | Alert intake | `POST /api/alerts` for outside engines, deduplicated, grouped per customer | Vendor-specific adapters |
 | Workflows | Six case types as versioned YAML: stages, queues, stage tasks, conditional steps, waiting stages, four-eyes, stage clocks with escalation, QA sampling with reopen. Checked and published from the UI. | Durable workflow engine (timers are swept, not scheduled), parallel branches, a drag-and-drop designer |
@@ -140,7 +145,9 @@ The full API reference is at <http://localhost:8000/docs>.
 ```
 backend/app/
   domain/      canonical model, access policy
-  ingest/      connectors, mapping proposer, load and reconcile
+  storage/     object storage behind one interface: S3, Azure Data Lake, Google Cloud Storage, local
+  ingest/      file formats, datasets, mapping proposer, pipelines (discover, validate, load, reconcile,
+               detect), storage locations per client, the sample file loader
   detection/   scenario registry and engine
   alerts/      alert hub: dedupe, group into cases, prioritise
   cases/       case type registry, transition guards, conditions, tasks, assignment,
@@ -158,7 +165,7 @@ backend/templates/    client templates: a starting policy plus a set of case typ
 frontend/src/         React + TypeScript UI
 ```
 
-Each replaceable part sits behind a small interface (`Connector`, `MappingProposer`, `LLMProvider`, the scenario
+Each replaceable part sits behind a small interface (`ObjectStore`, `Connector`, `MappingProposer`, `LLMProvider`, the scenario
 registry, and `ChatModel` for the model that answers questions), so later milestones swap implementations without touching callers. The database is chosen by
 `DATABASE_URL`; nothing in the code is tied to a cloud.
 
@@ -177,8 +184,10 @@ and onboarding, a client switcher and an operator console. Tested with ten clien
 lookups, citing the cases behind them and limited to what the asker may see. A model gateway with a hosted
 provider and an offline planner. Still to come here: a live-model evaluation run, streaming, and a local model.
 
-**5. Data pipelines.** Sources in object storage (S3, ADLS, GCS) behind one cloud-neutral interface, scheduled
-pipelines, saved mappings per source, data-quality gates and lineage. File upload remains only for samples.
+**5. Data pipelines (done).** Sources in object storage (S3, ADLS, GCS) behind one cloud-neutral interface,
+pipelines in dependency order, saved mappings per source, data-quality gates, quarantine and lineage. File
+upload remains only for samples. Still to come here: a first run against real cloud accounts, an orchestrator
+for schedules, streaming and CDC.
 
 **6. Enterprise breadth.** Entity resolution and a network view, search, regulatory filing formats, lookback
 projects, management reporting, SSO.

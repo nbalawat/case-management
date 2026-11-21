@@ -29,6 +29,10 @@ FACTORY = {
     "InfoRequest": lambda k: m.InfoRequest(id=f"rfi-{k}", case_id=f"case-{k}", recipient="customer", question="q", raised_by="x", due=NOW),
     "WorkflowVersion": lambda k: m.WorkflowVersion(case_type="tm_alert_investigation", version="9.0.0", source="x", published_by="x"),
     "AccessPolicyVersion": lambda k: m.AccessPolicyVersion(version="9.0.0", source="x", published_by="x"),
+    "DataSource": lambda k: m.DataSource(id=f"src-{k}", name="same name", dataset="transactions", root="lake", created_by="x"),
+    "PipelineRun": lambda k: m.PipelineRun(id=f"run-{k}", source_id=f"src-{k}", batch_id="b", started_by="x"),
+    "IngestedObject": lambda k: m.IngestedObject(id=f"obj-{k}", source_id=f"src-{k}", run_id=f"run-{k}", key="same/key.csv",
+                                                 fingerprint="same", status="loaded"),
     "AskLog": lambda k: m.AskLog(id=f"q-{k}", conversation_id=f"ask-{k}", asked_by="x", role="analyst", question="q"),
 }
 ORDER = ["Party", "Account", "Transaction", "Case", "Alert"]  # parents first; the rest in any order

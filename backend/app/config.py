@@ -22,6 +22,11 @@ class Settings:
     ask_provider: str = os.getenv("ASK_PROVIDER", "auto")
     ask_model: str = os.getenv("ASK_MODEL", "claude-opus-5-5")
     ask_effort: str = os.getenv("ASK_EFFORT", "medium")
+    # Demo storage. Each client's files live under lake_dir/<client>/; rejected records go to quarantine_url/<client>/.
+    lake_dir: Path = Path(os.getenv("LAKE_DIR", ROOT / "data" / "lake"))
+    quarantine_url: str = os.getenv("QUARANTINE_URL", f"file://{ROOT / 'data' / 'quarantine'}")
+    allow_memory_storage: bool = os.getenv("ALLOW_MEMORY_STORAGE", "0") == "1"
+    pipeline_scheduler: bool = os.getenv("PIPELINE_SCHEDULER", "0") == "1"
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
 
 

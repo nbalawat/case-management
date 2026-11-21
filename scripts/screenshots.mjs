@@ -39,6 +39,12 @@ await go('/platform')
 await page.getByRole('button', { name: 'Run benchmark' }).click()
 await page.getByRole('button', { name: 'Run benchmark' }).waitFor({ timeout: 120000 })
 await shot('10-integrations-scale')
+// Data pipelines: sources in object storage with files waiting, then one batch and what it did with each file.
+await go('/data'); await shot('17-data-pipelines')
+await page.getByRole('button', { name: 'Run all sources' }).click()
+await page.getByRole('button', { name: 'Hide' }).waitFor({ timeout: 120000 })  // the page opens the last run of the batch itself
+await page.waitForLoadState('networkidle'); await page.waitForTimeout(400)
+await shot('18-data-pipeline-run')
 await go('/onboarding')
 await page.getByRole('button', { name: 'Profile feed' }).click()
 await page.getByRole('button', { name: 'Load and run detection' }).waitFor()

@@ -236,3 +236,63 @@ class AskLog(TenantScoped, Base):
     unverified: Mapped[list] = mapped_column(JSON, default=list)
     usage: Mapped[dict] = mapped_column(JSON, default=dict)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DataSource(TenantScoped, Base):
+    """A place in object storage that a client's data arrives in, and how to read it."""
+
+    __tablename__ = "data_source"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    dataset: Mapped[str] = mapped_column(String(30))  # customers | accounts | transactions
+    root: Mapped[str] = mapped_column(String(40))  # one of the storage locations registered for the client
+    prefix: Mapped[str] = mapped_column(String(300), default="")
+    pattern: Mapped[str] = mapped_column(String(200), default="**")
+    format: Mapped[str] = mapped_column(String(12), default="auto")
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    mapping: Mapped[dict] = mapped_column(JSON, default=dict)
+    mapping_version: Mapped[int] = mapped_column(Integer, default=1)
+    columns: Mapped[list] = mapped_column(JSON, default=list)  # the columns seen when the mapping was confirmed
+    rules: Mapped[dict] = mapped_column(JSON, default=dict)
+    schedule_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    created_by: Mapped[str] = mapped_column(String(40))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    state: Mapped[dict] = mapped_column(JSON, default=dict)  # last observed: newest object, last status
+    __table_args__ = (Index("ux_data_source_name", "tenant_id", "name", unique=True),)
+
+
+class PipelineRun(TenantScoped, Base):
+    """One run of one source: what was found, what was loaded, what was held back, and why."""
+
+    __tablename__ = "pipeline_run"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(40), index=True)
+    batch_id: Mapped[str] = mapped_column(String(40), index=True)  # runs started together share a batch
+    trigger: Mapped[str] = mapped_column(String(12), default="manual")  # manual | schedule
+    started_by: Mapped[str] = mapped_column(String(40))
+    started: Mapped[datetime] = mapped_column(DateTime, default=now)
+    finished: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="running")
+    mapping_version: Mapped[int] = mapped_column(Integer, default=1)
+    steps: Mapped[list] = mapped_column(JSON, default=list)
+    stats: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+
+class IngestedObject(TenantScoped, Base):
+    """One file a pipeline has dealt with. The fingerprint is what makes a re-run skip it and a changed file count as new."""
+
+    __tablename__ = "ingested_object"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(40), index=True)
+    run_id: Mapped[str] = mapped_column(String(40), index=True)
+    key: Mapped[str] = mapped_column(String(500))
+    fingerprint: Mapped[str] = mapped_column(String(80))
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16))  # loaded | quarantined
+    reason: Mapped[str] = mapped_column(Text, default="")
+    stats: Mapped[dict] = mapped_column(JSON, default=dict)
+    at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    __table_args__ = (Index("ux_ingested_object", "tenant_id", "source_id", "key", "fingerprint", unique=True),)
