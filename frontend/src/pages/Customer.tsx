@@ -1,4 +1,5 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { BreakGlassPanel } from '../components/access/BreakGlass'
 import { fmtDate, fmtMoney } from '../api'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill, Priority } from '../components/ui'
@@ -49,7 +50,7 @@ export default function Customer() {
   const { data, error, reload } = useApi<Profile>(`/customers/${id}`)
   const kyc = useApi<Kyc>(`/customers/${id}/kyc`)
   const refresh = () => { kyc.reload(); reload() } // a new rating shows in the heading too
-  if (!data) return <Loading error={error} />
+  if (!data) return error ? <BreakGlassPanel kind="customer" target={id!} error={error} onOpened={() => { reload(); kyc.reload() }} /> : <Loading />
   const { party: p, totals: t } = data
   const open = (c: Counterparty) => nav(c.party_id ? `/customers/${c.party_id}` : `/counterparties/${c.entity_id}`)
   return (

@@ -175,7 +175,7 @@ def test_seeing_the_full_numbers_needs_a_reason_and_leaves_a_trace(s, ada):  # n
 def test_the_seeded_customer_profile_shows_a_complete_masked_identity(client):
     profile = client.get("/api/customers/P10001", headers=h(T)).json()
     who = profile["party"]["identity"]
-    assert who["born"] and who["address"]["one_line"] and who["missing"] == [] and who["booking_jurisdiction"] == "US"
+    assert who["born"] and who["address"]["one_line"] and who["missing"] == [] and who["booking_jurisdiction"] in ("US", "CA")  # Meridian books in the US, and a quarter in Canada
     assert any(i["kind"] == "ssn" and i["value"].startswith("•") for i in who["identifiers"])
     r = client.post("/api/customers/P10001/identifiers/reveal", json={"reason": "Checking a filing"}, headers=h(T, "kai"))
     assert r.status_code == 200 and not any(i["value"].startswith("•") for i in r.json()["identifiers"])

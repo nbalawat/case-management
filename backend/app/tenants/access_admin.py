@@ -66,6 +66,15 @@ def _check_views(policy: AccessPolicy, case_types: dict[str, dict]) -> list[str]
             if blind:
                 raise AccessPolicyError(f"draft: {p.name} is in the queue '{policy.queues[q]}' but could not see the "
                                         f"{', '.join(case_types[t]['title'] for t in blind)} cases that arrive there")
+    unknown = sorted(policy.tipping_off.case_types - set(case_types))
+    if unknown:
+        warnings.append(f"Tipping-off names case type(s) this client does not run: {', '.join(unknown)}")
+    for q, types in arrives.items():
+        for p in policy.queue_members(q):
+            hidden = sorted(types & policy.tipping_off.case_types) if p.customer_facing else []
+            if hidden:
+                raise AccessPolicyError(f"draft: {p.name} is customer-facing but is in the queue '{policy.queues[q]}', where "
+                                        f"{', '.join(case_types[t]['title'] for t in hidden)} cases arrive that tipping-off rules hide from them")
     if any("restrict_case" in r.permissions for r in policy.roles.values()):
         stuck = [policy.queues[q] for q in arrives if q in policy.queues and not any(p.can("view_restricted") for p in policy.queue_members(q))]
         if stuck:

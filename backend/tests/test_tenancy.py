@@ -69,6 +69,7 @@ FACTORY = {
                                                  left_name="A", right_name="B", score=0.9),
     "AskLog": lambda k: m.AskLog(id=f"q-{k}", conversation_id=f"ask-{k}", asked_by="x", role="analyst", question="q"),
     "Engagement": lambda k: m.Engagement(id=f"eng-{k}", staff_id="priya", roles=["analyst"], ends=NOW, proposed_by="x"),
+    "AccessGrant": lambda k: m.AccessGrant(id=f"brk-{k}", person="x", kind="case", target=f"case-{k}", reason="r", ends=NOW),
     "AccessEvent": lambda k: m.AccessEvent(actor="x", org="provider", kind="provider.request"),
 }
 # Tables that hold no client data at all: the client list itself and the provider's own staff directory.
