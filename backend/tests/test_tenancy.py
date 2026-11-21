@@ -10,6 +10,7 @@ from app.db import Base, session_scope
 from app.domain import models as m
 from app.ai.usage import ModelUsage
 from app.views.store import GridSetting, SavedView
+from app.directory import models as dm
 from app.notifications.store import Notification
 from app.public import models as pm
 from app.tenancy import SCOPED, TenantError, tenant_of
@@ -83,6 +84,10 @@ FACTORY = {
     "ApiToken": lambda k: pm.ApiToken(id=f"tok-{k}", digest=f"t-{k}", client_id=f"cfc_{k}", expires=NOW),
     "ApiIdempotency": lambda k: pm.ApiIdempotency(caller="app:x", key="same-key", fingerprint="f"),
     "ApiCall": lambda k: pm.ApiCall(request_id="r", caller="app:x", caller_kind="app", method="GET", route="/cases", status=200),
+    "DirectoryUser": lambda k: dm.DirectoryUser(id=f"du-{k}", user_name="same.name@example.com"),
+    "DirectoryGroup": lambda k: dm.DirectoryGroup(id=f"dg-{k}", display_name="Same Group"),
+    "DirectoryMember": lambda k: dm.DirectoryMember(group_id=f"dg-{k}", user_id=f"du-{k}"),
+    "ScimToken": lambda k: dm.ScimToken(id=f"scim-{k}", digest=f"d-{k}", hint="abcd", created_by="x"),
     "WebhookEndpoint": lambda k: pm.WebhookEndpoint(id=f"whk-{k}", client_id="app:x", url="https://example.com", secret="s", created_by="x"),
     "WebhookDelivery": lambda k: pm.WebhookDelivery(id=f"msg-{k}", endpoint_id=f"whk-{k}", event_id="same-event", event_type="t", payload="{}"),
     "Engagement": lambda k: m.Engagement(id=f"eng-{k}", staff_id="priya", roles=["analyst"], ends=NOW, proposed_by="x"),

@@ -36,5 +36,6 @@ def test_no_two_features_claim_the_same_endpoint():
     assert [k for k, n in claims.items() if n > 1] == []
 
 
-def test_only_sign_in_is_public():
-    assert sorted(m.__name__ for m in feature_modules() if getattr(m, "PUBLIC", False)) == ["app.api.auth"]
+def test_only_sign_in_and_provisioning_are_public():
+    # SCIM is called by the client's identity provider, which has no person's sign-in: it checks its own token.
+    assert sorted(m.__name__ for m in feature_modules() if getattr(m, "PUBLIC", False)) == ["app.api.auth", "app.api.scim"]

@@ -54,6 +54,7 @@ auth:
   operatorIssuer: ""
   operatorAudience: caseforge
   operatorClaim: preferred_username
+  operatorMfa: true      # platform staff tokens must show a second factor ('amr')
 
 eventBus:
   url: ""               # kafka://broker:9092,broker2:9092. Empty: events wait in the outbox and no worker is deployed.
