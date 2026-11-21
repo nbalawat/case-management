@@ -34,6 +34,15 @@ class WorkflowEngine(Protocol):
     def observe_filings(self, tenant_id: str, filing_ids: Iterable[str]) -> None:
         """Reports to a regulator were sent, answered or replaced. Called after commit."""
 
+    def run_job(self, s: Session, name: str, params: dict, persona: Persona | None) -> dict:
+        """Run a registered job (app.workflow.jobs) and return its result. A background job is only started, after commit."""
+
+    def brief(self, s: Session, case: Case) -> None:
+        """Have the agents a case type declares brief this case: at once on the built-in engine, durably and retried on Temporal."""
+
+    def start_jobs(self, items: list[tuple[str, str, dict, str | None]]) -> None:
+        """Background jobs queued in a transaction that has just committed: (tenant, name, params, persona id)."""
+
     def status(self, tenant_id: str) -> dict:
         """Where this client's case workflows run, for the operator and the Integrations page. Never raises."""
 
@@ -50,6 +59,19 @@ class BuiltinEngine:
         return None  # nothing to keep in step: the sweep reads the database
 
     def observe_filings(self, tenant_id: str, filing_ids: Iterable[str]) -> None:
+        return None
+
+    def run_job(self, s: Session, name: str, params: dict, persona: Persona | None) -> dict:
+        from .jobs import run_inline
+
+        return run_inline(s, name, params, persona)
+
+    def brief(self, s: Session, case: Case) -> None:
+        from ..agents.investigator import investigate
+
+        investigate(s, case)
+
+    def start_jobs(self, items: list[tuple[str, str, dict, str | None]]) -> None:
         return None
 
     def status(self, tenant_id: str) -> dict:

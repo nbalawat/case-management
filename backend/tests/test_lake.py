@@ -246,3 +246,26 @@ def test_the_status_view_lists_this_clients_tables(world, store, tmp_path, monke
     finally:
         object.__setattr__(settings, "lake_catalog", "")
     assert status.lake(T)["connected"] is False and "operational database" in status.lake(T)["note"]
+
+
+def test_a_busy_stream_is_gathered_into_fewer_larger_writes(world, store):
+    write_events(world, 6)
+    relay.drain(world.bus)
+    sink = LakeSink(world.bus, store, group="gather", flush_rows=10, flush_seconds=3600)
+    assert sink.step(max_messages=4) == {} and sink.step(max_messages=4) == {}  # 6 waiting, under the 10 it writes at
+    assert not store.tables(T) or len(rows(store)) == 0
+    write_events(world, 6)
+    relay.drain(world.bus)
+    done = sink.step()
+    assert done[(T, "case_events")].rows == 12 and len(rows(store)) == 12
+    assert store.tables(T)[0].commits == 1  # one table commit for all twelve
+
+
+def test_gathered_messages_not_yet_written_are_read_again_by_the_next_sink(world, store):
+    write_events(world, 3)
+    relay.drain(world.bus)
+    first = LakeSink(world.bus, store, group="later", flush_rows=100, flush_seconds=3600)
+    assert first.step() == {}
+    first.close()  # stopped while holding three it had not written
+    out = LakeSink(world.bus, store, group="later").step()
+    assert out[(T, "case_events")].rows == 3 and len(rows(store)) == 3

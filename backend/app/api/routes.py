@@ -211,7 +211,7 @@ def post_run(body: FeedIn, s: Session = Depends(get_session), p: Persona = Depen
     alerts = run_detection(s, touched)
     cases = route_alerts(s, alerts)
     for c in cases:
-        investigate(s, c)
+        engine().brief(s, c)
     resolution.resolve(s)
     return {"feed": {"id": feed.id, "name": feed.name, "status": feed.status, "stats": feed.stats},
             "new_parties": len(set(s.scalars(select(Party.id))) - before), "alerts": len(alerts),
@@ -236,7 +236,7 @@ def post_alert(body: AlertIn, s: Session = Depends(machine_session)):
     duplicate = s.scalars(select(Alert.id).where(Alert.dedupe_key == key)).first() is not None
     alert, case = ingest_external_alert(s, **body.model_dump())
     if case is not None:
-        investigate(s, case)
+        engine().brief(s, case)
     return {"alert_id": alert.id, "case_id": alert.case_id, "duplicate": duplicate, "status": alert.status}
 
 

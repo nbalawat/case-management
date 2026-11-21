@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import uuid
 from collections.abc import Iterable
@@ -105,6 +106,75 @@ class TemporalEngine:
             except Exception:  # noqa: BLE001  the worker adopts every open case at its next pass, so nothing is lost
                 self.reset()
                 log.warning("Could not tell %d case workflow(s) at %s; the worker will catch up", len(ids), tenant_id, exc_info=True)
+
+        bridge.submit(go)
+
+    # ---- registered jobs ---------------------------------------------------------------------------------------------
+
+    def run_job(self, s: Session, name: str, params: dict, persona: Persona | None) -> dict:
+        """Run a job as a JobWorkflow and wait for it (a background job is queued to start after commit instead)."""
+        from temporalio.client import WorkflowFailureError
+        from temporalio.common import WorkflowIDConflictPolicy
+        from temporalio.exceptions import ApplicationError
+        from temporalio.service import RPCError
+
+        from ..tenancy import tenant_of
+        from ..workflow import jobs
+        from ..workflow.observer import JOBS
+        from .workflows import JOB_REFUSED, JobWorkflow
+
+        job = jobs.get(name)
+        if not _on_the_application_database(s):
+            return jobs.run_inline(s, name, params, persona)
+        tenant_id, pid = tenant_of(s), persona.id if persona else None
+        if job.background:
+            s.info.setdefault(JOBS, []).append((tenant_id, name, params, pid))
+            return {"queued": True}
+        s.commit()
+
+        async def go() -> dict:
+            client = await self._client(tenant_id)
+            return await client.execute_workflow(JobWorkflow.run, args=[tenant_id, name, params, pid, job.attempts, job.timeout_seconds],
+                                                 id=temporal.job_id(tenant_id, name, job.key(params)), task_queue=settings.temporal_task_queue,
+                                                 id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING, result_type=dict)
+
+        try:
+            return bridge.call(go, timeout=job.timeout_seconds * job.attempts + 30)
+        except WorkflowFailureError as e:
+            cause = e.cause
+            while cause is not None and not (isinstance(cause, ApplicationError) and cause.type == JOB_REFUSED):
+                cause = cause.cause
+            if cause is not None and cause.details:
+                module, cls = str(cause.details[0]).split(":")
+                raise getattr(importlib.import_module(module), cls)(cause.message) from None
+            raise EngineUnavailable(f"The {name.replace('.', ' ')} job failed after {job.attempts} attempts. Nothing it had not finished was kept.") from e
+        except (TimeoutError, RPCError, temporal.DurableError) as e:
+            self.reset()
+            raise EngineUnavailable("The workflow engine did not answer. Try again in a moment.") from e
+        finally:
+            s.expire_all()
+
+    def brief(self, s: Session, case: Case) -> None:
+        """Queue the case's briefing: a JobWorkflow starts it after commit, and retries it if the agents or their model fail."""
+        self.run_job(s, "agents.brief", {"case_id": case.id, "token": uuid.uuid4().hex[:12]}, None)
+
+    def start_jobs(self, items: list[tuple[str, str, dict, str | None]]) -> None:
+        from temporalio.common import WorkflowIDConflictPolicy
+
+        from ..workflow import jobs
+        from .workflows import JobWorkflow
+
+        async def go() -> None:
+            for tenant_id, name, params, pid in items:
+                job = jobs.get(name)
+                try:
+                    client = await self._client(tenant_id)
+                    await client.start_workflow(JobWorkflow.run, args=[tenant_id, name, params, pid, job.attempts, job.timeout_seconds],
+                                                id=temporal.job_id(tenant_id, name, job.key(params)), task_queue=settings.temporal_task_queue,
+                                                id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING)
+                except Exception:  # noqa: BLE001  logged; the work it stood for can be asked for again
+                    self.reset()
+                    log.warning("Could not start %s for %s at %s", name, params, tenant_id, exc_info=True)
 
         bridge.submit(go)
 

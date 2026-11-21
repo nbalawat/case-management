@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { PencilRuler } from 'lucide-react'
 import { api, fmtDateTime, words } from '../api'
 import { useApi } from '../useApi'
 import { useNameOf, usePeople } from '../shell/people'
 import { Card, Loading, Pill } from '../components/ui'
+import { composerApi } from '../features/composer/api'
 import WorkflowDiagram from '../components/WorkflowDiagram'
 
 type Task = { id: string; label: string; required?: boolean }
@@ -69,6 +72,9 @@ export default function Workflows() {
   const types = useApi<CT[]>('/case-types')
   const scen = useApi<Scenario[]>('/scenarios')
   const nameOf = useNameOf()
+  const nav = useNavigate()
+  const { can } = usePeople()
+  const [opening, setOpening] = useState(false)
   const [sel, setSel] = useState<string | null>(null)
   const [stage, setStage] = useState<string | null>(null)
   if (!types.data) return <Loading error={types.error} />
@@ -76,13 +82,20 @@ export default function Workflows() {
   const st = ct.states.find(s => s.id === stage) ?? ct.states.find(s => s.id === ct.initial_state)!
   const label = (id: string) => ct.states.find(s => s.id === id)?.label ?? id
   const open = Object.values(ct.open_by_state).reduce((a, b) => a + b, 0)
+  const compose = can('publish_workflow')
+  const openInDesigner = () => {
+    setOpening(true)
+    composerApi.create({ template: `case_type:${ct.case_type}` }).then(d => nav(`/workflows/designer/${d.id}`)).catch(() => setOpening(false))
+  }
   return (
     <>
-      <div className="page-h"><h1>Workflows</h1><p>Each case type is a versioned definition: stages, who works them, what must be done, which steps are allowed and under what conditions. Changing one is a configuration change, checked before it goes live. Versions published here belong to this client only.</p></div>
+      <div className="page-h"><h1>Workflows</h1><p>Each case type is a versioned definition: stages, who works them, what must be done, which steps are allowed and under what conditions. Changing one is a configuration change, checked before it goes live. Versions published here belong to this client only.</p>
+        {compose && <div className="toolbar"><Link className="cf-link-btn" to="/workflows/designer"><PencilRuler size={14} />Compose a new workflow</Link></div>}</div>
       <div className="seg" role="group" aria-label="Case type">
         {types.data.map(t => <button key={t.case_type} aria-pressed={t.case_type === ct.case_type} onClick={() => { setSel(t.case_type); setStage(null) }}>{t.title}</button>)}
       </div>
-      <Card title={`${ct.title} · v${ct.version}`} action={<span className="muted small">{ct.domain} · {open} open case{open === 1 ? '' : 's'} · select a stage for its detail</span>}>
+      <Card title={`${ct.title} · v${ct.version}`} action={<span className="muted small">{ct.domain} · {open} open case{open === 1 ? '' : 's'} · select a stage for its detail
+        {compose && <button className="ghost" disabled={opening} onClick={openInDesigner}><PencilRuler size={14} />{opening ? 'Opening…' : 'Open in designer'}</button>}</span>}>
         <WorkflowDiagram states={ct.states} steps={ct.transitions} initial={ct.initial_state} counts={ct.open_by_state} selected={st.id} onSelect={setStage} />
       </Card>
       <div className="cols-2">

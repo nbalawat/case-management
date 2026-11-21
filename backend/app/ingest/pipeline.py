@@ -307,7 +307,7 @@ def _write_rejects(s: Session, source: DataSource, run: PipelineRun, key: str, r
 @system_work
 def run_source(s: Session, source: DataSource, by: str, trigger: str = "manual", batch_id: str | None = None) -> PipelineRun:
     """Run one source now. Never raises for a problem with the data or the storage: the run records it."""
-    from ..agents.investigator import investigate
+    from ..workflow import engine
     from ..alerts.hub import route_alerts
     from ..detection.engine import run_detection
 
@@ -358,7 +358,7 @@ def run_source(s: Session, source: DataSource, by: str, trigger: str = "manual",
         alerts = run_detection(s, touched)
         cases = route_alerts(s, alerts)
         for c in cases:
-            investigate(s, c)
+            engine().brief(s, c)
         totals["alerts"], totals["cases"] = len(alerts), len(cases)
         _step(run, "detect", "done", f"{len(alerts)} alert(s) raised across {len(touched)} customer(s), {len(cases)} case(s) opened or updated",
               alerts=len(alerts), cases=len(cases))
