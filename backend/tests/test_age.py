@@ -168,3 +168,64 @@ def test_ids_with_quotes_and_dollars_are_data_not_cypher(engine, s):
         cur.execute(age._LINKS.format(g=name), (json.dumps({"rows": [[nasty[i], nasty[i + 1]] for i in range(4)]}),), prepare=True)
     assert engine.size(T) == (5, 4)
     assert engine.route(T, nasty[0], nasty[4], 6) == nasty
+
+
+# ---- the picture around a customer, two steps out
+
+def tangle(w, n=120, seed=7):
+    rng = random.Random(seed)
+    firms = [f"{a} {b}" for a in ("Amber", "Birch", "Cobalt", "Dune", "Ember", "Flint", "Garnet", "Heron") for b in ("Quay", "Ridge", "Vale", "Works", "Yard")]
+    for i in range(n):
+        w.customer(f"P{i}", f"Person Number{i}", occupation=f"job{i}")
+        w.pay(f"P{i}", "Citywide Utilities", 80)  # common: shown beside each customer, never a connection
+        for firm in rng.sample(firms, rng.choice((1, 2, 2))):
+            w.pay(f"P{i}", firm, rng.choice((500, 900, 4000)))
+    w.resolve()
+
+
+def test_on_a_tangled_network_the_picture_drawn_through_the_engine_is_the_databases_for_every_customer(w, engine):
+    tangle(w)
+    drawn = {}
+    for i in range(120):
+        drawn[i] = (graph.related_customers(w.s, f"P{i}"), graph.neighbourhood(w.s, f"P{i}"))
+    object.__setattr__(settings, "graph_url", "")
+    for i in range(120):
+        assert (graph.related_customers(w.s, f"P{i}"), graph.neighbourhood(w.s, f"P{i}")) == drawn[i], i
+    assert sum(bool(r) for r, _ in drawn.values()) > 100 and any(p["hidden"] for _, p in drawn.values())
+
+
+def test_two_steps_out_is_what_the_relationships_say_and_never_passes_through_a_common_counterparty(w, engine):
+    from test_graphstore import two_steps
+
+    tangle(w, n=80)
+    utility = w.entity("Citywide Utilities").id
+    for i in (0, 7, 33, 79):
+        got = engine.shared(T, cust(f"P{i}"))
+        assert got == two_steps(w.s, cust(f"P{i}")) and got and all(utility not in pair and cust(f"P{i}") != pair[1] for pair in got)
+    assert engine.shared(T, "E-nobody") == []
+
+
+def test_one_clients_picture_never_reaches_into_anothers_graph(db, engine):
+    for tenant, people in ((T, ("P1", "P2")), (OTHER, ("P1", "P2", "P3"))):
+        db.onboard(tenant)
+        with db.tenant(tenant) as s:
+            w = World(s)
+            for i in range(60):
+                w.customer(f"Q{i}", f"Other Person{i}", occupation=f"job{i}")
+                w.pay(f"Q{i}", "Citywide Utilities", 80)
+            for pid in people:
+                w.customer(pid, f"Person {pid} of {tenant}")
+                w.pay(pid, "Sable Ridge Imports", 9000)
+            w.resolve()
+            s.commit()
+    with db.tenant(T) as s:
+        assert [r["party_id"] for r in graph.related_customers(s, "P1")] == ["P2"]
+    with db.tenant(OTHER) as s:
+        assert [r["party_id"] for r in graph.related_customers(s, "P1")] == ["P2", "P3"]
+
+
+def test_before_a_clients_graph_is_built_the_picture_comes_from_the_database(w, engine, caplog):
+    trio(w)
+    engine.drop(T)
+    assert [r["party_id"] for r in graph.related_customers(w.s, "P1")] == ["P2", "P3"]
+    assert "reading the network from the database" in caplog.text

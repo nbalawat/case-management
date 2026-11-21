@@ -29,3 +29,4 @@ data/quarantine/
 data/evidence/
 # Stream jobs rendered for a client by `make flink-job`
 deploy/flink/jobs/
+.schemas/
