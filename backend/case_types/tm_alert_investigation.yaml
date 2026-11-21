@@ -46,11 +46,11 @@ states:
 
 transitions:
   - {from: triage, to: investigation, label: Escalate to investigation, roles: [analyst, investigator], requires: [tasks]}
-  - {from: triage, to: closed_no_sar, label: Close as not suspicious, roles: [analyst, investigator], requires: [tasks, note]}
+  - {from: triage, to: closed_no_sar, label: Close as not suspicious, roles: [analyst, investigator], requires: [tasks, note, reason]}
   - {from: investigation, to: awaiting_information, label: Park for information, roles: [investigator], requires: [open_request]}
   - {from: awaiting_information, to: investigation, label: Resume investigation, roles: [investigator], requires: [requests_answered]}
   - {from: investigation, to: sar_drafting, label: Recommend SAR, roles: [investigator], requires: [tasks]}
-  - {from: investigation, to: closed_no_sar, label: Close, no SAR, roles: [investigator], requires: [tasks, note]}
+  - {from: investigation, to: closed_no_sar, label: Close, no SAR, roles: [investigator], requires: [tasks, note, reason]}
   - {from: sar_drafting, to: mlro_review, label: Submit for MLRO review, roles: [investigator], requires: [tasks, narrative]}
   # Ordinary filings: the MLRO approves and files.
   - from: mlro_review

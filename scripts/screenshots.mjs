@@ -105,6 +105,89 @@ await page.getByRole('button', { name: 'Cancel' }).click()
 await as('ana')
 await go('/'); await page.getByText('You can see:').waitFor()
 await go('/cases'); await shot('24-cases-as-analyst')
+// Entities: one customer's whole picture, the network around them, a counterparty under all its spellings, the desk, and search.
+const H = { 'X-Tenant': 'meridian', 'X-Persona': 'audra' }
+const desk = await (await fetch(`${base}/api/entities`, { headers: H })).json()
+// The most telling subject: a customer of a flagged firm who already has an open case, at the firm most customers share.
+let firm = desk.flagged[0], subject = null
+for (const f of desk.flagged) {
+  const d = await (await fetch(`${base}/api/counterparties/${f.id}`, { headers: H })).json()
+  for (const c of d.customers) {
+    if (!subject || c.open_cases > subject.open_cases || (c.open_cases === subject.open_cases && f.customers > firm.customers)) { subject = c; firm = f }
+  }
+}
+await as('ivan')
+await go(`/customers/${subject.party_id}`); await page.locator('.net svg').waitFor(); await shot('28-customer-360')
+await page.locator('.net-node.flagged rect').first().hover(); await page.locator('.net').screenshot({ path: `${out}29-payment-network.png` })
+await go(`/counterparties/${firm.id}`); await shot('30-counterparty')
+await go('/entities'); await page.getByRole('button', { name: 'Same' }).first().click()
+await page.getByText('Decisions on record').waitFor(); await shot('31-entities-desk')
+await page.getByLabel('Search customers, counterparties, cases').fill('volkof')
+await page.locator('.search-pop button').first().waitFor(); await page.screenshot({ path: `${out}32-search.png` })
+await page.keyboard.press('Escape')
+// Regulatory reports: the register, one accepted SAR with its document, and a CTR prepared and sent from a cash day.
+await as('maya')
+await go('/filings'); await page.getByText('Cash over $10,000').waitFor(); await shot('33-reports')
+await page.getByRole('button', { name: 'Accepted' }).click()
+await page.locator('table.rows tbody tr').first().click(); await page.locator('pre.doc').waitFor(); await shot('34-report-accepted')
+await go('/filings'); await page.getByRole('button', { name: 'Prepare CTR' }).first().click()
+await page.getByRole('button', { name: 'Send to the regulator' }).click()
+await page.getByText('Record the regulator').waitFor(); await shot('35-ctr-sent')
+// Casework at volume: a closing reason, a merge, bulk steps, waiting alerts, a QA scorecard and its findings, and the client's lists.
+const fresh = await (await fetch(`${base}/api/cases?status=open`, { headers: H })).json()
+const twins = fresh.filter(c => c.case_type === 'tm_alert_investigation' && fresh.some(o => o.id !== c.id && o.party_id === c.party_id && o.case_type === c.case_type))
+await as('ana')
+const twin = twins.find(c => !c.owner) ?? twins[0]
+const keep = twins.find(c => c.id !== twin.id && c.party_id === twin.party_id)
+await fetch(`${base}/api/cases/${keep.id}/claim`, { method: 'POST', headers: { 'X-Tenant': 'meridian', 'X-Persona': 'ana', 'Content-Type': 'application/json' }, body: '{}' })
+await go(`/cases/${twin.id}`); await page.getByText('Related cases').waitFor()
+await page.getByLabel('Closing reason').selectOption({ index: 2 })
+await page.getByLabel('Why these are one matter').fill('Same pass-through pattern, carried over twice from the previous system')
+await shot('36-closing-reason-and-merge')
+await go('/cases')
+const boxes = page.locator('table.rows tbody input[type=checkbox]')
+for (const i of [0, 1, 2, 3]) await boxes.nth(i).check()
+await page.locator('.bulk').waitFor(); await page.getByRole('button', { name: 'Claim', exact: true }).click()
+await page.locator('.bulk-result').waitFor(); await page.screenshot({ path: `${out}37-bulk-actions.png` })
+await go('/alerts'); await page.getByText('Hibernation rules').waitFor(); await shot('38-alert-intake')
+await as('quinn')
+const review = fresh.find(c => c.case_type === 'qa_review')
+await go(`/cases/${review.id}`); await page.getByText('QA scorecard').waitFor()
+for (const g of await page.locator('.scorecard .criterion').all()) await g.getByRole('button', { name: 'Met', exact: true }).click()
+await page.locator('.scorecard .criterion').nth(1).getByRole('button', { name: 'Partly' }).click()
+await page.locator('.scorecard .criterion').nth(1).locator('select').selectOption('weak_rationale')
+await page.locator('.scorecard .criterion').nth(1).locator('input').fill('Says the activity is normal but not why')
+await page.getByRole('button', { name: 'Save scorecard' }).click(); await page.getByText('Scorecard saved').waitFor()
+await page.locator('.scorecard').scrollIntoViewIfNeeded(); await shot('39-qa-scorecard')
+await as('tara')
+await go('/team'); await page.getByText('Quality assurance findings').waitFor(); await shot('40-qa-findings')
+await as('omar')
+await go('/reference'); await page.getByText('Reasons for closing a case').waitFor(); await shot('41-lists')
+// KYC depth: the desk, a rating waiting for a second person, an ownership chart, documents with custody, and flow of funds.
+const kycDesk = await (await fetch(`${base}/api/kyc`, { headers: H })).json()
+const owned = name => kycDesk.structures.find(x => x.party_name.startsWith(name)).party_id
+await as('maya')
+await go('/kyc'); await page.getByText('Lower ratings waiting for a second person').waitFor(); await shot('42-kyc-desk')
+await go(`/customers/${kycDesk.pending_overrides[0].party_id}`); await page.locator('.scale').waitFor()
+await page.locator('section.card', { hasText: 'Risk rating' }).first().screenshot({ path: `${out}43-risk-rating-override.png` })
+await as('ivan')
+await go(`/customers/${owned('Northwind')}`); await page.locator('svg.own').waitFor(); await shot('44-customer-kyc')
+await page.locator('section.card', { hasText: 'Ownership and control' }).screenshot({ path: `${out}45-ownership.png` })
+const papers = kycDesk.documents.find(d => d.expired) ?? kycDesk.documents[0]
+await go(`/customers/${papers.party_id}`); await page.locator('table.docs').waitFor()
+await page.locator('table.docs button.cite').first().click(); await page.locator('.custody').waitFor()
+await page.locator('section.card', { hasText: 'Documents' }).last().screenshot({ path: `${out}46-documents.png` })
+// The case whose alerted payments show the most: money both in and out, ideally through a flagged firm.
+let moving = null, best = -1
+for (const c of fresh.filter(c => c.case_type === 'tm_alert_investigation').slice(0, 40)) {
+  const f = await (await fetch(`${base}/api/customers/${c.party_id}/flow?case_id=${c.id}`, { headers: H })).json()
+  const score = Math.min(f.sources?.length ?? 0, f.destinations?.length ?? 0) * 10 + (f.sources?.length ?? 0) + (f.destinations?.length ?? 0)
+    + 5 * [...(f.sources ?? []), ...(f.destinations ?? [])].filter(n => n.flags.length).length
+  if (score > best) { best = score; moving = c }
+}
+await as('maya')
+await go(`/cases/${moving.id}`); await page.locator('svg.flow').waitFor()
+await page.locator('section.card', { hasText: 'Flow of funds' }).screenshot({ path: `${out}47-flow-of-funds.png` })
 // A second client: different people, roles and workloads, and its own access policy to edit.
 await as('joy', 'kestrel')
 await go('/'); await shot('12-second-client-my-work')

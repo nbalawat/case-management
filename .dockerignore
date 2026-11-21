@@ -1,0 +1,9 @@
+# Keep the host machine out of the image: its virtualenv and builds are for another OS.
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+.git
+data
+docs

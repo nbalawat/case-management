@@ -182,7 +182,7 @@ def test_overdue_request_is_flagged_once(s):
 # --- QA sampling -----------------------------------------------------------------
 def _close_no_sar(s, c):
     complete_stage_tasks(s, c, P["ana"])
-    transition(s, c, "closed_no_sar", P["ana"], "benign")
+    transition(s, c, "closed_no_sar", P["ana"], "benign", reason="consistent_with_history")
 
 
 def test_qa_sampling_is_deterministic_and_close_to_the_declared_rate():
@@ -201,10 +201,16 @@ def test_failed_qa_reopens_the_case_and_passed_qa_does_not(s, monkeypatch):
     assert review.case_type == "qa_review" and review.queue == "qa"
     with pytest.raises(TransitionError):
         transition(s, review, "failed", P["ivan"], "x")  # only QA decides
+    with pytest.raises(TransitionError, match="Score the case"):
+        transition(s, review, "failed", P["quinn"], "Rationale incomplete")  # a decision needs a scorecard behind it
+    from app import reference
+    from app.cases import scorecard
+    marks = {c["code"]: {"mark": "met"} for c in reference.codes(s, "qa_criteria")}
+    scorecard.score(s, review, P["quinn"], marks | {"rationale_clear": {"mark": "not_met", "root_cause": "weak_rationale"}})
     transition(s, review, "failed", P["quinn"], "Rationale incomplete")
     assert c.closed is None and c.state == "investigation" and c.disposition is None and c.queue == "aml-l2"
     complete_stage_tasks(s, c, P["ivan"])
-    transition(s, c, "closed_no_sar", P["ivan"], "documented")
+    transition(s, c, "closed_no_sar", P["ivan"], "documented", reason="explained_by_documents")
     s.flush()
     assert s.query(Case).filter(Case.parent_id == c.id).count() == 1  # a case is sampled once
     kinds = [e.kind for e in s.query(CaseEvent).filter(CaseEvent.case_id == c.id)]

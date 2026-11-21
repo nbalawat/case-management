@@ -30,6 +30,7 @@ def make_engine(url: str | None = None):
             cur = conn.cursor()
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA synchronous=NORMAL")
+            cur.execute("PRAGMA foreign_keys=ON")  # SQLite ignores foreign keys unless told; Postgres never does
             cur.close()
     return eng
 
@@ -44,7 +45,7 @@ def init_db(eng=None) -> None:
     Base.metadata.create_all(eng or engine)
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 12
 
 
 def ensure_schema(eng=None) -> None:

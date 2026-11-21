@@ -5,6 +5,9 @@ from the client's own systems, so they are only unique within a client: their ke
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import random
 import uuid
 from datetime import datetime, timezone
 
@@ -19,8 +22,22 @@ def now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+_id_source: contextvars.ContextVar[random.Random | None] = contextvars.ContextVar("id_source", default=None)
+
+
 def new_id(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:10]}"
+    source = _id_source.get()
+    return f"{prefix}-{source.getrandbits(40):010x}" if source is not None else f"{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+@contextlib.contextmanager
+def repeatable_ids(seed: str):
+    """Inside this block ids come from a seeded stream, so synthetic data is identical on every run. Never used for live work."""
+    token = _id_source.set(random.Random(seed))
+    try:
+        yield
+    finally:
+        _id_source.reset(token)
 
 
 class Tenant(Base):
@@ -98,6 +115,8 @@ class Alert(TenantScoped, Base):
     status: Mapped[str] = mapped_column(String(20), default="new")
     case_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    wake_by: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # while hibernated: when it closes if nothing else arrives
+    policy_note: Mapped[str] = mapped_column(String(300), default="")  # what a rule did with it, in words
     # The triage agent's reading of the alert: score, reasons, linked alerts and what it did or proposed.
     triage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Set when an agent closed the alert on its own (status auto_closed). qa_sample marks the ones a person must check.
@@ -178,15 +197,42 @@ class Feed(TenantScoped, Base):
     stats: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class CodeList(TenantKeyed, Base):
+    """A client's own version of a reference list, such as its reasons for closing a case. Absent means the library's list applies."""
+
+    __tablename__ = "code_list"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    codes: Mapped[list] = mapped_column(JSON, default=list)
+    updated_by: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
 class Filing(TenantScoped, Base):
+    """A report to a regulator: the document as rendered, where it is in its life, and what the regulator said back."""
+
     __tablename__ = "filing"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    case_id: Mapped[str] = mapped_column(String(40), index=True)
-    kind: Mapped[str] = mapped_column(String(20))
+    case_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)  # none for reports no case led to, such as a CTR
+    party_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # SAR | STR | CTR
+    format: Mapped[str] = mapped_column(String(30), default="record")  # which renderer wrote the document
+    status: Mapped[str] = mapped_column(String(20), default="prepared", index=True)  # prepared | submitted | acknowledged | rejected | superseded
     filed_by: Mapped[str] = mapped_column(String(40))
-    filed_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    sha256: Mapped[str] = mapped_column(String(64))
-    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    filed_at: Mapped[datetime] = mapped_column(DateTime, default=now)  # when it was prepared
+    due: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sha256: Mapped[str] = mapped_column(String(64))  # of the document, so a later change cannot go unnoticed
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)  # the report in neutral form, before any format
+    document: Mapped[str] = mapped_column(Text, default="")
+    problems: Mapped[list] = mapped_column(JSON, default=list)  # what stops it being sent
+    submitted_by: Mapped[str] = mapped_column(String(40), default="")
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    channel: Mapped[str] = mapped_column(String(30), default="")
+    receipt: Mapped[str] = mapped_column(String(200), default="")  # what the channel handed back, such as a file path or tracking id
+    reference: Mapped[str] = mapped_column(String(60), default="")  # the regulator's own number once it accepts
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rejection: Mapped[str] = mapped_column(Text, default="")
+    amends_id: Mapped[str] = mapped_column(String(40), default="")  # the earlier filing this one corrects
+    history: Mapped[list] = mapped_column(JSON, default=list)  # who did what to it, for reports no case holds
 
 
 class InfoRequest(TenantScoped, Base):
@@ -376,3 +422,129 @@ class MediaItem(TenantScoped, Base):
     title: Mapped[str] = mapped_column(String(300))
     body: Mapped[str] = mapped_column(Text)
     __table_args__ = (party_fk(),)
+
+
+class Entity(TenantKeyed, Base):
+    """One real-world party as the platform understands it: a customer, or a counterparty seen in their payments."""
+
+    __tablename__ = "entity"
+    id: Mapped[str] = mapped_column(String(60), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)  # customer | counterparty
+    name: Mapped[str] = mapped_column(String(200))  # the spelling seen most
+    key: Mapped[str] = mapped_column(String(200), index=True)  # normalised name
+    party_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)  # set for a customer
+    countries: Mapped[list] = mapped_column(JSON, default=list)
+    aliases: Mapped[list] = mapped_column(JSON, default=list)  # [{name, count, how, score}]
+    flags: Mapped[list] = mapped_column(JSON, default=list)  # watchlist | high_risk_country | common
+    customers: Mapped[int] = mapped_column(Integer, default=0)  # how many customers transact with it
+    txns: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class EntityEdge(TenantScoped, Base):
+    """Money between a customer and a counterparty, summed. The network view is drawn from these."""
+
+    __tablename__ = "entity_edge"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    entity_id: Mapped[str] = mapped_column(String(60), index=True)
+    txns: Mapped[int] = mapped_column(Integer, default=0)
+    sent: Mapped[float] = mapped_column(Float, default=0.0)
+    received: Mapped[float] = mapped_column(Float, default=0.0)
+    first: Mapped[datetime] = mapped_column(DateTime)
+    last: Mapped[datetime] = mapped_column(DateTime)
+    channels: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class MatchCandidate(TenantKeyed, Base):
+    """Two records that may be the same party. A person decides; the decision survives every later run."""
+
+    __tablename__ = "match_candidate"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30), index=True)  # counterparty_variant | duplicate_customer | customer_as_counterparty
+    left_key: Mapped[str] = mapped_column(String(220))  # stable keys, not entity ids, so decisions outlive a rebuild
+    right_key: Mapped[str] = mapped_column(String(220))
+    left_name: Mapped[str] = mapped_column(String(200))
+    right_name: Mapped[str] = mapped_column(String(200))
+    score: Mapped[float] = mapped_column(Float)
+    reasons: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(12), default="open", index=True)  # open | same | different
+    decided_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    __table_args__ = (UniqueConstraint("tenant_id", "left_key", "right_key"),)
+
+
+class OwnershipStructure(TenantScoped, Base):
+    """Who owns and controls a customer, as recorded at one moment. A change is a new version; nothing is overwritten."""
+
+    __tablename__ = "ownership_structure"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    current: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    nodes: Mapped[list] = mapped_column(JSON, default=list)  # [{key, name, kind, country, pep, verified}]
+    links: Mapped[list] = mapped_column(JSON, default=list)  # [{owner, owned, percent, control}], owned "customer" is the customer itself
+    source: Mapped[str] = mapped_column(String(80), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    recorded_by: Mapped[str] = mapped_column(String(40))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class RiskAssessment(TenantScoped, Base):
+    """One scoring of a customer under the client's risk model, with any override and who approved it."""
+
+    __tablename__ = "risk_assessment"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    current: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    by: Mapped[str] = mapped_column(String(40))
+    score: Mapped[int] = mapped_column(Integer)
+    band: Mapped[str] = mapped_column(String(10))  # what the model says
+    final_band: Mapped[str] = mapped_column(String(10))  # what stands, after any override
+    factors: Mapped[list] = mapped_column(JSON, default=list)  # [{code, label, points, applies, evidence}]
+    model: Mapped[str] = mapped_column(String(16), default="")  # fingerprint of the factor and band lists used
+    override: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {band, reason_code, note, by, at, status, decided_by, decided_at, decision_note}
+
+
+class Evidence(TenantScoped, Base):
+    """A document held for a customer. The bytes live in object storage; this row holds the fingerprint and the chain of custody."""
+
+    __tablename__ = "evidence"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    case_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(200))
+    filename: Mapped[str] = mapped_column(String(200))
+    media_type: Mapped[str] = mapped_column(String(80))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    key: Mapped[str] = mapped_column(String(300))  # where the original is, relative to the client's evidence store
+    status: Mapped[str] = mapped_column(String(12), default="current", index=True)  # current | superseded | withdrawn
+    expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    uploaded_by: Mapped[str] = mapped_column(String(40))
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    verified_by: Mapped[str | None] = mapped_column(String(40), nullable=True)  # a person confirmed it against the original
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    redacted_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    redacted_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    redactions: Mapped[list] = mapped_column(JSON, default=list)  # [{kind, count}]
+    custody: Mapped[list] = mapped_column(JSON, default=list)  # [{at, by, action, detail, prev, hash}], each entry sealing the one before
+
+
+class KycTrigger(TenantScoped, Base):
+    """Something that happened to a customer between reviews and what was done about it."""
+
+    __tablename__ = "kyc_trigger"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    key: Mapped[str] = mapped_column(String(200))  # the same event never fires twice
+    __table_args__ = (UniqueConstraint("tenant_id", "key"),)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    outcome: Mapped[str] = mapped_column(String(16))  # opened_review | joined_review | noted
+    case_id: Mapped[str | None] = mapped_column(String(40), nullable=True)

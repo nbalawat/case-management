@@ -25,6 +25,12 @@ FACTORY = {
     "CaseEvent": lambda k: m.CaseEvent(case_id=f"case-{k}", actor="x", actor_kind="system", kind="note"),
     "AgentRun": lambda k: m.AgentRun(id=f"run-{k}", case_id=f"case-{k}"),
     "Feed": lambda k: m.Feed(id=f"feed-{k}", name="f", source_system="core"),
+    "CodeList": lambda k: m.CodeList(id="disposition_reasons", codes=[{"code": k, "label": k}], updated_by="x"),
+    "OwnershipStructure": lambda k: m.OwnershipStructure(id=f"own-{k}", party_id="P1", recorded_by="x"),
+    "RiskAssessment": lambda k: m.RiskAssessment(id=f"risk-{k}", party_id="P1", by="x", score=1, band="low", final_band="low"),
+    "Evidence": lambda k: m.Evidence(id=f"ev-{k}", party_id="P1", kind="passport", title="t", filename="f", media_type="text/plain", size=1, sha256="0" * 64,
+                                     key=f"k-{k}", uploaded_by="x"),
+    "KycTrigger": lambda k: m.KycTrigger(id=f"trg-{k}", party_id="P1", kind="document_expired", key="same key", outcome="noted"),
     "Filing": lambda k: m.Filing(id=f"sar-{k}", case_id=f"case-{k}", kind="SAR", filed_by="x", sha256="0" * 64),
     "InfoRequest": lambda k: m.InfoRequest(id=f"rfi-{k}", case_id=f"case-{k}", recipient="customer", question="q", raised_by="x", due=NOW),
     "WorkflowVersion": lambda k: m.WorkflowVersion(case_type="tm_alert_investigation", version="9.0.0", source="x", published_by="x"),
@@ -37,6 +43,10 @@ FACTORY = {
     "AgentStep": lambda k: m.AgentStep(run_id=f"run-{k}", agent="triage", agent_version="1", level="L2"),
     "AgentJob": lambda k: m.AgentJob(id=f"job-{k}", kind="evaluation", started_by="x"),
     "MediaItem": lambda k: m.MediaItem(id=f"med-{k}", party_id="P1", source="s", title="t", body="b"),
+    "Entity": lambda k: m.Entity(id=f"ent-{k}", kind="counterparty", name="Acme", key="acme"),
+    "EntityEdge": lambda k: m.EntityEdge(party_id="P1", entity_id=f"ent-{k}", first=NOW, last=NOW),
+    "MatchCandidate": lambda k: m.MatchCandidate(id=f"mc-{k}", kind="counterparty_variant", left_key="same a", right_key="same b",
+                                                 left_name="A", right_name="B", score=0.9),
     "AskLog": lambda k: m.AskLog(id=f"q-{k}", conversation_id=f"ask-{k}", asked_by="x", role="analyst", question="q"),
 }
 ORDER = ["Party", "Account", "Transaction", "Case", "Alert"]  # parents first; the rest in any order
@@ -93,7 +103,11 @@ def test_another_clients_primary_key_finds_nothing(two, model):
 
 @pytest.mark.parametrize("model", SCOPED_MODELS, ids=lambda c: c.__name__)
 def test_bulk_update_and_delete_stay_inside_the_client(two, model):
+    order = [t.name for t in m.Base.metadata.sorted_tables]  # parents first
+    after = [x for x in SCOPED_MODELS if order.index(x.__tablename__) > order.index(model.__tablename__)]
     with two.tenant(A) as s:
+        for dependent in sorted(after, key=lambda x: -order.index(x.__tablename__)):  # rows that point at this one go first
+            s.execute(delete(dependent))
         s.execute(delete(model))
         s.commit()
     with two.platform() as p:

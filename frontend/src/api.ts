@@ -30,9 +30,25 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return r.json()
 }
 
+/** Fetch a file as the signed-in person and hand it to the browser to save. */
+async function download(path: string) {
+  const r = await fetch(`/api${path}`, { headers: identity() })
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}))
+    throw new Error(body.detail || `Download failed (${r.status})`)
+  }
+  const name = /filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') ?? '')?.[1] ?? 'document'
+  const url = URL.createObjectURL(await r.blob())
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
+  download,
   get: <T,>(path: string) => req<T>(path),
   post: <T,>(path: string, body?: unknown) => req<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
+  put: <T,>(path: string, body?: unknown) => req<T>(path, { method: 'PUT', body: JSON.stringify(body ?? {}) }),
 }
 
 export const fmtMoney = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })

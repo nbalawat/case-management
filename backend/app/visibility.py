@@ -124,8 +124,8 @@ def _filter_by_viewer(state) -> None:
 
     visible = visible_ids(session, v)
     opts = [with_loader_criteria(Case, Case.id.in_(visible), include_aliases=True)]
-    for child in (CaseEvent, AgentRun, InfoRequest, Filing):
+    for child in (CaseEvent, AgentRun, InfoRequest):
         opts.append(with_loader_criteria(child, child.case_id.in_(visible), include_aliases=True))
-    for loose in (Alert, AgentStep):  # rows that may belong to no case at all
+    for loose in (Alert, AgentStep, Filing):  # rows that may belong to no case at all
         opts.append(with_loader_criteria(loose, or_(loose.case_id.is_(None), loose.case_id.in_(visible)), include_aliases=True))
     state.statement = state.statement.options(*opts)

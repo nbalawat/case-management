@@ -23,10 +23,10 @@ states:
   discounted: {label: Discounted, kind: closed, disposition: false_positive}
 
 transitions:
-  - {from: adjudication, to: discounted, label: Discount as false positive, roles: [analyst, sanctions_officer], requires: [tasks, note]}
+  - {from: adjudication, to: discounted, label: Discount as false positive, roles: [analyst, sanctions_officer], requires: [tasks, note, reason]}
   - {from: adjudication, to: escalated, label: Escalate possible match, roles: [analyst, sanctions_officer], requires: [tasks]}
   - {from: escalated, to: blocked, label: Confirm match and block, roles: [sanctions_officer, mlro], requires: [tasks, note], four_eyes: true}
-  - {from: escalated, to: discounted, label: Discount after review, roles: [sanctions_officer, mlro], requires: [note], four_eyes: true}
+  - {from: escalated, to: discounted, label: Discount after review, roles: [sanctions_officer, mlro], requires: [note, reason], four_eyes: true}
 
 sla:
   clock: OFAC blocked-property report

@@ -6,7 +6,7 @@ from app.agents.investigator import investigate
 from app.alerts.hub import ingest_external_alert, route_alerts
 from app.cases.service import TransitionError, complete_stage_tasks, save_narrative, transition
 from app.detection.engine import run_detection
-from app.domain.models import Account, CaseEvent, Filing, Party, Transaction
+from app.domain.models import Account, Case, CaseEvent, Filing, Party, Transaction
 from support import PERSONAS, T
 from app.ingest.connectors import CsvConnector
 from app.ingest.mapping import HeuristicProposer
@@ -83,8 +83,10 @@ def test_workflow_guards_roles_four_eyes_and_files(s):
     transition(s, case, "filed", maya)
     s.flush()
     assert case.disposition == "sar_filed" and s.query(Filing).count() == 1
-    kinds = [e.kind for e in s.query(CaseEvent).order_by(CaseEvent.id)]
+    kinds = [e.kind for e in s.query(CaseEvent).filter(CaseEvent.case_id == case.id).order_by(CaseEvent.id)]
     assert kinds[0] == "case.created" and kinds[-1] == "sar.filed"
+    review = s.query(Case).filter(Case.case_type == "kyc_refresh").one()  # a filed report makes perpetual KYC look at the customer again
+    assert review.party_id == case.party_id and "kyc.trigger" in [e.kind for e in s.query(CaseEvent).filter(CaseEvent.case_id == review.id)]
 
 
 def test_four_eyes_blocks_drafter(s):

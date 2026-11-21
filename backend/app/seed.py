@@ -16,19 +16,20 @@ from sqlalchemy.orm import Session
 from .agents import model_mode
 from .agents.investigator import investigate
 from .alerts.hub import ingest_external_alert, route_alerts
+from . import reference
 from .cases import assignments, conditions, publishing, requests
 from .cases.case_types import library, load_case_types
-from .cases.service import (TransitionError, applicable_targets, complete_stage_tasks, create_case, definition, facts,
+from .cases.service import (TransitionError, applicable_targets, complete_stage_tasks, create_case, definition, facts, reasons_for,
                             save_narrative, transition)
 from .cases.timers import run_timers
 from .config import settings
 from .db import Base, engine, ensure_schema, session_scope
 from .detection.engine import run_detection
 from .domain.access import Persona
-from .domain.models import Account, Case, MediaItem, Party, Transaction, now
+from .domain.models import Account, Case, MediaItem, Party, Transaction, now, repeatable_ids
 from .domain.personas import policy_of
 from .tenancy import tenant_of
-from .tenants.onboarding import onboard
+from .tenants.onboarding import onboard, set_filing
 from .tenants.registry import reset
 
 FIRST = ["Elena", "Marcus", "Priya", "Tomás", "Aisha", "Daniel", "Mei", "Jonas", "Fatima", "Lucas", "Ingrid", "Kwame", "Sofia",
@@ -40,6 +41,9 @@ JOBS = ["teacher", "nurse", "software engineer", "electrician", "accountant", "s
 MERCHANTS = ["Harbor Grocers", "Citywide Utilities", "Maple Street Pharmacy", "Northline Transit", "Orchard Rent Co",
              "Brightwave Telecom", "Summit Insurance", "Corner Cafe", "Lakeside Fitness", "Atlas Fuel"]
 EMPLOYERS = ["Kestrel Logistics Payroll", "Bluefin Health Payroll", "Ridgeway Schools Payroll", "Tessera Software Payroll"]
+# Near names that may or may not be the same firm: a person has to say.
+SHELL_NEAR = {"Bluepeak Holdings SA": "Bluepeak Holding Group SA", "Meridian Trade Partners": "Meridian Trading Partners Intl",
+              "Orion Global Consulting Ltd": "Orion Global Consultants", "Sable Ridge Imports": "Sable Ridge Import Export"}
 SHELLS = ["Orion Global Consulting Ltd", "Bluepeak Holdings SA", "Meridian Trade Partners", "Sable Ridge Imports", "Quanta Ventures LLC"]
 
 
@@ -47,6 +51,21 @@ class Gen:
     def __init__(self, s: Session, seed: int = 7, end: datetime | None = None):
         self.s, self.r, self.end, self.n = s, random.Random(seed), end or now(), 0
         self.txns: list[Transaction] = []
+        self.v = random.Random(seed + 1000)  # its own stream, so spelling variety does not disturb the planted patterns
+
+    def shell(self) -> str:
+        """A shell company's name the way payment messages really carry it: mostly clean, sometimes not."""
+        name = self.r.choice(SHELLS)
+        roll = self.v.random()
+        if roll < 0.12:
+            return name.upper()
+        if roll < 0.22:
+            return name.rsplit(" ", 1)[0] if name.split()[-1] in ("Ltd", "SA", "LLC") else f"{name} Ltd"
+        if roll < 0.30:
+            return name.replace(" Ltd", ", Ltd.").replace(" LLC", " L.L.C.").replace(" SA", " S.A.")
+        if roll < 0.48:
+            return SHELL_NEAR.get(name, name)
+        return name
 
     def party(self, occupation: str | None = None, risk: str = "low", pep: bool = False) -> Party:
         self.n += 1
@@ -104,7 +123,7 @@ class Gen:
             self.txn(p, start, amt, "in", "wire", "Halcyon Brokerage Services")
             self.txn(p, start + timedelta(hours=20), amt * 0.97, "out", "wire", "First National Title & Escrow")
         else:
-            self.txn(p, start, amt, "in", "wire", self.r.choice(SHELLS), self.r.choice(["CY", "AE", "HK", "US"]))
+            self.txn(p, start, amt, "in", "wire", self.shell(), self.r.choice(["CY", "AE", "HK", "US"]))
             left, k = amt * self.r.uniform(0.88, 0.98), self.r.randint(2, 4)
             for i in range(k):
                 self.txn(p, start + timedelta(hours=4 + i * 9), left / k, "out", self.r.choice(["wire", "p2p"]),
@@ -117,7 +136,7 @@ class Gen:
         start = self.when(lo, hi).replace(day=min(self.when(lo, hi).day, 20))
         for i in range(self.r.randint(2, 4)):
             self.txn(p, start + timedelta(days=i), self.r.uniform(6000, 24000), "out", "wire",
-                     self.r.choice(SHELLS), self.r.choice(["IR", "SY", "MM"]))
+                     self.shell(), self.r.choice(["IR", "SY", "MM"]))
         return p
 
     def sanctions(self, lo: int, hi: int, name: str, country: str) -> Party:
@@ -166,7 +185,9 @@ class Desk:
             assignments.claim(self.s, c, p, ts=at - timedelta(minutes=20))
         if tasks:
             complete_stage_tasks(self.s, c, p, ts=at - timedelta(minutes=5))
-        transition(self.s, c, to, p, note, ts=at)
+        offered = reasons_for(self.s, definition(c)["states"][to].get("disposition"))
+        reason = offered[int(c.id[-4:], 16) % len(offered)]["code"] if offered else ""  # varied, and the same on every run
+        transition(self.s, c, to, p, note, ts=at, reason=reason)
         return at
 
     def own(self, c: Case, at: datetime, salt: int = 0) -> Persona:
@@ -259,14 +280,32 @@ def _work_qa(d: Desk) -> None:
     """Most sampled cases are reviewed; the most recent one fails and sends its case back to the team."""
     reviews = sorted(d.s.scalars(select(Case).where(Case.case_type == "qa_review")), key=lambda c: c.created)
     due = [c for c in reviews if (d.g.end - c.created).total_seconds() / 3600 >= 48]
+    from .cases import scorecard
+
+    criteria = [c["code"] for c in reference.codes(d.s, "qa_criteria")]
+    # The review that fails is always of a monitoring case: its finding is about a transaction pattern, and which cases are
+    # sampled varies from run to run, so the choice must not depend on the sample.
+    monitoring = [c for c in due if (p := d.s.get(Case, c.parent_id)) is not None and p.case_type == "tm_alert_investigation"]
+    to_fail = (monitoring or due)[-1] if due else None
     for n, c in enumerate(due):
-        if c is due[-1]:
+        if c is to_fail:
             at = d.g.end - timedelta(hours=7)
             reviewer = d.own(c, at - timedelta(hours=1))
+            marks = {k: {"mark": "met"} for k in criteria} | {
+                "rationale_clear": {"mark": "not_met", "root_cause": "weak_rationale", "comment": "Does not say why the pattern fits the business."},
+                "evidence_complete": {"mark": "partly", "root_cause": "missing_evidence"}}
+            scorecard.score(d.s, c, reviewer, marks, ts=at - timedelta(minutes=10))
             transition(d.s, c, "failed", reviewer,
                        "The closure rationale does not explain why the pattern fits the customer's business. Returned for a documented explanation.", ts=at)
         elif n % 4 != 3:
-            d.step(c, "passed", c.created + timedelta(hours=d.g.r.randint(20, 44)))
+            at = c.created + timedelta(hours=d.g.r.randint(20, 44))
+            marks = {k: {"mark": "met"} for k in criteria}
+            if n % 3 == 1:
+                marks["timely"] = {"mark": "partly", "root_cause": "late"}
+            if n % 5 == 2:
+                marks["evidence_complete"] = {"mark": "partly", "root_cause": "missing_evidence"}
+            scorecard.score(d.s, c, d.own(c, at - timedelta(hours=1)), marks, ts=min(at, d.g.end - timedelta(hours=1)) - timedelta(minutes=30))
+            d.step(c, "passed", at)
 
 
 APPLICANTS = [("Helena Brandt", "architect", "low", False, 30), ("Rashid Al-Amin", "import-export trader", "high", False, 70),
@@ -562,12 +601,18 @@ def _seed_media(s: Session, end: datetime, geo: list[Party], rapid: list[Party],
             f"A lawsuit was filed against Dr. Anselm {surname}, a dentist in another state. The claim concerns a lease.")
 
 
+ID_STREAM = 5  # which id stream the demo uses; this one leaves QA with passed, failed and waiting reviews to show
+
+
 def _rules_only(fn):
     """Seeding always uses the rule-based agents: it must cost nothing and give the same data every time."""
     @functools.wraps(fn)
-    def inner(*a, **kw):
-        with model_mode.suspended():
-            return fn(*a, **kw)
+    def inner(s, *a, **kw):
+        # Ids are drawn from a stream fixed by the client, so which cases QA samples, and everything that follows, never varies.
+        from .kyc import triggers  # history being back-filled is not news: perpetual KYC stays quiet except where the demo asks
+
+        with model_mode.suspended(), repeatable_ids(f"seed:{tenant_of(s)}:{ID_STREAM}"), triggers.suspended():
+            return fn(s, *a, **kw)
     return inner
 
 
@@ -588,6 +633,7 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     for _ in range(profile.benign_rapid):
         g.rapid(2, 40, benign=True)
     geo = [g.geo(1, 40) for _ in range(profile.geo)]
+    s.flush()  # customers must exist before anything that points at them by id alone
     _seed_media(s, g.end, geo, rapid, benign, ordinary)
     for name, country, lo, hi in SANCTIONS[:profile.sanctions]:
         g.sanctions(lo, hi, name, country or g.r.choice(["DE", "SG", "AE", "GB"]))
@@ -610,10 +656,77 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     if "qa_review" in types:
         _work_qa(desk)
     _restrict_one(s, g.end)
+    _seed_regulator_answers(s, g.end)
+    if tenant_of(s) == "meridian":
+        _seed_waiting_alerts(s, g.end, ordinary)
+        _seed_duplicate_case(s, g.end, types)
+    from .entities import resolution
+    from .kyc import demo as kyc_demo
+
+    extra = kyc_demo.seed(s, g.end)
+    resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))
-    return {"parties": g.n, "transactions": len(g.txns), "alerts": len(alerts) + len(planted), "cases": total,
-            "stage_breaches": sweep["stage_breaches"]}
+    return {"parties": g.n + extra["parties"], "transactions": len(g.txns) + extra["transactions"], "alerts": len(alerts) + len(planted), "cases": total,
+            "stage_breaches": sweep["stage_breaches"], "entities": resolved}
+
+
+def _seed_waiting_alerts(s: Session, end: datetime, ordinary: list[Party]) -> None:
+    """One client lets weak alerts wait: some are waiting now, one waited out its time, and one was joined by a stronger alert."""
+    admin = next(p for p in policy_of(tenant_of(s)).people.values() if p.can(reference.MANAGE))
+    reference.replace(s, "alert_hibernation", [{"code": "weak_first_alert", "label": "Weak first alert", "scenario": "*", "below": 0.55, "days": 30}], admin)
+    quiet = [p for p in ordinary if not s.scalars(select(Case.id).where(Case.party_id == p.id)).first()][:5]
+    plan = [(0, 3, 0.48, "rapid_movement", "Funds in and out within two days, small amounts."), (1, 11, 0.51, "structuring", "Two cash deposits a little under the threshold."),
+            (2, 19, 0.44, "high_risk_geo", "One small wire to a higher-risk country."), (3, 41, 0.47, "structuring", "Two cash deposits a little under the threshold."),
+            (4, 9, 0.52, "rapid_movement", "Funds in and out within two days, small amounts."), (4, 2, 0.81, "rapid_movement", "Larger pass-through repeated a week later.")]
+    for n, (who, days_ago, score, scenario, why) in enumerate(plan):
+        if who < len(quiet):
+            ingest_external_alert(s, source="legacy-monitoring", external_id=f"LM-{7000 + n}", scenario=scenario, party_id=quiet[who].id, score=score,
+                                  explanation=why, created=end - timedelta(days=days_ago))
+
+
+def _seed_duplicate_case(s: Session, end: datetime, types: dict) -> None:
+    """A second open case about a customer who already has one, as arrives when history is brought over from an older system."""
+    from .domain.models import Alert, new_id
+
+    first = s.scalars(select(Case).where(Case.case_type == "tm_alert_investigation", Case.state == "triage", Case.closed.is_(None), Case.restricted.is_(False))
+                      .order_by(Case.created, Case.id)).first()
+    if first is None:
+        return
+    at = end - timedelta(days=1, hours=4)
+    twin = create_case(s, types["tm_alert_investigation"], first.party_id, "medium", created=at, actor="legacy-import")
+    s.add(Alert(id=new_id("alr"), dedupe_key=f"ext:legacy-import:{first.party_id}", source="legacy-import", scenario="rapid_movement", scenario_version="external",
+                party_id=first.party_id, score=0.66, explanation="Carried over from the previous case system: funds passed through within days.", txn_ids=[],
+                case_id=twin.id, created=at))
+    s.flush()
+
+
+def _seed_regulator_answers(s: Session, end: datetime) -> None:
+    """Reports at every point of their life: accepted with a number, sent back and corrected, still waiting, and a CTR to prepare."""
+    from .domain.models import Filing
+    from .filing import report as reports
+    from .filing import service as filing
+
+    officer = next((p for p in policy_of(tenant_of(s)).people.values() if p.can(reports.SUBMIT)), None)
+    if officer is None:
+        return
+    s.flush()
+    sent = list(s.scalars(select(Filing).where(Filing.status == "submitted").order_by(Filing.filed_at, Filing.id)))
+    for n, f in enumerate(sent):
+        answered = f.filed_at + timedelta(days=1, hours=3)
+        if answered > end - timedelta(days=2) or (n == len(sent) - 1 and n > 1):
+            continue  # the latest is still waiting for the regulator
+        if n == 1:
+            filing.reject(s, f.id, "Subject occupation is missing and the narrative does not state the total amount involved.", officer, ts=answered)
+            fixed = filing.amend(s, f.id, officer, ts=answered + timedelta(hours=5))
+            if fixed.status == "submitted":
+                filing.acknowledge(s, fixed.id, f"31000{int(fixed.sha256[:8], 16) % 10**9:09d}", officer, ts=answered + timedelta(days=1))
+        else:
+            filing.acknowledge(s, f.id, f"31000{int(f.sha256[:8], 16) % 10**9:09d}", officer, ts=answered)
+    for day in reports.cash_days(s)[:3][1:]:  # one cash day is left for the demo to prepare
+        ctr = filing.prepare_ctr(s, day["party_id"], day["day"], officer, ts=end - timedelta(hours=6))
+        if not ctr.problems:
+            filing.submit(s, ctr.id, officer, ts=end - timedelta(hours=5))
 
 
 def _restrict_one(s: Session, at: datetime) -> None:
@@ -633,6 +746,19 @@ def _restrict_one(s: Session, at: datetime) -> None:
 
 
 # The demo's managed-service book: three clients of different kinds, each with its own configuration and data.
+# How each demo client reports: two under FinCEN, one to a financial intelligence unit that takes goAML.
+DEMO_FILING = {
+    "meridian": {"regime": "fincen", "channel": "outbox", "institution": {
+        "name": "Meridian Retail Bank", "tax_id": "12-3456789", "address": "100 Harbor Street", "city": "Boston", "state": "MA",
+        "postal_code": "02110", "country": "US", "regulator_code": "1", "contact_office": "Financial Intelligence Unit", "contact_phone": "617-555-0142"}},
+    "kestrel": {"regime": "fincen", "channel": "by_hand", "institution": {
+        "name": "Kestrel Payments Inc", "tax_id": "98-7654321", "address": "40 Mission Row", "city": "San Francisco", "state": "CA",
+        "postal_code": "94105", "country": "US", "regulator_code": "9", "contact_office": "Compliance", "contact_phone": "415-555-0190"}},
+    "alder": {"regime": "goaml", "channel": "outbox", "institution": {
+        "name": "Alder Private Bank SA", "tax_id": "LU12345678", "reporting_entity_id": "4471", "address": "12 Rue de l'Eau", "city": "Luxembourg",
+        "country": "LU", "contact_office": "Financial Crime Compliance", "contact_phone": "+352 555 0117"}},
+}
+
 DEMO_CLIENTS = [
     {"tenant_id": "meridian", "name": "Meridian Retail Bank", "template": "full_service_bank", "region": "us-east", "deployment": "pooled", "profile": "large"},
     {"tenant_id": "kestrel", "name": "Kestrel Payments", "template": "fintech_payments", "region": "uk-south", "deployment": "pooled", "profile": "medium"},
@@ -657,12 +783,21 @@ def _alder_own_workflow(s: Session) -> None:
         create_case(s, ct, p.id, "medium", created=now() - timedelta(hours=5), actor="kyc-scheduler")
 
 
+def _clear_evidence(tenant_id: str) -> None:
+    from .kyc import evidence
+
+    evidence.clear(tenant_id)
+
+
 def seed_demo() -> dict:
     """Onboard the demo clients through the same path the operator console uses, then fill each with its own data."""
     out = {}
     with session_scope(platform=True) as s:
         for client in DEMO_CLIENTS:
             onboard(s, **{k: v for k, v in client.items() if k != "profile"}, by="platform onboarding")
+            set_filing(s, client["tenant_id"], DEMO_FILING[client["tenant_id"]])
+            shutil.rmtree(settings.lake_dir / client["tenant_id"], ignore_errors=True)  # before seeding, which writes reports to the outbox
+            _clear_evidence(client["tenant_id"])
     for client in DEMO_CLIENTS:
         with session_scope(client["tenant_id"]) as s:
             out[client["tenant_id"]] = seed_tenant(s, PROFILES[client["profile"]])
@@ -672,7 +807,6 @@ def seed_demo() -> dict:
 
     for n, client in enumerate(DEMO_CLIENTS):
         tid = client["tenant_id"]
-        shutil.rmtree(settings.lake_dir / tid, ignore_errors=True)
         with session_scope(tid) as s:
             out[tid]["landed"] = land_core_banking_files(store_for(tid, "landing"), now(), seed=11 + n)
             admin = next(p for p in policy_of(tid).people.values() if p.can("load_data"))

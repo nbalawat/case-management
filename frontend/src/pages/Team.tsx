@@ -4,6 +4,7 @@ import { api, hoursUntil } from '../api'
 import { useApi } from '../useApi'
 import { useNameOf } from '../App'
 import { Card, Kpi, Loading, Pill, Priority, StageClock } from '../components/ui'
+import QaReport from '../components/QaReport'
 import type { CaseRow } from './Cases'
 
 type TeamData = {
@@ -25,8 +26,8 @@ export default function Team() {
   const members = (queue: string | null) => data.queues.find(q => q.id === queue)?.members ?? []
   const reassign = (id: string, owner: string) => api.post(`/cases/${id}/reassign`, { owner, reason: 'Workload balancing' })
     .then(() => { setMsg(`Reassigned to ${nameOf(owner)}.`); reload() }).catch(e => setMsg(e.message))
-  const sweep = () => api.post<{ stage_breaches: number; requests_overdue: number }>('/timers/run')
-    .then(r => { setMsg(`Clock sweep done: ${r.stage_breaches} new stage breach(es), ${r.requests_overdue} request(s) newly overdue.`); reload() }).catch(e => setMsg(e.message))
+  const sweep = () => api.post<{ stage_breaches: number; requests_overdue: number; alerts_expired: number; kyc_triggers: number }>('/timers/run')
+    .then(r => { setMsg(`Clock sweep done: ${r.stage_breaches} new stage breach(es), ${r.requests_overdue} request(s) newly overdue, ${r.alerts_expired} waiting alert(s) closed, ${r.kyc_triggers} customer event(s) found.`); reload() }).catch(e => setMsg(e.message))
   return (
     <>
       <div className="page-h"><h1>Team</h1><p>Who is carrying what, where work is stuck, and what quality assurance is finding.</p></div>
@@ -58,6 +59,7 @@ export default function Team() {
           </table>
         </Card>
       </div>
+      <QaReport />
       <Card title={`Needs attention (${data.attention.length})`}
         action={data.can_run_timers ? <button onClick={sweep}>Run clock sweep</button> : undefined}>
         {data.attention.length === 0 ? <p className="empty">No case is past its stage clock.</p> : (

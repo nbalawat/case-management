@@ -36,9 +36,9 @@ states:
 transitions:
   - {from: triage, to: customer_contact, label: Contact customer, roles: [fraud_analyst], requires: [tasks, open_request]}
   - {from: triage, to: investigation, label: Start investigation, roles: [fraud_analyst], requires: [tasks]}
-  - {from: triage, to: closed_no_fraud, label: Close as genuine, roles: [fraud_analyst], requires: [note]}
+  - {from: triage, to: closed_no_fraud, label: Close as genuine, roles: [fraud_analyst], requires: [note, reason]}
   - {from: customer_contact, to: investigation, label: Customer responded, roles: [fraud_analyst], requires: [requests_answered]}
-  - {from: customer_contact, to: closed_no_fraud, label: Customer confirms activity, roles: [fraud_analyst], requires: [note]}
+  - {from: customer_contact, to: closed_no_fraud, label: Customer confirms activity, roles: [fraud_analyst], requires: [note, reason]}
   # Small losses: the analyst refunds straight away.
   - from: investigation
     to: refunded
@@ -53,7 +53,7 @@ transitions:
     roles: [fraud_analyst]
     requires: [tasks, note]
     when: ["alerted_amount >= 5000"]
-  - {from: investigation, to: declined, label: Decline claim, roles: [fraud_analyst], requires: [tasks, note]}
+  - {from: investigation, to: declined, label: Decline claim, roles: [fraud_analyst], requires: [tasks, note, reason]}
   - {from: refund_approval, to: refunded, label: Approve refund, roles: [team_lead], requires: [note], four_eyes: true}
   - {from: refund_approval, to: investigation, label: Return to analyst, roles: [team_lead], requires: [note]}
 

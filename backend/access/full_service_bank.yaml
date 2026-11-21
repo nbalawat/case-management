@@ -16,6 +16,9 @@ permissions:
   manage_agents: Manage agents - set autonomy, switch agents off, run evaluations and batch reviews
   view_restricted: See restricted cases - matters hidden from everyone else, whatever their role
   restrict_case: Restrict a case, or lift a restriction
+  resolve_entities: Resolve entities - decide whether two records are the same customer or counterparty
+  submit_filings: Send regulatory reports - prepare, send, record the regulator's answer and amend
+  approve_risk: Approve a lower customer risk rating proposed by someone else
 
 queues:
   aml-l1: AML alert triage (L1)
@@ -35,15 +38,15 @@ queues:
 # with several roles sees what any of them shows. Restricted cases need 'view_restricted' on top.
 roles:
   analyst:           {title: L1 alert analyst, permissions: [work], sees: {scope: queues}}
-  investigator:      {title: L2 investigator, permissions: [work], sees: {scope: all, case_types: [tm_alert_investigation]}}
+  investigator:      {title: L2 investigator, permissions: [work, resolve_entities], sees: {scope: all, case_types: [tm_alert_investigation]}}
   sanctions_officer: {title: Sanctions officer, permissions: [work], sees: {scope: all, case_types: [sanctions_hit]}}
   kyc_analyst:       {title: KYC analyst, permissions: [work], sees: {scope: all, case_types: [kyc_onboarding, kyc_refresh]}}
   fraud_analyst:     {title: Fraud analyst, permissions: [work], sees: {scope: all, case_types: [fraud_claim]}}
   qa_reviewer:       {title: QA reviewer, permissions: [work]}
-  mlro:              {title: MLRO / BSA officer, permissions: [work, view_team, view_restricted, restrict_case]}
-  head_fiu:          {title: Head of FIU, permissions: [work, view_team, reassign, manage_agents, view_restricted, restrict_case]}
-  team_lead:         {title: Operations team lead, permissions: [work, view_team, reassign, run_timers]}
-  admin:             {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents]}
+  mlro:              {title: MLRO / BSA officer, permissions: [work, view_team, view_restricted, restrict_case, submit_filings, approve_risk]}
+  head_fiu:          {title: Head of FIU, permissions: [work, view_team, reassign, manage_agents, view_restricted, restrict_case, resolve_entities, submit_filings, approve_risk]}
+  team_lead:         {title: Operations team lead, permissions: [work, view_team, reassign, run_timers, resolve_entities]}
+  admin:             {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents, resolve_entities]}
   restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
   auditor:           {title: Internal auditor, permissions: [view_team, view_restricted], read_only: true}
 

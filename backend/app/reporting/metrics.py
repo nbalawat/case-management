@@ -57,7 +57,7 @@ def dashboard(s: Session) -> dict:
     return {
         "kpis": {
             "open_cases": len(open_cases), "sla_at_risk": len(at_risk), "sla_breached": len(breached),
-            "sars_filed": s.scalar(select(func.count()).select_from(Filing)) or 0,
+            "sars_filed": s.scalar(select(func.count()).select_from(Filing).where(Filing.kind.in_(("SAR", "STR")), Filing.status != "superseded")) or 0,
             "avg_days_to_close": round(sum(durations) / len(durations), 1) if durations else None,
             "agent_agreement": round(agree / total, 3) if total else None, "agent_reviewed": total,
             "transactions": s.scalar(select(func.count()).select_from(Transaction)) or 0,
