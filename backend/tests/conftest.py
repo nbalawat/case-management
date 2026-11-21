@@ -108,12 +108,9 @@ def _workflow_engine():
         return
     if not url.startswith("temporal://"):
         pytest.exit("TEST_WORKFLOW_ENGINE=temporal needs TEST_TEMPORAL_URL", returncode=2)
-    import asyncio
-    import threading
     import uuid
 
     from app.config import settings
-    from app.durable import worker
     from app.durable.engine import TemporalEngine
 
     run = uuid.uuid4().hex[:8]
@@ -127,21 +124,7 @@ def _workflow_engine():
                  "temporal_namespace_prefix": f"cfs{run}-"}.items():
         object.__setattr__(settings, k, v)
     _SUITE["engine"] = TemporalEngine()
-    stop: asyncio.Event | None = None
-    loop = asyncio.new_event_loop()
-
-    def serve() -> None:
-        nonlocal stop
-        asyncio.set_event_loop(loop)
-        stop = asyncio.Event()
-        loop.run_until_complete(worker.run(stop))
-
-    t = threading.Thread(target=serve, name="durable-worker", daemon=True)
-    t.start()
     yield "temporal"
-    if stop is not None:
-        loop.call_soon_threadsafe(stop.set)
-    t.join(timeout=30)
     _SUITE.pop("engine", None)
     for k, v in saved.items():
         object.__setattr__(settings, k, v)
@@ -150,10 +133,44 @@ def _workflow_engine():
 _SUITE: dict = {}
 
 
+class _Worker:
+    """The durable worker in a thread of its own, for as long as one test module drives the application over HTTP.
+
+    Only then: the worker reads whatever database the application is pointed at, and many tests point it at an
+    in-memory database whose one connection they are using themselves.
+    """
+
+    def __init__(self) -> None:
+        import asyncio
+        import threading
+
+        from app.durable import worker
+
+        self.loop, self.stop = asyncio.new_event_loop(), None
+        ready = threading.Event()
+
+        def serve() -> None:
+            asyncio.set_event_loop(self.loop)
+            self.stop = asyncio.Event()
+            ready.set()
+            self.loop.run_until_complete(worker.run(self.stop))
+
+        self.thread = threading.Thread(target=serve, name="durable-worker", daemon=True)
+        self.thread.start()
+        ready.wait(10)
+
+    def close(self) -> None:
+        if self.stop is not None:
+            self.loop.call_soon_threadsafe(self.stop.set)
+        self.thread.join(timeout=30)
+
+
 def _engine_for_the_app():
     """The application under test runs on the suite's engine: Temporal when asked for, otherwise the built-in one."""
     from app.workflow import use
 
+    if "engine" in _SUITE:
+        _SUITE["worker"] = _Worker()
     return use(_SUITE.get("engine"))
 
 
@@ -161,3 +178,6 @@ def _restore_engine(previous) -> None:
     from app.workflow import use
 
     use(previous)
+    w = _SUITE.pop("worker", None)
+    if w is not None:
+        w.close()
