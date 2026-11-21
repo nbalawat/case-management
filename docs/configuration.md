@@ -135,6 +135,12 @@ policy says what they may do.
 | `LINEAGE_URL` | empty | Where OpenLineage events also go: `http(s)://host/api/v1/lineage` (Marquez, DataHub, OpenMetadata, a cloud catalog's OpenLineage endpoint) or `file:///path/events.jsonl`. Empty: events are kept in the app only |
 | `LINEAGE_API_KEY` | empty | Sent as a bearer token with each event, for endpoints that need one. Keep it in the Secret |
 
+### Alert-ranking models
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MODEL_STORE_URL` | `data/models` | Where trained models are kept: any object store URL. Each file is checked against the digest recorded at training before it is loaded. Helm sets it from `storage.modelStoreUrl`. See [models](models.md) |
+
 ### Engines
 
 | Variable | Default | Meaning |

@@ -94,6 +94,7 @@ flink:
 storage:
   evidenceUrl: ""       # s3://bucket/prefix, abfss://..., gs://... Required: pods keep nothing on local disk.
   quarantineUrl: ""
+  modelStoreUrl: ""     # where trained alert-ranking models are kept (s3://, abfss://, gs://). Required when models are trained in the cluster.
 
 llm:
   agentMode: rules      # rules | model

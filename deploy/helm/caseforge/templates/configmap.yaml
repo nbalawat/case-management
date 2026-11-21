@@ -37,6 +37,9 @@ data:
   {{- with .Values.storage.quarantineUrl }}
   QUARANTINE_URL: {{ . | quote }}
   {{- end }}
+  {{- with .Values.storage.modelStoreUrl }}
+  MODEL_STORE_URL: {{ . | quote }}
+  {{- end }}
   {{- with .Values.backup.url }}
   BACKUP_URL: {{ . | quote }}
   {{- end }}
