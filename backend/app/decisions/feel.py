@@ -84,7 +84,7 @@ ANY = Test("-", any=True)
 
 _NUM = r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"
 _RANGE = re.compile(rf"^([\[\(\]])\s*({_NUM})\s*\.\.\s*({_NUM})\s*([\]\)\[])$")
-_CMP = re.compile(rf"^(<=|>=|!=|<|>|=)\s*(.+)$")
+_CMP = re.compile(r"^(<=|>=|!=|<|>|=)\s*(.+)$")
 _BARE = re.compile(r"^[A-Za-z_][\w .\-/]*$")
 
 
