@@ -29,7 +29,7 @@ def event(event_id: int, s: Session = Depends(get_session), _=Depends(require("v
 
 
 def _sent_to() -> str | None:
-    """Where events also go, without credentials or a server path: the scheme and host only."""
+    """Where events also go, without credentials or a server path: the scheme, host and port only."""
     import os
     from urllib.parse import urlsplit
 
@@ -37,4 +37,6 @@ def _sent_to() -> str | None:
     if not url:
         return None
     u = urlsplit(url)
-    return f"{u.scheme}://{u.hostname}" if u.hostname else f"{u.scheme} file"
+    if not u.hostname:
+        return f"{u.scheme} file"
+    return f"{u.scheme}://{u.hostname}" + (f":{u.port}" if u.port else "")

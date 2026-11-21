@@ -205,3 +205,14 @@ def test_api(client):
     one = client.get(f"/api/lineage/events/{evs[0]['id']}", headers=h).json()
     assert one["run"]["facets"]["caseforge"]["demo"] is True
     assert client.get("/api/lineage/events/999999", headers=h).status_code == 404
+
+
+def test_where_events_go_shows_host_and_port_but_no_credentials_or_path(monkeypatch):
+    from app.api.lineage import _sent_to
+
+    monkeypatch.setenv("LINEAGE_URL", "http://user:secret@marquez:5050/api/v1/lineage")
+    assert _sent_to() == "http://marquez:5050"
+    monkeypatch.setenv("LINEAGE_URL", "https://catalog.example.com/api/v1/lineage")
+    assert _sent_to() == "https://catalog.example.com"
+    monkeypatch.delenv("LINEAGE_URL")
+    assert _sent_to() is None
