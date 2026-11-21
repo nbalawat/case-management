@@ -1,5 +1,5 @@
 # Build the UI, then serve it and the API from one small Python image.
-FROM node:22-alpine AS ui
+FROM node:26-alpine AS ui
 WORKDIR /ui
 COPY frontend/package*.json ./
 RUN npm ci
