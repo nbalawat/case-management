@@ -2,5 +2,5 @@ template: full_service_bank
 title: Full-service bank
 summary: Every workload - monitoring, sanctions, fraud, onboarding, periodic review and QA - with specialist teams for each.
 access: full_service_bank.yaml
-case_types: [tm_alert_investigation, sanctions_hit, fraud_claim, kyc_onboarding, kyc_refresh, qa_review]
+case_types: [tm_alert_investigation, sanctions_hit, fraud_claim, kyc_onboarding, kyc_refresh, qa_review, edd_review, customer_exit, info_request_314a, subpoena, scam_reimbursement, chargeback, lookback]
 settings: {default_case_type: tm_alert_investigation}

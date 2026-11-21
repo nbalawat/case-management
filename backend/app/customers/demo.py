@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..domain.identity import normalize
-from ..domain.models import Party, PartyIdentifier, Transaction
+from ..domain.models import Account, Party, PartyIdentifier, Transaction
 from ..domain.personas import policy_of
 from ..entities import names
 from ..tenancy import tenant_of
@@ -141,6 +141,36 @@ def enrich_transactions(s: Session, tenant_id: str) -> int:
             t.counterparty_account, t.counterparty_institution = acct, bank
         n += 1
     return n
+
+
+REOPENED = {"meridian": "P90001"}  # the client where one customer was onboarded twice, and the second record's id
+
+
+def plant_duplicate(s: Session, end: datetime) -> int:
+    """One customer onboarded a second time, years later, by a branch that did not find the first record.
+
+    The new record writes the name with a middle initial and gives a new email, but the SSN, birth date and address are
+    the same: the kind of duplicate only the identity details can catch. Returns how many customers it added.
+    """
+    tenant = tenant_of(s)
+    new_id = REOPENED.get(tenant)
+    if new_id is None or s.scalars(select(Party.id).where(Party.id == new_id)).first():
+        return 0
+    first = next((p for p in s.scalars(select(Party).where(Party.kind == "person", Party.country == "US").order_by(Party.id))
+                  if p.born and any(i.kind == "ssn" for i in p.identifiers) and len(names.tokens(p.name)) == 2), None)
+    if first is None:
+        return 0
+    given, family = first.name.split(" ", 1) if " " in first.name else (first.name, "")
+    twin = Party(id=new_id, name=f"{given} {_rng('initial', tenant).choice('ABCDEJLMR')}. {family}".strip(), occupation=first.occupation,
+                 country=first.country, risk_rating="low", onboarded=end - timedelta(days=40), born=first.born, nationality=first.nationality,
+                 address_line1=first.address_line1, address_line2=first.address_line2, city=first.city, region=first.region,
+                 postal_code=first.postal_code, phone=first.phone, email=f"{given.lower()}{first.born.year % 100:02d}@example.net")
+    ssn = next(i for i in first.identifiers if i.kind == "ssn")
+    twin.identifiers.append(PartyIdentifier(id=f"pid-{hashlib.sha1(f'{tenant}|{new_id}|0'.encode()).hexdigest()[:12]}", tenant_id=tenant,
+                                            kind="ssn", value=ssn.value, normalized=ssn.normalized, issuer_country="US", source="branch onboarding"))
+    s.add_all([twin, Account(id=f"A{new_id[1:]}", party_id=new_id)])
+    s.flush()
+    return 1
 
 
 def seed(s: Session, end: datetime) -> dict:

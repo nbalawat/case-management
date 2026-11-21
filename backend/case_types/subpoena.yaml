@@ -1,0 +1,50 @@
+case_type: subpoena
+title: Subpoena or production order
+domain: AML
+version: 1.0.0
+scenarios: []
+initial_state: intake
+
+# Legal process asking for records. Check it is valid and what it covers, produce exactly that, and treat the
+# request itself as a reason to look at the customer again.
+states:
+  intake:
+    label: Intake
+    queue: aml-l2
+    sla_hours: 48
+    tasks:
+      - {id: validity, label: Validity and issuing authority checked}
+      - {id: scope, label: "Scope, period and deadline recorded"}
+      - {id: confidentiality, label: Confidentiality and non-disclosure terms noted}
+  production:
+    label: Gathering records
+    queue: aml-l2
+    sla_hours: 240
+    tasks:
+      - {id: records, label: Records gathered within scope only}
+      - {id: certified, label: Business records certification prepared}
+      - {id: risk_review, label: Customer's risk reviewed in light of the request}
+  sign_off:
+    label: MLRO sign-off
+    queue: mlro
+    sla_hours: 48
+  produced:   {label: Records produced, kind: closed, disposition: produced}
+  objected:   {label: Objected or narrowed, kind: closed, disposition: objected}
+
+transitions:
+  - {from: intake, to: production, label: Accept and gather, roles: [investigator], requires: [tasks]}
+  - {from: intake, to: sign_off, label: Refer for objection, roles: [investigator], requires: [tasks, note]}
+  - {from: production, to: sign_off, label: Send for sign-off, roles: [investigator], requires: [tasks, note]}
+  - {from: sign_off, to: produced, label: Approve production, roles: [mlro], requires: [note]}
+  - {from: sign_off, to: objected, label: Object or narrow, roles: [mlro], requires: [note]}
+  - {from: sign_off, to: production, label: Return for changes, roles: [mlro], requires: [note]}
+
+sla:
+  clock: Return date
+  due_days: 21
+escalation:
+  raise_priority: true
+  notify: mlro
+agents:
+  on_create: [data_assembly]
+  autonomy: L1

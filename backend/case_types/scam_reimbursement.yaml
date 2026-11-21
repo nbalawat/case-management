@@ -1,0 +1,50 @@
+case_type: scam_reimbursement
+title: Scam reimbursement (authorised push payment)
+domain: Fraud
+version: 1.0.0
+scenarios: []
+initial_state: intake
+
+# A customer was tricked into sending a payment. Contact the receiving bank at once, assess the claim against the
+# reimbursement rules (gross negligence, vulnerability, the time limit), and decide within the deadline.
+states:
+  intake:
+    label: Claim intake
+    queue: fraud
+    sla_hours: 4
+    tasks:
+      - {id: receiving_bank, label: Receiving bank asked to freeze and return the funds}
+      - {id: account, label: Customer's account and channels secured}
+      - {id: statement, label: Customer's account of the scam recorded}
+  assessment:
+    label: Assessment
+    queue: fraud
+    sla_hours: 72
+    tasks:
+      - {id: eligibility, label: Payment eligible and within the claim time limit}
+      - {id: vulnerability, label: Customer vulnerability considered}
+      - {id: negligence, label: Gross negligence assessed against the evidence}
+      - {id: recovery, label: Amount recovered from the receiving bank recorded}
+  approval:
+    label: Reimbursement approval
+    queue: fraud-approval
+    sla_hours: 24
+  reimbursed: {label: Reimbursed, kind: closed, disposition: reimbursed}
+  declined:   {label: Claim declined, kind: closed, disposition: claim_declined}
+
+transitions:
+  - {from: intake, to: assessment, label: Start assessment, roles: [fraud_analyst], requires: [tasks]}
+  - {from: assessment, to: approval, label: Recommend a decision, roles: [fraud_analyst], requires: [tasks, note]}
+  - {from: approval, to: reimbursed, label: Approve reimbursement, roles: [team_lead, mlro], requires: [note], four_eyes: true}
+  - {from: approval, to: declined, label: Decline the claim, roles: [team_lead, mlro], requires: [note], four_eyes: true}
+  - {from: approval, to: assessment, label: Return to analyst, roles: [team_lead, mlro], requires: [note]}
+
+sla:
+  clock: Reimbursement decision due
+  due_days: 5
+escalation:
+  raise_priority: true
+  notify: team_lead
+agents:
+  on_create: [data_assembly, fraud_analyst]
+  autonomy: L1

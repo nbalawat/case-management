@@ -1,0 +1,52 @@
+case_type: chargeback
+title: Card chargeback
+domain: Fraud
+version: 1.0.0
+scenarios: []
+initial_state: intake
+
+# A cardholder disputes a card payment. Raise the chargeback with the scheme in time, wait for the merchant's
+# answer, and decide whether to take it further.
+states:
+  intake:
+    label: Dispute intake
+    queue: fraud
+    sla_hours: 24
+    tasks:
+      - {id: reason_code, label: Scheme reason code chosen}
+      - {id: evidence, label: Cardholder's evidence attached}
+      - {id: time_limit, label: Within the scheme's time limit}
+  with_merchant:
+    label: Awaiting merchant response
+    kind: wait
+    queue: fraud
+    sla_hours: 720
+  decision:
+    label: Decision on the response
+    queue: fraud
+    sla_hours: 48
+  pre_arbitration:
+    label: Pre-arbitration approval
+    queue: fraud-approval
+    sla_hours: 48
+  won:       {label: Chargeback won, kind: closed, disposition: chargeback_won}
+  lost:      {label: Merchant's response accepted, kind: closed, disposition: chargeback_lost}
+  withdrawn: {label: Cardholder withdrew, kind: closed, disposition: withdrawn}
+
+transitions:
+  - {from: intake, to: with_merchant, label: Raise the chargeback, roles: [fraud_analyst], requires: [tasks]}
+  - {from: intake, to: withdrawn, label: Cardholder withdrew, roles: [fraud_analyst], requires: [note]}
+  - {from: with_merchant, to: decision, label: Merchant responded, roles: [fraud_analyst]}
+  - {from: with_merchant, to: won, label: No response in time, roles: [fraud_analyst], requires: [note]}
+  - {from: decision, to: won, label: Merchant accepted, roles: [fraud_analyst], requires: [note]}
+  - {from: decision, to: lost, label: Accept the merchant's response, roles: [fraud_analyst], requires: [note]}
+  - {from: decision, to: pre_arbitration, label: Recommend pre-arbitration, roles: [fraud_analyst], requires: [note]}
+  - {from: pre_arbitration, to: won, label: Arbitration won, roles: [team_lead, mlro], requires: [note]}
+  - {from: pre_arbitration, to: lost, label: Arbitration lost or not pursued, roles: [team_lead, mlro], requires: [note]}
+
+sla:
+  clock: Scheme deadline
+  due_days: 45
+agents:
+  on_create: [data_assembly]
+  autonomy: L1

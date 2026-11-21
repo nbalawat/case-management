@@ -1,0 +1,49 @@
+case_type: edd_review
+title: Enhanced due diligence
+domain: KYC
+version: 1.0.0
+scenarios: []
+initial_state: gathering
+
+# For a higher-risk customer outside the periodic cycle: a PEP, a high-risk country, a trigger from monitoring.
+# The analyst assembles the evidence; a committee member who did not assemble it decides.
+states:
+  gathering:
+    label: Evidence gathering
+    queue: kyc
+    sla_hours: 120
+    tasks:
+      - {id: ownership, label: Ownership and control structure verified to the ultimate beneficial owners}
+      - {id: source_of_funds, label: Source of funds evidenced for the activity seen}
+      - {id: source_of_wealth, label: Source of wealth evidenced and plausible}
+      - {id: media, label: Adverse media and PEP screening reviewed}
+      - {id: purpose, label: Purpose and expected activity of the relationship recorded}
+  awaiting_customer:
+    label: Awaiting customer
+    kind: wait
+    queue: kyc
+    sla_hours: 240
+  committee:
+    label: EDD committee
+    queue: kyc-edd
+    sla_hours: 72
+  approved:  {label: Approved with conditions recorded, kind: closed, disposition: edd_approved}
+  exit:      {label: Exit recommended, kind: closed, disposition: exit_recommended}
+
+transitions:
+  - {from: gathering, to: awaiting_customer, label: Ask the customer, roles: [kyc_analyst], requires: [open_request]}
+  - {from: awaiting_customer, to: gathering, label: Customer responded, roles: [kyc_analyst], requires: [requests_answered]}
+  - {from: gathering, to: committee, label: Present to committee, roles: [kyc_analyst], requires: [tasks, note]}
+  - {from: committee, to: approved, label: Approve the relationship, roles: [mlro, team_lead], requires: [note], four_eyes: true}
+  - {from: committee, to: gathering, label: Ask for more evidence, roles: [mlro, team_lead], requires: [note]}
+  - {from: committee, to: exit, label: Recommend exit, roles: [mlro, team_lead], requires: [note], four_eyes: true}
+
+sla:
+  clock: EDD decision due
+  due_days: 30
+escalation:
+  raise_priority: true
+  notify: team_lead
+agents:
+  on_create: [data_assembly, entity_research, adverse_media]
+  autonomy: L2

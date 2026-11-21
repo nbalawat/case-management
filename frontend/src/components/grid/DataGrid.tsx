@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import {
   flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type ColumnDef, type SortingState, type VisibilityState,
 } from '@tanstack/react-table'
@@ -7,7 +7,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Rows3, Rows4 } from 'lucide-
 import { cn } from '../../lib/cn'
 import { Button } from '../kit/button'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '../kit/dropdown-menu'
-import { load, save } from './prefs'
+import { useGridPrefs } from './prefs'
 import type { Density, GridColumn, SortState } from './types'
 
 const VIRTUAL_FROM = 120 // rows; below this every row is in the page, above it only what is on screen
@@ -45,9 +45,9 @@ export default function DataGrid<T>({
   id, label, columns, rows, getRowId, sorting, onSortingChange, manualSorting, selectable, selected = [], onSelectedChange,
   onOpen, onPreview, loading, empty, toolbar, footer, rowClassName,
 }: Props<T>) {
-  const [visibility, setVisibility] = useState<VisibilityState>(() => load(id, 'columns',
-    Object.fromEntries(columns.filter(c => c.meta?.hidden).map(c => [c.id ?? '', false]))))
-  const [density, setDensity] = useState<Density>(() => load(id, 'density', 'comfortable'))
+  const prefs = useGridPrefs(id)
+  const visibility = prefs.setting<VisibilityState>('columns', Object.fromEntries(columns.filter(c => c.meta?.hidden).map(c => [c.id ?? '', false])))
+  const density = prefs.setting<Density>('density', 'comfortable')
   const chosen = useMemo(() => new Set(selected), [selected])
   const pickable = useMemo(() => (selectable ? rows.filter(selectable) : []), [rows, selectable])
 
@@ -66,7 +66,7 @@ export default function DataGrid<T>({
     data: rows, columns: selectable ? [selectCol, ...columns] : columns, getRowId,
     state: { sorting: sorting as SortingState, columnVisibility: visibility },
     onSortingChange: up => onSortingChange((typeof up === 'function' ? up(sorting as SortingState) : up) as SortState),
-    onColumnVisibilityChange: up => setVisibility(v => { const next = typeof up === 'function' ? up(v) : up; save(id, 'columns', next); return next }),
+    onColumnVisibilityChange: up => prefs.putSetting('columns', typeof up === 'function' ? up(visibility) : up),
     manualSorting, enableMultiSort: true, isMultiSortEvent: e => (e as MouseEvent).shiftKey,
     getCoreRowModel: getCoreRowModel(), getSortedRowModel: manualSorting ? undefined : getSortedRowModel(),
   })
@@ -112,7 +112,7 @@ export default function DataGrid<T>({
             </DropdownMenuContent>
           </DropdownMenu>
           <Button size="sm" aria-label={density === 'compact' ? 'Comfortable rows' : 'Compact rows'} title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
-            onClick={() => { const d = density === 'compact' ? 'comfortable' : 'compact'; setDensity(d); save(id, 'density', d) }}>
+            onClick={() => prefs.putSetting('density', density === 'compact' ? 'comfortable' : 'compact')}>
             {density === 'compact' ? <Rows3 size={15} /> : <Rows4 size={15} />}
           </Button>
         </div>

@@ -105,6 +105,9 @@ def publish(s: Session, t: DecisionTable, persona: Persona, note: str = "") -> d
         raise DecisionError("The table has errors: " + "; ".join(result["analysis"]["errors"]))
     s.add(DecisionVersion(table_id=t.id, version=t.version, source=result["yaml"], published_by=persona.id, note=note))
     s.flush()
+    from .case_facts import register as offer_as_facts
+
+    offer_as_facts(t)  # a new table's answers can be tested in workflow conditions from now on
     return result
 
 
