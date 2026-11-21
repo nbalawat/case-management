@@ -1,14 +1,14 @@
 """Customer access: indexes for attribute rules, and break-glass grants
 
 Revision: 20261121194109
-Follows: 0029
+Follows: 0027
 """
 from alembic import op
 import sqlalchemy as sa
 
 
 revision = '20261121194109'
-down_revision = '0029'
+down_revision = '0027'
 branch_labels = None
 depends_on = None
 
