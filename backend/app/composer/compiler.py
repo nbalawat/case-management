@@ -31,10 +31,12 @@ class Context:
     active: dict = field(default_factory=dict)  # the client's active case types by key
     reasons: dict[str, int] = field(default_factory=dict)  # disposition -> number of reason codes offered for it
     design: Design | None = None
+    forms: dict[str, str] | None = None  # form id -> title, when the form builder is known; None skips the form checks
 
     @classmethod
-    def for_tenant(cls, tenant_id: str, policy: AccessPolicy, reasons: dict[str, int] | None = None) -> Context:
-        return cls(tenant_id, policy, load_case_types(tenant_id), reasons or {})
+    def for_tenant(cls, tenant_id: str, policy: AccessPolicy, reasons: dict[str, int] | None = None,
+                   forms: dict[str, str] | None = None) -> Context:
+        return cls(tenant_id, policy, load_case_types(tenant_id), reasons or {}, forms=forms)
 
     def step(self, edge: Edge) -> dict:
         """A step's settings with the defaults its source block gives it: an approval's approvers and four-eyes."""
@@ -118,8 +120,14 @@ def _state(node: Node) -> dict:
 
 def _transition(src: str, dst: str, step: dict, when: list) -> dict:
     t: dict = {"from": src, "to": dst, "label": str(step.get("label", "")).strip(), "roles": list(step.get("roles") or [])}
-    if step.get("requires"):
-        t["requires"] = list(step["requires"])
+    forms = [f for f in step.get("forms") or [] if f]
+    requires = list(step.get("requires") or [])
+    if forms and "form" not in requires:
+        requires.append("form")  # naming forms means waiting for them
+    if requires:
+        t["requires"] = requires
+    if forms:
+        t["forms"] = forms
     if step.get("four_eyes"):
         t["four_eyes"] = True
     if when:

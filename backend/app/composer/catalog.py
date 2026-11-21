@@ -16,7 +16,7 @@ from .compiler import Context
 from .interchange import FORMATS, queue_roles
 
 
-def _optional(module: str, fn: str, arg) -> list[dict]:
+def optional_list(module: str, fn: str, arg) -> list[dict]:
     """Lists from modules that may not be installed yet (forms, decision tables): empty when absent."""
     try:
         mod = __import__(f"app.{module}", fromlist=[fn])
@@ -66,8 +66,9 @@ def build(s: Session, ctx: Context) -> dict:
             "dispositions": [{"id": k, "label": v, "does": DISPOSITION_EFFECTS.get(k, ""), "reasons": reason_counts(s).get(k, 0)}
                              for k, v in sorted(dispositions.items())],
             "autonomy": [{"id": lv, "label": f"{lv} · {LEVEL_LABELS[lv]}", "help": LEVEL_HELP[lv]} for lv in LEVELS],
-            "forms": _optional("forms", "list_forms", s),
-            "decision_tables": _optional("decisions", "list_tables", s),
+            "forms": [{"id": f["id"], "label": f.get("title") or f["id"], "case_types": f.get("case_types") or [], "stages": f.get("stages") or []}
+                      for f in optional_list("forms", "list_forms", s)],
+            "decision_tables": optional_list("decisions", "list_tables", s),
             "live": [{"id": k, "title": ct["title"], "version": ct["version"]} for k, ct in sorted(ctx.active.items())],
         },
     }
