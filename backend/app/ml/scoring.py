@@ -39,7 +39,8 @@ def _score(s: Session, mv: ModelVersion, alerts: list[Alert]) -> dict[str, dict]
 
 
 def score(s: Session, alerts: list[Alert]) -> int:
-    """Write the champion's (and any challenger's) reading onto each alert's triage. Never stops alert handling."""
+    """Write the champion's (and any challenger's) reading onto each alert, beside (not inside) the triage agent's
+    view, so switching the agent off never hides the ranking. Never stops alert handling."""
     if not alerts:
         return 0
     done = 0
@@ -53,6 +54,6 @@ def score(s: Session, alerts: list[Alert]) -> int:
             log.warning("The %s model could not score %d alert(s): %s", role, len(alerts), e)
             continue
         for a in alerts:
-            a.triage = {**(a.triage or {}), slot: readings[a.id]}
+            a.ranking = {**(a.ranking or {}), slot: readings[a.id]}
         done = len(alerts)
     return done

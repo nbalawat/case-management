@@ -178,8 +178,8 @@ def test_the_champion_scores_new_alerts_with_reasons_and_the_challenger_alongsid
     s.add(a)
     s.flush()
     route_alerts(s, [a])
-    reading = a.triage["model"]
-    assert reading["version"] == 1 and 0 <= reading["probability"] <= 1 and a.triage["challenger_model"]["version"] == 2
+    reading = a.ranking["model"]
+    assert reading["version"] == 1 and 0 <= reading["probability"] <= 1 and a.ranking["challenger_model"]["version"] == 2
     assert reading["reasons"] and reading["reasons"][0]["feature"] in FS.names and reading["reasons"][0]["effect"] > 0
     out = drift(s, one)
     assert out["alerts"] == 1 and out["scored"] == 1 and not out["enough"] and all(f["state"] == "too_few" for f in out["features"])
@@ -192,7 +192,7 @@ def test_no_champion_scores_nothing(s):
     a = m.Alert(id="al-x", dedupe_key="x", scenario="structuring", scenario_version="1", party_id="C1", score=0.7, explanation="", created=m.now())
     s.add(a)
     s.flush()
-    assert score(s, [a]) == 0 and "model" not in (a.triage or {})
+    assert score(s, [a]) == 0 and "model" not in (a.ranking or {})
 
 
 def test_examples_include_closed_cases(s):

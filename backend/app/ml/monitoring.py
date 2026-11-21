@@ -33,7 +33,7 @@ def drift(s: Session, mv: ModelVersion, days: int = 30) -> dict:
         out["features"].append({"feature": name, "label": labels.get(name, name), "psi": index,
                                 "state": "too_few" if not out["enough"] else "moved" if index > MOVED else "watch" if index > WATCH else "stable"})
     out["features"].sort(key=lambda f: -f["psi"])
-    scored = [a.triage["model"]["probability"] for a in alerts if (a.triage or {}).get("model", {}).get("version") == mv.version]
+    scored = [a.ranking["model"]["probability"] for a in alerts if (a.ranking or {}).get("model", {}).get("version") == mv.version]
     out["scored"] = len(scored)
     out["mean_score"] = round(sum(scored) / len(scored), 4) if scored else None
     return out

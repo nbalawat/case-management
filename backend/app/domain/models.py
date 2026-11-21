@@ -180,6 +180,8 @@ class Alert(TenantScoped, Base):
     policy_note: Mapped[str] = mapped_column(String(300), default="")  # what a rule did with it, in words
     # The triage agent's reading of the alert: score, reasons, linked alerts and what it did or proposed.
     triage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # The ranking models' readings, kept apart from the triage agent's: a model scores even when the agent is off.
+    ranking: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Set when an agent closed the alert on its own (status auto_closed). qa_sample marks the ones a person must check.
     closed_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
     qa_sample: Mapped[bool] = mapped_column(Boolean, default=False)
