@@ -35,6 +35,7 @@ from .api.navigation import router as navigation_router
 from .api.case_list import router as case_list_router
 from .api.managed import router as managed_router
 from .api.client_keys import router as client_keys_router
+from .api.usage import router as usage_router
 from .api.platform import router as platform_router
 from .api.routes import router
 from .api.work import router as work_router
@@ -91,6 +92,7 @@ for r in (router, work_router, workflows_router, access_router, platform_router,
     app.include_router(r, dependencies=[Depends(signed_in)])
 app.include_router(managed_router, dependencies=[Depends(signed_in)])  # on its own line: the tuple above is a merge hotspot
 app.include_router(client_keys_router, dependencies=[Depends(signed_in)])
+app.include_router(usage_router, dependencies=[Depends(signed_in)])
 app.include_router(ai_router, dependencies=[Depends(signed_in)])  # the model gateway's set-up and usage
 app.include_router(auth_router)
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1
