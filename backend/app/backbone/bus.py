@@ -59,6 +59,10 @@ class EventBus(Protocol):
 
     def topics(self) -> list[str]: ...
 
+    def delete_topics(self, names: Iterable[str]) -> int:
+        """Remove topics and every message in them. Returns how many existed."""
+        ...
+
     def close(self) -> None: ...
 
 
@@ -95,6 +99,13 @@ class MemoryBus:
     def topics(self) -> list[str]:
         with self._lock:
             return sorted(self._logs)
+
+    def delete_topics(self, names: Iterable[str]) -> int:
+        with self._lock:
+            gone = [n for n in names if self._logs.pop(n, None) is not None]
+            for key in [k for k in self._committed if k[1] in gone]:
+                del self._committed[key]
+            return len(gone)
 
     def read(self, topic: str) -> list[Message]:
         with self._lock:

@@ -262,3 +262,44 @@ async def running(client, tenant_id: str, limit: int = 5000) -> int:
         if limit <= 0:
             break
     return n
+
+
+async def forget(base, tenant_id: str) -> dict:
+    """Erase a client that has left: its schedules and every workflow's history, and its namespace when it has its own.
+
+    With a namespace per client the namespace is deleted, which removes everything in it. In a shared namespace each
+    of the client's workflows (found by the client in its id) is deleted one by one, running or not.
+    """
+    from temporalio.api.common.v1 import WorkflowExecution
+    from temporalio.api.operatorservice.v1 import DeleteNamespaceRequest
+    from temporalio.api.workflowservice.v1 import DeleteWorkflowExecutionRequest
+    from temporalio.service import RPCError, RPCStatusCode
+
+    from . import namespaces
+
+    ns = namespaces.namespace_for(tenant_id)
+    if not await namespaces.exists(base, ns):
+        return {"namespace": ns, "deleted_namespace": False, "schedules": 0, "workflows": 0}
+    client, prefix = for_namespace(base, ns), _prefix(tenant_id) + "."
+    schedules = [s.id async for s in await client.list_schedules() if s.id.startswith(prefix)]  # every one it has, whatever it is for
+    for sid in schedules:
+        try:
+            await client.get_schedule_handle(sid).delete()
+        except RPCError as e:
+            if e.status != RPCStatusCode.NOT_FOUND:
+                raise
+    if namespaces.per_client():
+        await base.operator_service.delete_namespace(DeleteNamespaceRequest(namespace=ns))
+        return {"namespace": ns, "deleted_namespace": True, "schedules": len(schedules), "workflows": None}
+    n = 0
+    async for wf in client.list_workflows():
+        if not wf.id.startswith(prefix):
+            continue
+        try:
+            await client.workflow_service.delete_workflow_execution(DeleteWorkflowExecutionRequest(
+                namespace=ns, workflow_execution=WorkflowExecution(workflow_id=wf.id, run_id=wf.run_id)))
+            n += 1
+        except RPCError as e:
+            if e.status != RPCStatusCode.NOT_FOUND:
+                raise
+    return {"namespace": ns, "deleted_namespace": False, "schedules": len(schedules), "workflows": n}

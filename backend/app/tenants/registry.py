@@ -29,6 +29,11 @@ class TenantRuntime:
 _RUNTIMES: dict[str, TenantRuntime] = {}
 
 
+def remove(tenant_id: str) -> None:
+    """Forget a client that has left. Its requests are refused from now on as for any unknown client."""
+    _RUNTIMES.pop(tenant_id, None)
+
+
 def install(rt: TenantRuntime) -> TenantRuntime:
     _RUNTIMES[rt.id] = rt
     return rt

@@ -44,7 +44,7 @@ services:
       LOG_FORMAT: ${LOG_FORMAT:-text}            # json: one object per line, with request id, client and trace id
       LINEAGE_URL: ${LINEAGE_URL:-}              # empty: lineage is kept in the app only; make lineage sends it to Marquez too
     ports: ["8000:8000"]
-    volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
+    volumes: [evidence:/app/data/evidence, keys:/app/data/keys, warehouse:/app/data/warehouse]  # documents, the keyring that seals them, and lake tables outlive the container
     depends_on:
       db: {condition: service_healthy}
     healthcheck:
@@ -244,6 +244,7 @@ services:
 
 volumes:
   pgdata:
+  keys:
   kafkadata:
   warehouse:
   searchdata:

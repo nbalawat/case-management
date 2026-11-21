@@ -174,3 +174,17 @@ def test_the_status_view_names_the_engine_and_counts_this_clients_names(filled, 
     assert status.search_engine(OTHER)["names"] == 0
     object.__setattr__(settings, "search_url", "")
     assert status.search_engine(T) == {"engine": "database", "names": None, "note": "Names are searched in the operational database."}
+
+
+def test_dropping_one_clients_index_leaves_the_other(db, engine):
+    """Offboarding drops every index behind a client's alias; the other client still searches."""
+    for tenant, rows in ((T, [("P1", "Ada Stone")]), (OTHER, [("P1", "Ben Stone")])):
+        db.onboard(tenant)
+        with db.tenant(tenant) as s:
+            people(s, rows)
+            resolution.resolve(s)
+            s.commit()
+    assert engine.drop(T) == 1 and not engine.exists(T) and engine.count(T) == 0
+    assert engine.drop(T) == 0  # again: nothing left, no error
+    with db.tenant(OTHER) as s:
+        assert [p.name for _, p in engine.customers(s, "stone", 8)] == ["Ben Stone"]

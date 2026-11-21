@@ -95,6 +95,10 @@ def _edges(design: Design, ctx: Context) -> list[dict]:
         for req in step.get("requires") or []:
             if req not in registry.REQUIREMENTS:
                 out.append(issue("error", "edge", e.id, f"'{req}' is not something a step can require."))
+        if ctx.forms is not None:
+            for f in step.get("forms") or []:
+                if f not in ctx.forms:
+                    out.append(issue("error", "edge", e.id, f"'{f}' is not a form at this client.", "Pick one of the forms built under Forms."))
         if "tasks" in (step.get("requires") or []) and not src.config.get("tasks"):
             out.append(issue("warning", "edge", e.id, f"'{step.get('label')}' waits for the stage's tasks, but '{src.config.get('label')}' has none.",
                              "Add tasks to the stage or drop the requirement."))
