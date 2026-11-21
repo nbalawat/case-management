@@ -35,6 +35,7 @@ export function MultiSelect({ options, value, onChange, disabled, label }: { opt
             </button>
           )
         })}
+        {!options.length && !unknown.length && <span className="cf-help">Nothing to choose from yet at this client.</span>}
         {unknown.map(v => <button key={v} type="button" className="cf-toggle on bad" onClick={() => toggle(v)} title="Not known at this client"><X size={12} />{v}</button>)}
       </div>
     </div>

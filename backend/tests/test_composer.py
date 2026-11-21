@@ -384,3 +384,31 @@ def test_design_documents_reject_bad_keys_and_versions():
 
 def test_library_definitions_untouched(ctx):
     assert set(load_case_types(T)) >= {"tm_alert_investigation"}
+
+
+# --- forms on steps ----------------------------------------------------------------------------------------------------
+
+def test_a_step_can_wait_for_named_forms_and_keeps_them_through_export(ctx):
+    design = templates.build("investigation_to_filing", ctx)
+    stages = {n.id for n in design.nodes if n.type in ("stage", "approval")}
+    step = next(e for e in design.edges if e.source in stages)
+    step.config["forms"] = ["sar_decision"]
+    t = next(t for t in compile_design(design, ctx)["transitions"] if t["label"] == step.config["label"])
+    assert t["forms"] == ["sar_decision"] and "form" in t["requires"]  # naming a form means waiting for it
+    assert errors(validate(design, ctx)[0]) == []
+    for fmt in ("caseforge", "case_type"):
+        again, _ = interchange.read(interchange.write(design, ctx, fmt), ctx, fmt)
+        back = next(e for e in again.edges if e.config.get("label") == step.config["label"])
+        assert back.config["forms"] == ["sar_decision"], fmt
+
+
+def test_a_step_naming_an_unknown_form_is_a_problem(s, ctx):
+    from app.forms import list_forms
+
+    ctx.forms = {f["id"]: f["title"] for f in list_forms(s)}
+    assert "sar_decision" in ctx.forms
+    design = templates.build("investigation_to_filing", ctx)
+    stages = {n.id for n in design.nodes if n.type in ("stage", "approval")}
+    step = next(e for e in design.edges if e.source in stages)
+    step.config["forms"] = ["no_such_form"]
+    assert any("no_such_form" in i["message"] for i in errors(validate(design, ctx)[0]))

@@ -25,7 +25,7 @@ export type NodeConfig = {
 }
 
 export type DNode = { id: string; type: string; position: { x: number; y: number }; config: NodeConfig }
-export type StepConfig = { label?: string; roles?: string[]; requires?: string[]; four_eyes?: boolean; when?: CondGroup }
+export type StepConfig = { label?: string; roles?: string[]; requires?: string[]; forms?: string[]; four_eyes?: boolean; when?: CondGroup }
 export type DEdge = { id: string; source: string; target: string; handle?: string | null; config: StepConfig }
 
 export type Settings = {

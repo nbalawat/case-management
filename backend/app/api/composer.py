@@ -29,7 +29,8 @@ editor = require("publish_workflow")
 
 
 def context(s: Session, rt: TenantRuntime) -> Context:
-    return Context.for_tenant(rt.id, rt.policy, palette.reason_counts(s))
+    forms = {f["id"]: f.get("title") or f["id"] for f in palette.optional_list("forms", "list_forms", s)}
+    return Context.for_tenant(rt.id, rt.policy, palette.reason_counts(s), forms)
 
 
 def design_of(raw: dict) -> Design:
