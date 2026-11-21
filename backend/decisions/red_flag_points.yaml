@@ -1,0 +1,24 @@
+id: red_flag_points
+title: Red flag points
+version: "1.0"
+description: >-
+  Adds up red flags on a case into one number, for workflows and agents that want a single measure of concern.
+  Not bound to anything: call it by id.
+context: case
+binding: none
+hit_policy: COLLECT
+aggregation: SUM
+inputs:
+  - {name: pep, label: Politically exposed, kind: bool}
+  - {name: risk_rating, label: Customer risk, kind: text, values: [low, medium, high]}
+  - {name: alerts, label: Alerts on the case, kind: number}
+  - {name: alerted_amount, label: Alerted value, kind: number}
+  - {name: customer_kind, label: Customer kind, kind: text, values: [person, business]}
+outputs:
+  - {name: points, label: Points, kind: number, default: 0}
+rules:
+  - {id: pep, when: {pep: true}, then: {points: 30}}
+  - {id: high_risk, when: {risk_rating: high}, then: {points: 20}}
+  - {id: repeat, when: {alerts: ">= 3"}, then: {points: 15}}
+  - {id: value, when: {alerted_amount: ">= 100000"}, then: {points: 15}}
+  - {id: business, when: {customer_kind: business, alerted_amount: ">= 50000"}, then: {points: 10}}
