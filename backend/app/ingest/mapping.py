@@ -21,6 +21,9 @@ CANONICAL_FIELDS: dict[str, dict] = {
     "channel": {"required": True, "desc": "cash, wire, ach, card or p2p", "synonyms": ["chnl", "txn_type", "trans_type", "method"]},
     "counterparty": {"required": False, "desc": "Counterparty name", "synonyms": ["cntrprty_nm", "beneficiary", "payee", "originator", "other_party"]},
     "counterparty_country": {"required": False, "desc": "Counterparty country, ISO 3166 alpha-2", "synonyms": ["cntry_cd", "ctry", "bene_country", "country"]},
+    "counterparty_account": {"required": False, "desc": "Counterparty account number or IBAN", "synonyms": ["bene_acct", "cntrprty_acct", "iban", "creditor_account", "debtor_account"]},
+    "counterparty_institution": {"required": False, "desc": "Counterparty's bank: BIC, routing number or name", "synonyms": ["bene_bank", "bic", "swift", "routing_no", "agent_bic"]},
+    "purpose": {"required": False, "desc": "Payment purpose code, ISO 20022 (for example SALA, SUPP, TRAD)", "synonyms": ["purp_cd", "purpose_code", "pmt_purpose"]},
 }
 
 # Value translations applied after column mapping (code lists differ per source system).
