@@ -67,6 +67,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: services  # its own cache, so this job and the SQLite job never race to save one
       - name: Start a Temporal development server
         run: |
           docker run -d --name temporal -p 7233:7233 temporalio/temporal:1.10.1 server start-dev --ip 0.0.0.0
