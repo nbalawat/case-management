@@ -573,3 +573,41 @@ def test_a_step_when_no_worker_is_running_gives_up_and_changes_nothing(world):
         await handle(client, T, cid).terminate("test over")
     asyncio.run(go())
 
+
+
+# ---- a client leaving
+
+def test_forgetting_a_client_erases_its_workflows_and_schedules_and_no_one_elses(world):
+    """Offboarding: in a namespace of its own the namespace goes; in a shared one each of its workflows goes."""
+    ours, theirs = new_case(world, "A", 600), new_case(world, "A", 600, tenant=OTHER)
+
+    async def go():
+        base, (mine, other) = await clients(T, OTHER)
+        async with working(base, T, OTHER):
+            assert await temporal.sync(base) == {T: 1, OTHER: 1}
+            assert await running(mine, T, 1) and await running(other, OTHER, 1)
+        await temporal.ensure_schedules(mine, T)
+        await temporal.ensure_schedules(other, OTHER)
+        got = await temporal.forget(base, T)
+        assert got["schedules"] == 3
+        if world.mode == "per_client":
+            assert got["deleted_namespace"] is True
+
+            async def gone() -> bool:  # deleting a namespace is asynchronous on the server
+                return not await namespaces.exists(base, namespaces.namespace_for(T))
+            await until(gone, seconds=60)
+        else:
+            assert got["workflows"] >= 1 and got["deleted_namespace"] is False
+
+            async def none_left() -> bool:
+                return [w.id async for w in mine.list_workflows() if w.id.startswith(temporal.case_id(T, ""))] == []
+            await until(none_left, seconds=30)
+        # the other client: its workflow still runs and its schedules are all there
+        assert await temporal.running(other, OTHER) == 1
+        left = [s.id async for s in await other.list_schedules() if s.id.startswith(temporal.case_id(OTHER, "").rsplit(".case.", 1)[0])]
+        assert sorted(left) == sorted([temporal.sweep_id(OTHER), temporal.pipelines_id(OTHER), temporal.answers_id(OTHER)])
+        assert (await temporal.forget(base, T))["schedules"] == 0  # again: nothing left, no error
+        for sid in left:
+            await other.get_schedule_handle(sid).delete()
+        await handle(other, OTHER, theirs).terminate("test over")
+    asyncio.run(go())

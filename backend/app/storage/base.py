@@ -40,6 +40,10 @@ class ObjectStore(Protocol):
 
     def exists(self, key: str) -> bool: ...
 
+    def delete(self, key: str) -> None:
+        """Remove one object. Removing one that is not there is not an error."""
+        ...
+
 
 def safe_key(key: str) -> str:
     """Normalise a key and refuse anything that could address outside the store's root."""

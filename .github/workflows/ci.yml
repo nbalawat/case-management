@@ -109,6 +109,11 @@ jobs:
           for i in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/7233) 2>/dev/null && break; sleep 1; done
           sleep 5
           docker logs temporal | tail -5
+      - name: Start an OpenBao development server with the Transit engine (per-client keys)
+        run: |
+          docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK openbao/openbao:2.7.3 server -dev -dev-root-token-id=ci-only -dev-listen-address=0.0.0.0:8200
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8200/v1/sys/health >/dev/null && break; sleep 1; done
+          curl -sf -X POST -H "X-Vault-Token: ci-only" -d '{"type":"transit"}' http://127.0.0.1:8200/v1/sys/mounts/transit
       - name: The whole demo on Postgres, the event backbone on a real broker, search on a real engine
         working-directory: backend
         env:
@@ -117,7 +122,9 @@ jobs:
           TEST_OPENSEARCH_URL: opensearch://localhost:9200
           TEST_AGE_URL: age://caseforge:ci-only@localhost:5455/graph
           TEST_TEMPORAL_URL: temporal://localhost:7233
-        run: uv run pytest -q tests/test_postgres.py tests/test_rls.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
+          TEST_TRANSIT_ADDR: http://localhost:8200
+          TEST_TRANSIT_TOKEN: ci-only
+        run: uv run pytest -q tests/test_postgres.py tests/test_rls.py tests/test_keys.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
 
   frontend:
     name: Frontend lint and build
@@ -154,7 +161,7 @@ jobs:
         working-directory: deploy/helm/caseforge
         run: |
           set -euo pipefail
-          ARGS="--set existingSecret=caseforge-secrets --set storage.evidenceUrl=s3://bucket/evidence --set ingress.host=cases.example.com"
+          ARGS="--set existingSecret=caseforge-secrets --set storage.evidenceUrl=s3://bucket/evidence --set ingress.host=cases.example.com --set keys.transit.addr=https://openbao:8200"
           helm lint . $ARGS
           for mode in saas dedicated client-cloud air-gapped; do
             helm template stamp . -f modes/$mode.yaml $ARGS --set eventBus.url=kafka://kafka:9092 --set temporal.url=temporal://temporal:7233 > /tmp/$mode.yaml
@@ -162,22 +169,28 @@ jobs:
           done
           # What the chart must refuse
           refuse() { if helm template stamp . "$@" > /dev/null 2>&1; then echo "should have refused: $*"; exit 1; fi; }
-          refuse --set storage.evidenceUrl=s3://b/e
-          refuse --set existingSecret=s
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set schemaOnMismatch=rebuild
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set auth.mode=demo --set ingress.enabled=true --set ingress.host=h
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.encryption=sometimes
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.keyVersion=0
-          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true
+          refuse --set storage.evidenceUrl=s3://b/e --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set schemaOnMismatch=rebuild --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set auth.mode=demo --set ingress.enabled=true --set ingress.host=h --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092 --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233 --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.encryption=sometimes --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.keyVersion=0 --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true --set keys.transit.addr=https://bao:8200
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e                                   # no key service
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.provider=local --set keys.transit.addr=x
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.provider=none
           # Migrations: a hook job by default and pods that wait for it; without the job, pods migrate themselves
           helm template stamp . $ARGS | grep -q 'helm.sh/hook: pre-install,pre-upgrade'
           helm template stamp . $ARGS | grep -q 'MIGRATE_ON_START: "0"'
           helm template stamp . $ARGS --set migrations.job=false | grep -q 'MIGRATE_ON_START: "1"'
           if helm template stamp . $ARGS --set migrations.job=false | grep -q 'helm.sh/hook'; then echo "no hook expected"; exit 1; fi
+          # Offboarding bundles sit beside the documents unless placed elsewhere
+          helm template stamp . $ARGS | grep -q 'EXPORTS_URL: "s3://bucket/evidence-exports"'
+          helm template stamp . $ARGS --set storage.exportsUrl=s3://vault/exports | grep -q 'EXPORTS_URL: "s3://vault/exports"'
           # And the least it must accept
-          helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e > /dev/null
+          helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.transit.addr=https://bao:8200 > /dev/null
           helm template demo . --set existingSecret=s --set demoTenants=true --set schemaOnMismatch=rebuild --set auth.mode=demo > /dev/null
 
   image:

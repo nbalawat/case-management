@@ -31,8 +31,15 @@ data:
   TEMPORAL_KEY_VERSION: {{ .Values.temporal.keyVersion | quote }}
   FLINK_URL: {{ .Values.flink.url | quote }}
   FLINK_GATEWAY_URL: {{ .Values.flink.gatewayUrl | quote }}
+  KEY_PROVIDER: {{ if and .Values.demoTenants (eq .Values.keys.provider "transit") (not .Values.keys.transit.addr) }}"none"{{ else }}{{ .Values.keys.provider | quote }}{{ end }}
+  TRANSIT_ADDR: {{ .Values.keys.transit.addr | quote }}
+  TRANSIT_MOUNT: {{ .Values.keys.transit.mount | quote }}
+  TRANSIT_PREFIX: {{ .Values.keys.transit.prefix | quote }}
   {{- with .Values.storage.evidenceUrl }}
   EVIDENCE_URL: {{ . | quote }}
+  {{- end }}
+  {{- with (.Values.storage.exportsUrl | default (and .Values.storage.evidenceUrl (printf "%s-exports" (trimSuffix "/" .Values.storage.evidenceUrl)))) }}
+  EXPORTS_URL: {{ . | quote }}
   {{- end }}
   {{- with .Values.storage.quarantineUrl }}
   QUARANTINE_URL: {{ . | quote }}

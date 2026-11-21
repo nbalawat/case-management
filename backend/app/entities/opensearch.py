@@ -107,6 +107,13 @@ class OpenSearchIndex:
     def exists(self, tenant_id: str) -> bool:
         return bool(self._behind(tenant_id))
 
+    def drop(self, tenant_id: str) -> int:
+        """Delete every index behind the client's alias. Returns how many there were."""
+        behind = self._behind(tenant_id)
+        for name in behind:
+            self.client.indices.delete(index=name, ignore_unavailable=True)
+        return len(behind)
+
     def count(self, tenant_id: str) -> int:
         try:
             return self.client.count(index=alias(tenant_id))["count"]

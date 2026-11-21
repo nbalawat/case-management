@@ -1,5 +1,5 @@
 # Pooled SaaS: one stamp in the firm's cloud serving many clients, separated row by row in one database.
-# helm install pool . -f modes/saas.yaml --set existingSecret=... --set ingress.host=... --set storage.evidenceUrl=...
+# helm install pool . -f modes/saas.yaml --set existingSecret=... --set ingress.host=... --set storage.evidenceUrl=... --set keys.transit.addr=...
 api:
   replicas: 3
   autoscaling: {enabled: true, minReplicas: 3, maxReplicas: 20, targetCPUUtilizationPercentage: 65}

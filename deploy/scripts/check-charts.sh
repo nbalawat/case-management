@@ -11,7 +11,7 @@ if [ -n "${RENDER_DIR:-}" ]; then
 else
   render="$(mktemp -d)"; trap 'rm -rf "$render"' EXIT
 fi
-APP=(--set existingSecret=caseforge-secrets --set storage.evidenceUrl=s3://bucket/evidence --set ingress.host=cases.example.com)
+APP=(--set existingSecret=caseforge-secrets --set storage.evidenceUrl=s3://bucket/evidence --set ingress.host=cases.example.com --set keys.transit.addr=https://openbao:8200)
 
 helm lint caseforge "${APP[@]}" --kube-version $KUBE
 helm lint caseforge-data --kube-version $KUBE
