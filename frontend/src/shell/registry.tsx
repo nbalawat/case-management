@@ -5,7 +5,7 @@
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import {
-  BarChart3, Bot, Boxes, CreditCard, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, Network, Plug,
+  BarChart3, Bot, Boxes, CreditCard, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
   Radar, ScrollText, ShieldAlert, ShieldCheck, Siren, Sparkles, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { anyOf, can, desk, everyone, readOnly, type Rule } from './access'
@@ -91,6 +91,8 @@ export const MODULES: Module[] = [
     page: page(() => import('../pages/Workflows')), visible: anyOf(can('publish_workflow'), manager) },
   { id: 'detection', path: '/detection', label: 'Detection tuning', description: 'Scenario settings, backtests and lookback projects', icon: Radar, group: 'admin',
     page: page(() => import('../pages/Detection')), visible: can('tune_detection', 'approve_tuning'), keywords: ['scenario', 'threshold', 'backtest', 'lookback'] },
+  { id: 'screening-lists', path: '/screening-lists', label: 'Screening lists', description: 'Load sanctions list versions and edit the client\'s own list', icon: ListFilter, group: 'admin',
+    page: page(() => import('../pages/ScreeningLists')), visible: can('manage_lists'), keywords: ['ofac', 'sanctions list', 'watchlist', 'load list'] },
   { id: 'lists', path: '/reference', label: 'Code lists', description: 'Closing reasons, hibernation rules and other reference codes', icon: ListChecks, group: 'admin',
     page: page(() => import('../pages/Reference')), visible: anyOf(can('publish_workflow', 'manage_access'), manager), keywords: ['reference', 'codes'] },
   { id: 'access', path: '/access', label: 'Access', description: 'Roles, permissions, people and queues for this client', icon: ShieldCheck, group: 'admin',

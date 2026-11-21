@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading } from '../components/ui'
+import PageTabs from '../components/layout/PageTabs'
 import ScenarioCard from '../components/detection/ScenarioCard'
 import Lookbacks from '../components/detection/LookbackCard'
 import type { Desk } from '../components/detection/types'
@@ -24,8 +25,14 @@ export default function Detection() {
         <Kpi label="Lookbacks in hand" value={data.lookbacks.filter(l => ['planned', 'working'].includes(l.status)).length} sub={`${working.reduce((n, l) => n + l.progress.open, 0)} of their cases open`} />
       </div>
       {msg && <p className="notice" role="status">{msg}</p>}
+      <PageTabs label="Detection" tabs={[
+        { id: 'scenarios', label: 'Scenarios', count: waiting, alert: waiting > 0, content: <>
       <Card title="Scenarios">{data.scenarios.map(sc => <ScenarioCard key={sc.scenario + sc.revision + (sc.pending?.id ?? '')} sc={sc} desk={data} onChange={changed} />)}</Card>
+        </> },
+        { id: 'lookbacks', label: 'Lookbacks', count: data.lookbacks.filter(l => ['planned', 'working'].includes(l.status)).length, content: <>
       <Card title={`Lookbacks (${data.lookbacks.length})`}><Lookbacks desk={data} onChange={changed} /></Card>
+        </> },
+      ]} />
     </>
   )
 }
