@@ -624,7 +624,8 @@ def test_a_model_backed_agent_is_offered_only_its_declared_read_tools_and_its_re
                 "signals": [{"reason": "model concern", "weight": 9}, {"reason": "bad", "weight": "high"}]})]])
         a = runtime.assess(s, case, chat=model)
         st = next(x for x in a.steps if x.agent == "entity_research")
-        assert model.offered == [["transactions", "counterparty_history", "country_risk", "report"]]  # nothing that changes anything
+        assert model.offered[0] == ["transactions", "counterparty_history", "country_risk", "report"]  # nothing that changes anything
+        assert model.offered[1:] == [[]]  # then the narrative writer, which is given no tools at all
         assert [o.error for o in model.shown] == [False, True, True]  # the undeclared tool and the human action were refused
         assert [f["text"] for f in st.findings] == ["One payment stands out."] and len(st.rejected) == 3
         assert ("model concern", 0.6) in a.signals and not any(r == "bad" for r, _ in a.signals)  # weight clamped, junk ignored
