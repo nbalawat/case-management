@@ -79,6 +79,15 @@ keyboard: `J`/`K` or the arrows, `Enter` to open, `Space` for a quick view besid
 steps. Saved views and column choices are kept in the browser, per client and person; storing them on the server
 so they follow a person between devices and can be shared with a team is still to do.
 
+**A case.** The strip under the name shows priority, the regulatory deadline, the stage clock, the agent's view and
+who owns the case, with claim, release, reassign and restrict beside them. The evidence sits in tabs (Overview,
+Transactions, Customer, Narrative, Requests, Timeline), and the tab is in the address, so `?tab=transactions` opens
+straight on the money. The decision stays on the right whichever tab is open: the stage's tasks with progress and
+the next one marked, the note, the closing reason, and each step with a short reason when it is not available yet.
+Every source chip in the agent briefing, the copilot or an alert opens Transactions with just those records. There,
+a daily chart of money in and out marks days with alerted activity; click a day (shift-click for a range) to
+filter, or group by counterparty, channel or country to see where the value went.
+
 1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
    his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
 2. **An investigation, still as Ivan.** Open a case in *Investigation*. The agent briefing is on the left with
