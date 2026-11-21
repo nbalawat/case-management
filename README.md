@@ -505,7 +505,7 @@ deadline; each sent report is a workflow chasing the regulator's answer and the 
 client has its own namespace with schedules for its sweep and due pipelines. Still to come here: payload encryption
 per client, a real cluster.
 
-**27. Agent runs, lookbacks and report sending on Temporal (done).** A durable job registry behind the same engine
+**28. Agent runs, lookbacks and report sending on Temporal (done).** A durable job registry behind the same engine
 interface. On Temporal, a new case's briefing runs on a worker after commit, and lookbacks, the agents' lookback and
 tuning batches, and sending a report run as workflows with retries; the built-in engine runs them in the request.
 
