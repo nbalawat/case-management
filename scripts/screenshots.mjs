@@ -125,6 +125,14 @@ await page.getByText('Decisions on record').waitFor(); await shot('31-entities-d
 await page.getByLabel('Search customers, counterparties, cases').fill('volkof')
 await page.locator('.search-pop button').first().waitFor(); await page.screenshot({ path: `${out}32-search.png` })
 await page.keyboard.press('Escape')
+// Regulatory reports: the register, one accepted SAR with its document, and a CTR prepared and sent from a cash day.
+await as('maya')
+await go('/filings'); await page.getByText('Cash over $10,000').waitFor(); await shot('33-reports')
+await page.getByRole('button', { name: 'Accepted' }).click()
+await page.locator('table.rows tbody tr').first().click(); await page.locator('pre.doc').waitFor(); await shot('34-report-accepted')
+await go('/filings'); await page.getByRole('button', { name: 'Prepare CTR' }).first().click()
+await page.getByRole('button', { name: 'Send to the regulator' }).click()
+await page.getByText('Record the regulator').waitFor(); await shot('35-ctr-sent')
 // A second client: different people, roles and workloads, and its own access policy to edit.
 await as('joy', 'kestrel')
 await go('/'); await shot('12-second-client-my-work')

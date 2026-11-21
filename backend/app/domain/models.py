@@ -179,14 +179,31 @@ class Feed(TenantScoped, Base):
 
 
 class Filing(TenantScoped, Base):
+    """A report to a regulator: the document as rendered, where it is in its life, and what the regulator said back."""
+
     __tablename__ = "filing"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    case_id: Mapped[str] = mapped_column(String(40), index=True)
-    kind: Mapped[str] = mapped_column(String(20))
+    case_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)  # none for reports no case led to, such as a CTR
+    party_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # SAR | STR | CTR
+    format: Mapped[str] = mapped_column(String(30), default="record")  # which renderer wrote the document
+    status: Mapped[str] = mapped_column(String(20), default="prepared", index=True)  # prepared | submitted | acknowledged | rejected | superseded
     filed_by: Mapped[str] = mapped_column(String(40))
-    filed_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    sha256: Mapped[str] = mapped_column(String(64))
-    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    filed_at: Mapped[datetime] = mapped_column(DateTime, default=now)  # when it was prepared
+    due: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sha256: Mapped[str] = mapped_column(String(64))  # of the document, so a later change cannot go unnoticed
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)  # the report in neutral form, before any format
+    document: Mapped[str] = mapped_column(Text, default="")
+    problems: Mapped[list] = mapped_column(JSON, default=list)  # what stops it being sent
+    submitted_by: Mapped[str] = mapped_column(String(40), default="")
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    channel: Mapped[str] = mapped_column(String(30), default="")
+    receipt: Mapped[str] = mapped_column(String(200), default="")  # what the channel handed back, such as a file path or tracking id
+    reference: Mapped[str] = mapped_column(String(60), default="")  # the regulator's own number once it accepts
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rejection: Mapped[str] = mapped_column(Text, default="")
+    amends_id: Mapped[str] = mapped_column(String(40), default="")  # the earlier filing this one corrects
+    history: Mapped[list] = mapped_column(JSON, default=list)  # who did what to it, for reports no case holds
 
 
 class InfoRequest(TenantScoped, Base):

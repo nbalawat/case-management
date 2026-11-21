@@ -150,7 +150,7 @@ The full API reference is at <http://localhost:8000/docs>.
 | Agents | Thirteen agents declared in `backend/agents/catalog.yaml` (goal, tools, highest autonomy, the one thing each may do alone). Each client sets autonomy per agent and case type (off, assist, prepare, act within policy) in a versioned policy, with limits, a kill switch per agent and a challenger that runs in shadow. Agents use only declared tools; filing, closing, moving, approving and exiting are not tools at any level. Findings that cite no record are dropped. News reaches the adverse media agent only as typed fields from a tool-less extractor. Every step goes to a hash-chained ledger. At L3, triage may close a low-risk alert and the sanctions adjudicator may discount a weak hit, only under settings whose evaluation on the client's own history passed, with a sampled human check and reopening. Evaluation, lookback, tuning advisor, case copilot, agreement rates per reviewer and a documentation pack for model risk. | The specialists are rule-based by default. `AGENT_MODE=model` runs them as tool loops on the model behind the gateway with the rules as fallback; that path is tested only against a scripted stand-in, never a live model. The extractor and the copilot are pattern-based, not language models, so the extractor's removal of manipulative text is a keyword filter backed by the structure (typed fields only), not a guarantee. Golden sets are the client's own closed cases, which in the demo are a few dozen synthetic ones. The orchestrator is in-process, not Temporal; tools are Python functions, not MCP servers. The ledger is tamper-evident, not tamper-proof: it lives in the same database. |
 | Ask anything | Plain-language questions answered through a fixed vocabulary of 31 fields and 9 measures, never SQL. Answers are limited to the asker's client and to the cases the asker may see, team workload follows the client's own access policy, cited cases are verified, and every question is recorded. Hosted-model provider with tool use, plus an offline planner so the demo needs no key. | The hosted-model path has only been run against a stand-in client here, never a live model: its request shape and reply handling are tested, answer quality is not. Checking figures in an answer (only case ids are checked). Streaming. Questions about transactions outside alerted activity. Spend limits. |
 | Entities, network and search | Counterparty names on payments are resolved into firms: legal forms, case, accents and punctuation are ignored, spellings at least 96% alike merge, look-alikes down to 82% wait for a person, and whether a payee is one of the client's own customers or two customer records are one person is always a person's decision. Decisions are kept by name and survive every rebuild. Thresholds are per client. A customer profile with totals, counterparties, connected customers, cases and a two-hop network graph; a counterparty page; shortest path between two customers. One search box over customers, counterparties under any spelling, cases, alerts and transactions, typo-tolerant, cut to what the asker may see. | Matching uses names only: no date of birth, address, identifier or document matching, no transliteration or nickname tables, no learned model. Resolution is a full rebuild per client after each load (a third of a second for 34,000 payments here), not incremental. The network lives in relational tables and search in the database, behind interfaces meant for a graph store and OpenSearch. No beneficial-ownership structures, no merge of duplicate customer records (they are linked with a warning), no graph analytics (communities, cycles), no screening-list management. |
-| Filing | A hashed JSON filing record | FinCEN BSA XML, goAML |
+| Regulatory reports | Each client reports in its own regime, set by platform staff: FinCEN (SAR and CTR as BSA XML) or goAML (STR and CTR). Filing a case builds one neutral report and renders it in that format; a renderer per format sits behind one small interface. Every report is checked before it can be sent (institution details, narrative length, amounts, categories) and held with its problems listed until they are fixed. A register tracks each report from prepared to sent, accepted with the regulator's reference, or rejected; amendments name the original and keep it unchanged. Once sent, the document is stored with its hash and the case narrative is locked. Cash over $10,000 in a day with no CTR is listed, and a CTR is prepared from it in one step. Reports leave through a channel per client: an outbox in the client's object storage, or by hand. Only those who send reports or oversee the team can read the register. | The XML follows the published layouts but has never been validated against FinCEN's schema files, a country's goAML schema, or either test system; the activity code tables are placeholders to confirm against the current lists. No direct connection to BSA E-Filing or a goAML site, so the regulator's answer is typed in by a person. Customer address, date of birth and identification are not held, so those fields are empty or marked unknown. No joint filings, multiple subjects, CTR aggregation across related customers or exemptions, no continuing-activity automation beyond the review date, no batch files of many reports, no other regimes (UK SAR Online, FINTRAC, AUSTRAC). |
 | Identity | Two modes. Demo (default): client and person pickers, no login, anyone can pick anything. `AUTH_MODE=oidc`: OpenID Connect. Each client registers its own identity provider, the client is decided by which provider signed the token, the person by a claim in it, and request headers are ignored. Only asymmetric signatures are accepted; issuer, audience, expiry and key are checked; someone signed in but absent from the client's policy gets nothing. Platform staff sign in through a separate provider and cannot reach client data. The browser uses the authorization-code flow with PKCE. A built-in development provider (`DEV_IDP=1`) makes this demonstrable without Docker. | Never run against Keycloak, Entra ID or Okta: the verifier is tested against a stand-in provider with real keys and tokens, and the browser flow against the built-in one. No UI for registering a provider (API only). SAML, SCIM, group-to-role mapping from claims, refresh tokens and silent renewal (a session lasts as long as the token), sign-out at the provider, service accounts for machine callers (in sign-in mode `POST /api/alerts` accepts any valid token from the client's provider), MFA policy. The token is kept in the browser's session storage, not an HTTP-only cookie behind a backend-for-frontend. |
 | Scale | Measured single-process throughput on your machine | Anything distributed. Do not quote the laptop figure as a production figure. |
 
@@ -177,6 +177,7 @@ backend/app/
                copilot, lookback and tuning, oversight, model-backed mode
   ask/         ask anything: query vocabulary, read-only tools, model gateway and providers,
                answer loop with citation checks and the question record
+  filing/      the neutral report, one renderer per regulator's format, checks, sending channels, the life of a report
   entities/    name comparison, entity resolution and its human desk, the payment network, profiles, search
   reporting/   dashboard metrics
   tenancy.py   client isolation: session binding, automatic filtering and stamping
@@ -191,7 +192,7 @@ backend/templates/    client templates: a starting policy plus a set of case typ
 frontend/src/         React + TypeScript UI
 ```
 
-Each replaceable part sits behind a small interface (`ObjectStore`, `SearchIndex`, `Connector`, `MappingProposer`, `LLMProvider`, the scenario
+Each replaceable part sits behind a small interface (`ObjectStore`, `SearchIndex`, filing `Format` and `Channel`, `Connector`, `MappingProposer`, `LLMProvider`, the scenario
 registry, and `ChatModel` for the model that answers questions), so later milestones swap implementations without touching callers. The database is chosen by
 `DATABASE_URL`; nothing in the code is tied to a cloud.
 
@@ -208,6 +209,13 @@ registry, and `ChatModel` for the model that answers questions), so later milest
     moves to the record. Open a customer from a case ("Customer profile and network"): money in and out, every
     counterparty under one name, the customers connected through the uncommon ones, and the network drawn two
     hops out. Click a flagged firm to see every customer who deals with it and why its spellings were matched.
+
+17. **Reporting to the regulator, as Maya Chen at Meridian.** Open Reports. One cash day over $10,000 has no CTR:
+    press Prepare CTR, read the document, send it. Open an accepted SAR: the FinCEN XML exactly as sent, its
+    fingerprint, the regulator's reference and the date to look again. Open the report still with the regulator and
+    record a rejection, then amend it with a corrected narrative; the original stays as it was. Try to edit the
+    narrative on a case whose SAR was sent: it is locked. Switch to Alder Private Bank: the same work produces goAML
+    STRs, because that client reports to a different regulator.
 
 ## Milestones
 
@@ -239,10 +247,13 @@ each client's own identity provider. Still to come here: a run against a real pr
 **8. Entities, network and search (done).** Entity resolution with a human desk for the uncertain matches, a
 customer profile and network graph, counterparty pages and one search box.
 
-**9. Enterprise breadth.** Regulatory filing formats, lookback projects, management reporting and the remaining
-case-management modules.
+**9. Regulatory reports (done).** FinCEN and goAML formats, checks before sending, a tracked life for every
+report, amendments, the narrative lock and CTRs from cash days. Still to come here: schema validation and a
+direct connection to the regulators' systems.
 
-**10. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
+**10. Enterprise breadth.** Lookback projects, management reporting and the remaining case-management modules.
+
+**11. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
 architecture: per-client stamps and the SaaS, dedicated, client-cloud and air-gapped deployment modes.
 
 ## Screenshots

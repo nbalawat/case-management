@@ -110,6 +110,31 @@ def default_storage(tenant_id: str) -> dict:
             "provider": "Local directory"}
 
 
+def set_filing(s: Session, tenant_id: str, profile: dict) -> TenantRuntime:
+    """Record how a client reports to its regulator: the regime, who the filing institution is, and how reports leave."""
+    from ..filing.formats import SUSPICION_KIND
+    from ..filing.transmit import CHANNELS
+
+    _platform(s)
+    row = s.get(Tenant, tenant_id)
+    if row is None:
+        raise OnboardingError(f"Unknown client '{tenant_id}'")
+    regime, channel = str(profile.get("regime") or "fincen"), str(profile.get("channel") or "outbox")
+    if regime not in SUSPICION_KIND:
+        raise OnboardingError(f"Unknown regime '{regime}'. Known: {', '.join(sorted(SUSPICION_KIND))}")
+    if channel not in CHANNELS:
+        raise OnboardingError(f"Unknown channel '{channel}'. Known: {', '.join(sorted(CHANNELS))}")
+    institution = profile.get("institution") or {}
+    if not isinstance(institution, dict) or any(not isinstance(v, str) for v in institution.values()):
+        raise OnboardingError("The institution's details must be plain text fields")
+    cleaned = {"regime": regime, "channel": channel, "institution": {k: v.strip()[:200] for k, v in institution.items()}}
+    row.settings = dict(row.settings or {}) | {"filing": cleaned}
+    s.flush()
+    rt = runtime(tenant_id)
+    rt.settings = dict(row.settings)
+    return rt
+
+
 def set_identity(s: Session, tenant_id: str, provider: dict | None) -> TenantRuntime:
     """Register the identity provider a client's people sign in through, or remove it. One provider speaks for one client."""
     from ..auth.identity import IdentityError, check_provider

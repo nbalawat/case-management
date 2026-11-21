@@ -18,6 +18,8 @@ import Clients from './pages/Clients'
 import Customer from './pages/Customer'
 import Counterparty from './pages/Counterparty'
 import Entities from './pages/Entities'
+import Filings from './pages/Filings'
+import Filing from './pages/Filing'
 import Search from './components/Search'
 
 type Meta = { tenant: { id: string; name: string }; personas: Persona[]; default_person: string; sample_data: boolean }
@@ -36,9 +38,10 @@ export const usePersona = () => useContext(PeopleContext).persona
 export const useNameOf = () => useContext(PeopleContext).nameOf
 
 const NAV = [
-  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/entities', 'Entities'], ['/team', 'Team'], ['/agents', 'Agents'], ['/workflows', 'Workflows'],
-  ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations'],
+  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/entities', 'Entities'], ['/filings', 'Reports'], ['/team', 'Team'], ['/agents', 'Agents'],
 ]
+// Setting the platform up, as opposed to working in it.
+const SETUP = [['/workflows', 'Workflows'], ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations']]
 
 /** Switching client is a clean break: nothing from one client may linger on screen for the next. */
 export function switchClient(id: string) {
@@ -99,7 +102,8 @@ export default function App() {
     <PeopleContext.Provider value={people}>
       <header className="top">
         <div className="brand"><span className="mark" aria-hidden />CaseForge</div>
-        <nav>{NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}</nav>
+        <nav>{NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}
+          <span className="setup">{SETUP.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}</span></nav>
         {meta && people.persona && <Search key={pid} />}
         {sso ? <>
           <span className="persona"><span>{meta?.tenant.name}</span><b>{people.persona ? `${people.persona.name} · ${people.persona.title}` : ''}</b></span>
@@ -125,6 +129,8 @@ export default function App() {
           <Route path="/cases" element={<Cases />} />
           <Route path="/cases/:id" element={<CaseWorkspace />} />
           <Route path="/entities" element={<Entities />} />
+          <Route path="/filings" element={<Filings />} />
+          <Route path="/filings/:id" element={<Filing />} />
           <Route path="/customers/:id" element={<Customer />} />
           <Route path="/counterparties/:id" element={<Counterparty />} />
           <Route path="/team" element={<Team />} />

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, daysUntil, fmtDate, fmtDateTime, fmtMoney, hoursUntil, words } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf, usePersona } from '../App'
+import { useNameOf, usePeople, usePersona } from '../App'
 import { Card, Loading, Pill, Priority, Sla, StageClock } from '../components/ui'
 import type { CaseRow } from './Cases'
 
@@ -22,7 +22,7 @@ type Detail = {
   workflow: { states: { id: string; label: string; kind: string }[]; autonomy: string; recipients: Record<string, string> }
   access: { can_work: boolean; can_claim: boolean; can_reassign: boolean; read_only: boolean; can_restrict: boolean; restricted_reason: string; queue_members: { id: string; name: string }[]; queue_label: string }
   parent: CaseRow | null; children: CaseRow[]
-  filing: null | { id: string; filed_by: string; filed_at: string; sha256: string }
+  filing: null | { id: string; kind: string; filed_by: string; filed_at: string; sha256: string; status: string; reference: string; problems: string[] }
   other_cases: CaseRow[]
 }
 
@@ -42,6 +42,7 @@ export default function CaseWorkspace() {
   const [question, setQuestion] = useState('')
   const [asking, setAsking] = useState(false)
   const nameOf = useNameOf()
+  const { can } = usePeople()
   useEffect(() => { if (data) setNarr(data.case.narrative) }, [data?.case.id, data?.case.narrative]) // eslint-disable-line
   if (!data) return <Loading error={error} />
   const { case: c, party, agent_run: run } = data
@@ -189,7 +190,7 @@ export default function CaseWorkspace() {
 
         <div className="col">
           <Card title="Decision">
-            {data.filing && <div className="filed"><b>SAR filed</b> by {data.filing.filed_by} on {fmtDateTime(data.filing.filed_at)}<code>{data.filing.id} · sha256 {data.filing.sha256.slice(0, 16)}…</code></div>}
+            {data.filing && <div className="filed"><b>{data.filing.kind} {data.filing.status === 'acknowledged' ? `accepted by the regulator (${data.filing.reference})` : data.filing.status === 'submitted' ? 'sent to the regulator' : data.filing.status === 'rejected' ? 'rejected by the regulator' : data.filing.problems.length ? 'prepared but not sent: it needs fixing' : 'prepared, not sent yet'}</b> · prepared by {nameOf(data.filing.filed_by)} on {fmtDateTime(data.filing.filed_at)}<code>{data.filing.id} · sha256 {data.filing.sha256.slice(0, 16)}…</code>{(can('submit_filings') || can('view_team')) && <Link to={`/filings/${data.filing.id}`}>Open the report</Link>}</div>}
             {!c.open && !data.filing && <p className="empty">Closed: {c.state_label}.</p>}
             {c.open && <>
               {data.tasks.length > 0 && <fieldset className="tasks"><legend>Tasks in this stage</legend>

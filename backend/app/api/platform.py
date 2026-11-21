@@ -164,6 +164,22 @@ class IdentityIn(BaseModel):
     provider: dict | None
 
 
+class FilingProfileIn(BaseModel):
+    regime: str = "fincen"
+    channel: str = "outbox"
+    institution: dict = {}
+
+
+@router.put("/tenants/{tenant_id}/filing")
+def put_filing(tenant_id: str, body: FilingProfileIn, s: Session = Depends(platform_session)):
+    """Record how a client reports to its regulator. Only platform staff can do this."""
+    try:
+        rt = onboarding.set_filing(s, tenant_id, body.model_dump())
+    except onboarding.OnboardingError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"id": tenant_id, "filing": rt.settings.get("filing")}
+
+
 @router.put("/tenants/{tenant_id}/identity")
 def put_identity(tenant_id: str, body: IdentityIn, s: Session = Depends(platform_session)):
     """Register the identity provider a client's people sign in through. Only platform staff can do this."""

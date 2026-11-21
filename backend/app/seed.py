@@ -28,7 +28,7 @@ from .domain.access import Persona
 from .domain.models import Account, Case, MediaItem, Party, Transaction, now
 from .domain.personas import policy_of
 from .tenancy import tenant_of
-from .tenants.onboarding import onboard
+from .tenants.onboarding import onboard, set_filing
 from .tenants.registry import reset
 
 FIRST = ["Elena", "Marcus", "Priya", "Tomás", "Aisha", "Daniel", "Mei", "Jonas", "Fatima", "Lucas", "Ingrid", "Kwame", "Sofia",
@@ -629,6 +629,7 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     if "qa_review" in types:
         _work_qa(desk)
     _restrict_one(s, g.end)
+    _seed_regulator_answers(s, g.end)
     from .entities import resolution
 
     resolved = resolution.resolve(s)
@@ -636,6 +637,34 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     total = len(list(s.scalars(select(Case.id))))
     return {"parties": g.n, "transactions": len(g.txns), "alerts": len(alerts) + len(planted), "cases": total,
             "stage_breaches": sweep["stage_breaches"], "entities": resolved}
+
+
+def _seed_regulator_answers(s: Session, end: datetime) -> None:
+    """Reports at every point of their life: accepted with a number, sent back and corrected, still waiting, and a CTR to prepare."""
+    from .domain.models import Filing
+    from .filing import report as reports
+    from .filing import service as filing
+
+    officer = next((p for p in policy_of(tenant_of(s)).people.values() if p.can(reports.SUBMIT)), None)
+    if officer is None:
+        return
+    s.flush()
+    sent = list(s.scalars(select(Filing).where(Filing.status == "submitted").order_by(Filing.filed_at, Filing.id)))
+    for n, f in enumerate(sent):
+        answered = f.filed_at + timedelta(days=1, hours=3)
+        if answered > end - timedelta(days=2) or (n == len(sent) - 1 and n > 1):
+            continue  # the latest is still waiting for the regulator
+        if n == 1:
+            filing.reject(s, f.id, "Subject occupation is missing and the narrative does not state the total amount involved.", officer, ts=answered)
+            fixed = filing.amend(s, f.id, officer, ts=answered + timedelta(hours=5))
+            if fixed.status == "submitted":
+                filing.acknowledge(s, fixed.id, f"31000{int(fixed.sha256[:8], 16) % 10**9:09d}", officer, ts=answered + timedelta(days=1))
+        else:
+            filing.acknowledge(s, f.id, f"31000{int(f.sha256[:8], 16) % 10**9:09d}", officer, ts=answered)
+    for day in reports.cash_days(s)[:3][1:]:  # one cash day is left for the demo to prepare
+        ctr = filing.prepare_ctr(s, day["party_id"], day["day"], officer, ts=end - timedelta(hours=6))
+        if not ctr.problems:
+            filing.submit(s, ctr.id, officer, ts=end - timedelta(hours=5))
 
 
 def _restrict_one(s: Session, at: datetime) -> None:
@@ -655,6 +684,19 @@ def _restrict_one(s: Session, at: datetime) -> None:
 
 
 # The demo's managed-service book: three clients of different kinds, each with its own configuration and data.
+# How each demo client reports: two under FinCEN, one to a financial intelligence unit that takes goAML.
+DEMO_FILING = {
+    "meridian": {"regime": "fincen", "channel": "outbox", "institution": {
+        "name": "Meridian Retail Bank", "tax_id": "12-3456789", "address": "100 Harbor Street", "city": "Boston", "state": "MA",
+        "postal_code": "02110", "country": "US", "regulator_code": "1", "contact_office": "Financial Intelligence Unit", "contact_phone": "617-555-0142"}},
+    "kestrel": {"regime": "fincen", "channel": "by_hand", "institution": {
+        "name": "Kestrel Payments Inc", "tax_id": "98-7654321", "address": "40 Mission Row", "city": "San Francisco", "state": "CA",
+        "postal_code": "94105", "country": "US", "regulator_code": "9", "contact_office": "Compliance", "contact_phone": "415-555-0190"}},
+    "alder": {"regime": "goaml", "channel": "outbox", "institution": {
+        "name": "Alder Private Bank SA", "tax_id": "LU12345678", "reporting_entity_id": "4471", "address": "12 Rue de l'Eau", "city": "Luxembourg",
+        "country": "LU", "contact_office": "Financial Crime Compliance", "contact_phone": "+352 555 0117"}},
+}
+
 DEMO_CLIENTS = [
     {"tenant_id": "meridian", "name": "Meridian Retail Bank", "template": "full_service_bank", "region": "us-east", "deployment": "pooled", "profile": "large"},
     {"tenant_id": "kestrel", "name": "Kestrel Payments", "template": "fintech_payments", "region": "uk-south", "deployment": "pooled", "profile": "medium"},
@@ -685,6 +727,8 @@ def seed_demo() -> dict:
     with session_scope(platform=True) as s:
         for client in DEMO_CLIENTS:
             onboard(s, **{k: v for k, v in client.items() if k != "profile"}, by="platform onboarding")
+            set_filing(s, client["tenant_id"], DEMO_FILING[client["tenant_id"]])
+            shutil.rmtree(settings.lake_dir / client["tenant_id"], ignore_errors=True)  # before seeding, which writes reports to the outbox
     for client in DEMO_CLIENTS:
         with session_scope(client["tenant_id"]) as s:
             out[client["tenant_id"]] = seed_tenant(s, PROFILES[client["profile"]])
@@ -694,7 +738,6 @@ def seed_demo() -> dict:
 
     for n, client in enumerate(DEMO_CLIENTS):
         tid = client["tenant_id"]
-        shutil.rmtree(settings.lake_dir / tid, ignore_errors=True)
         with session_scope(tid) as s:
             out[tid]["landed"] = land_core_banking_files(store_for(tid, "landing"), now(), seed=11 + n)
             admin = next(p for p in policy_of(tid).people.values() if p.can("load_data"))

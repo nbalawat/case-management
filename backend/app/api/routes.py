@@ -74,7 +74,7 @@ def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depen
     txns = list(s.scalars(select(Transaction).where(Transaction.party_id == c.party_id).order_by(Transaction.ts.desc()).limit(400)))
     shown = [t for t in txns if t.id in alerted] + [t for t in txns if t.id not in alerted][:60]
     run = s.scalars(select(AgentRun).where(AgentRun.case_id == c.id).order_by(AgentRun.started.desc())).first()
-    filing = s.scalars(select(Filing).where(Filing.case_id == c.id)).first()
+    filing = s.scalars(select(Filing).where(Filing.case_id == c.id, Filing.status != "superseded").order_by(Filing.filed_at.desc())).first()
     related = [x for x in s.scalars(select(Case).where(Case.party_id == c.party_id, Case.id != c.id).order_by(Case.created.desc()))]
     ct = definition(c)
     parent = find_case(s, c.parent_id)
@@ -108,7 +108,8 @@ def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depen
                    "queue_members": [{"id": m.id, "name": m.name} for m in rt.policy.queue_members(c.queue)],
                    "queue_label": rt.policy.queues.get(c.queue or "", "")},
         "filing": None if filing is None else {"id": filing.id, "kind": filing.kind, "filed_by": filing.filed_by,
-                                               "filed_at": filing.filed_at.isoformat(), "sha256": filing.sha256},
+                                               "filed_at": filing.filed_at.isoformat(), "sha256": filing.sha256, "status": filing.status,
+                                               "reference": filing.reference, "problems": filing.problems, "format": filing.format},
         "parent": case_row(parent) if parent else None,
         "children": [case_row(x) for x in s.scalars(select(Case).where(Case.parent_id == c.id))],
         "other_cases": [case_row(x) for x in related if x.id != c.parent_id and x.parent_id != c.id],
@@ -136,7 +137,10 @@ class NarrativeIn(BaseModel):
 
 @router.post("/cases/{case_id}/narrative")
 def post_narrative(case_id: str, body: NarrativeIn, s: Session = Depends(get_session), p: Persona = Depends(require("work"))):
-    save_narrative(s, _get_case(s, case_id), body.text, p)
+    try:
+        save_narrative(s, _get_case(s, case_id), body.text, p)
+    except TransitionError as e:
+        raise HTTPException(409, str(e)) from None
     return {"ok": True}
 
 
@@ -233,7 +237,7 @@ def integrations():
             {"name": "Client onboarding API", "status": "live", "note": "Operator console: create a client from a template in one call"},
             {"name": "MCP tool server for agents", "status": "planned", "note": "With the model gateway"},
             {"name": "SSO via OIDC (Keycloak, Entra ID, Okta)", "status": "live", "note": "AUTH_MODE=oidc; each client signs in through its own identity provider"},
-            {"name": "SAR e-filing (FinCEN BSA XML, goAML)", "status": "planned", "note": "Milestone 3; demo files a hashed JSON record"},
+            {"name": "Regulatory reports (FinCEN BSA XML, goAML)", "status": "live", "note": "Rendered, checked and tracked per client; sent to an outbox, not yet directly to a regulator"},
         ],
     }
 

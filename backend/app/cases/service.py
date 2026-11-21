@@ -202,6 +202,10 @@ def enter_state(s: Session, case: Case, defn: dict, state: str, ts: datetime, ac
 def save_narrative(s: Session, case: Case, text: str, persona: Persona, ts: datetime | None = None) -> None:
     if persona.read_only:
         raise TransitionError("Read-only access")
+    from ..filing.service import locked
+
+    if locked(s, case.id):
+        raise TransitionError("The narrative is part of a report already sent to the regulator. Amend the report to change it.")
     case.narrative = text
     case.drafted_by = persona.id
     record(s, case.id, persona.id, "human", "narrative.saved", {"chars": len(text)}, ts=ts)
@@ -213,11 +217,9 @@ def stage_due(case: Case, defn: dict | None = None) -> datetime | None:
 
 
 def _file_sar(s: Session, case: Case, persona: Persona, ts: datetime) -> Filing:
-    """Demo filing: a JSON payload with a content hash. Not FinCEN BSA XML yet."""
-    payload = {"case_id": case.id, "subject": {"id": case.party_id, "name": case.party.name},
-               "narrative": case.narrative, "filed_at": ts.isoformat()}
-    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-    f = Filing(id=new_id("sar"), case_id=case.id, kind="SAR", filed_by=persona.id, filed_at=ts, sha256=digest, payload=payload)
-    s.add(f)
-    record(s, case.id, persona.id, "human", "sar.filed", {"filing_id": f.id, "sha256": digest}, ts=ts)
+    """Write the report in the client's own regulatory format, check it and send it. Problems leave it prepared, for a person to fix."""
+    from ..filing.service import prepare_suspicion
+
+    f = prepare_suspicion(s, case, persona, ts)
+    record(s, case.id, persona.id, "human", "sar.filed", {"filing_id": f.id, "sha256": f.sha256, "status": f.status, "format": f.format}, ts=ts)
     return f
