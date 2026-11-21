@@ -20,6 +20,14 @@ Options:
 - `--seed`: the same seed gives the same data.
 - `--api URL` onboards through the running API and adds the API stage. Use `--api-seconds` and `--api-concurrency` to shape that stage.
 
+More stream consumers beside the worker's own, in the same container, each with its own metrics port (a process that
+finds its port taken works on without metrics and says so):
+
+```
+docker compose exec -d -e METRICS_PORT=9101 worker uv run --no-dev python -m app.backbone.worker streams
+docker compose exec -d -e METRICS_PORT=9102 worker uv run --no-dev python -m app.backbone.worker streams
+```
+
 About 1% of the synthetic customers behave suspiciously: cash just under the reporting threshold, and wires to higher-risk countries. Detection therefore does real work and raises alerts at a plausible rate.
 
 ## What the first runs found, and what was fixed
@@ -28,6 +36,9 @@ About 1% of the synthetic customers behave suspiciously: cash just under the rep
 |---|---|---|
 | Counterparty name screening compared every payment's counterparty with every list name using `difflib`, on every batch, across the customer's whole history | 92% of stream time (profiled: 69 of 75 s for 5,000 transactions) | Each list name's matcher is built once, and a name already screened is answered from memory. The answers are identical, which a randomised comparison over 3,000 names confirmed. Stream time fell about 10 times |
 | The lake writer committed one file per table at every poll | 775 Parquet files for 50,000 rows, and lake queries 4 to 7 times slower | Messages are gathered up to `LAKE_FLUSH_ROWS` (20,000) or `LAKE_FLUSH_SECONDS` (5) before writing. The same rows now take 155 files |
+| Three consumers on a MacBook (below) were no faster than one, with 9,000 duplicates. A new client's first payments reached all three at once; each tried to create the client's watchlist, two failed on its unique code, and a consumer whose batch failed left its group and joined again. Every member then rebalanced, their commits were refused ("generation id is not valid") and they processed the same messages again | Rebalances over and over, duplicate work, a third of the throughput | The watchlist is created in a savepoint and the loser uses the winner's list. A failed batch now seeks back to the last commit inside the group instead of leaving it. Reproduced on Kafka 3.9 and Postgres 17 with three worker processes: before, 1,500 duplicates and four refused commits in 30,000; after, none |
+| The harness ended the stream stage when messages *received* reached the total, but a redelivered message is received twice | The Mac run stopped with 87,500 of 90,000 payments in the store; nothing was lost, the rest were still arriving | It waits for payments loaded (or set aside) instead, which reaches the total only when every one is in |
+| Every worker process in one container read the same `METRICS_PORT` | Extra consumers started with `exec` crashed with "address already in use" | A process that finds the port taken works on without metrics and says so; give each its own port to scrape it |
 | Each consumer read, added to and wrote back the client's stream totals | With three consumers side by side, 500 of 90,000 messages went missing from the totals. All 90,000 were loaded; only the counting was wrong | The totals are now added inside the database (`UPDATE ... SET received = received + n`) |
 
 ## Results: cloud container, 2026-11-21
@@ -57,3 +68,25 @@ At 1,081 a second, one consumer process handles about 93 million transactions a 
 | 1 billion a day | 11,574 / s | 11 |
 
 This assumes throughput keeps growing with consumer processes, each with its own partitions and enough database capacity behind it. The runs measured up to three consumers on one machine. Peaks run several times the average, and a fleet was not measured.
+
+## Results: MacBook Pro, Docker Desktop, 2026-11-21
+
+The machine was an Intel Core i7-9750H (6 cores, 12 threads) with 16 GB, and Docker Desktop had 12 CPUs and 7.75 GB of
+memory. The stack was `make backbone` (Postgres, Kafka, the API and one worker) at commit 2a938a5. Each run used a
+fresh client with 90,000 transactions over 1,800 customers on a 3-partition topic.
+
+| | Run 1, 1 stream consumer | Run 2, 1 stream consumer |
+|---|---:|---:|
+| Stream: loaded, detected, alerts routed, committed (first to last load) | **428 / s** | **528 / s** |
+| First half / second half of the run | 469 / 379 per s | 578 / 468 per s |
+| All 90,000 in Iceberg after publishing began | 221 s | 183 s |
+| Duplicates, rejects | 0, 0 | 0, 0 |
+| Alerts raised | 106 | 102 |
+| Lake queries (DuckDB, median) | 47 to 124 ms over 186 files | 27 to 77 ms over 155 files |
+| API: 8 callers for 20 s | 20 / s, p50 323 ms, p95 813 ms, 0 errors | 25 / s, p50 236 ms, p95 660 ms, 0 errors |
+
+The worker used about 47% of one core and under 400 MB, and Postgres about 20%. One consumer on the laptop runs at
+about 40 to 50% of the cloud container's rate. A likely reason, not measured: Docker Desktop on an Intel Mac runs
+the containers in a virtual machine, where disk and network I/O between them costs more. The three-consumer run on this machine found
+the defects in the table above, so its figures are not reported; it is to be repeated with the fixes.
+

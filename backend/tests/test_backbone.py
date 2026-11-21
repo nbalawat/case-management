@@ -511,6 +511,55 @@ def test_a_failed_batch_is_not_committed_and_comes_again(world, monkeypatch):
     assert c.step()[T].loaded == 2 and c.step() == {}
 
 
+def test_a_failed_batch_goes_back_in_place_without_leaving_the_group(world, monkeypatch):
+    """Leaving and rejoining the group makes every consumer beside this one rebalance, and their commits then fail."""
+    customer(world)
+    send(world, topics.TRANSACTIONS, [txn(1), txn(2)])
+    real = streams.HANDLERS[topics.TRANSACTIONS]
+    state = {"fail": True}
+
+    def flaky(s, batch):
+        if state.pop("fail", False):
+            raise RuntimeError("database went away")
+        return real(s, batch)
+
+    monkeypatch.setitem(streams.HANDLERS, topics.TRANSACTIONS, flaky)
+    c = StreamConsumer(world.bus, topics.TRANSACTIONS)
+    with pytest.raises(RuntimeError):
+        c.step()
+    sub = c._sub
+    assert sub is not None  # the same membership, wound back
+    assert c.step()[T].loaded == 2 and c._sub is sub and count(world, m.Transaction) == 2
+
+
+def test_the_consumer_that_loses_the_race_to_start_a_watchlist_uses_the_winners(world, monkeypatch):
+    """Two consumers can reach a new client's first payments at once, and both find no watchlist. The second insert
+    meets the first one's row: it must use that list, not fail its whole batch."""
+    from app.db import session_scope
+    from app.sanctions import lists
+
+    with session_scope(T) as s:
+        s.add(m.Watchlist(id="wl-winner", code=lists.STARTER["code"], name="Made by the other consumer", kind=lists.STARTER["kind"],
+                          source="test", history=[]))
+    with session_scope(T) as s:
+        real, looked = s.scalars, []
+
+        class Nothing:
+            def first(self):
+                return None
+
+        def first_look_misses(stmt, *a, **k):  # as if the other consumer had not committed yet when this one looked
+            if not looked:
+                looked.append(1)
+                return Nothing()
+            return real(stmt, *a, **k)
+
+        monkeypatch.setattr(s, "scalars", first_look_misses)
+        lists.ensure(s)  # meets the unique code, steps back to the savepoint, finds the winner's list
+        monkeypatch.setattr(s, "scalars", real)
+        assert [w.id for w in s.scalars(select(m.Watchlist))] == ["wl-winner"]
+
+
 def test_rejects_are_published_before_the_position_moves(world):
     """If the dead-letter publish fails the batch is retried; the rejects are published on the retry, not dropped."""
     customer(world)

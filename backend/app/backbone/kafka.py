@@ -143,6 +143,18 @@ class KafkaSubscription:
             if e.args[0].code() != ck.KafkaError._NO_OFFSET:  # nothing consumed yet is not a failure
                 raise BusError(f"Kafka did not accept the commit: {e.args[0].str()}") from None
 
+    def rewind(self) -> None:
+        """Seek every partition this member holds back to the group's committed offset (or the start, when nothing
+        has been committed there yet)."""
+        try:
+            held = self._consumer.assignment()
+            if not held:
+                return
+            for tp in self._consumer.committed(held, timeout=10):
+                self._consumer.seek(ck.TopicPartition(tp.topic, tp.partition, tp.offset if tp.offset >= 0 else ck.OFFSET_BEGINNING))
+        except ck.KafkaException as e:
+            raise BusError(f"Kafka could not go back to the last commit: {e.args[0].str()}") from None
+
     def close(self) -> None:
         if not self._closed:
             self._closed = True
