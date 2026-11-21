@@ -836,4 +836,35 @@ class DecisionVersion(TenantScoped, Base):
     __table_args__ = (Index("ux_decision_version", "tenant_id", "table_id", "version", unique=True),)
 
 
+class FormVersion(TenantScoped, Base):
+    """A form published by a client. Files in backend/forms are the shipped library; the highest version wins."""
+
+    __tablename__ = "form_version"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    form_id: Mapped[str] = mapped_column(String(60), index=True)
+    version: Mapped[str] = mapped_column(String(20))
+    source: Mapped[str] = mapped_column(Text)  # the form as YAML
+    published_by: Mapped[str] = mapped_column(String(40))
+    published: Mapped[datetime] = mapped_column(DateTime, default=now)
+    note: Mapped[str] = mapped_column(Text, default="")
+    __table_args__ = (Index("ux_form_version", "tenant_id", "form_id", "version", unique=True),)
+
+
+class FormSubmission(TenantScoped, Base):
+    """The answers to one form on one case. It keeps the form version it was filled on, like a case keeps its type version."""
+
+    __tablename__ = "form_submission"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(40), index=True)
+    form_id: Mapped[str] = mapped_column(String(60))
+    form_version: Mapped[str] = mapped_column(String(20))
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft | complete
+    updated_by: Mapped[str] = mapped_column(String(40))
+    updated: Mapped[datetime] = mapped_column(DateTime, default=now)
+    completed_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "case_id", "form_id"),)
+
+
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox

@@ -130,10 +130,55 @@ def test_every_job_shares_one_definition_of_the_topics_and_fills_every_placehold
     assert f"'{JOBS[job].scenario}'," in sql and f"'{JOBS[job].source}'," in sql
 
 
-def test_name_screening_is_not_offered_as_a_stream_job():
-    assert list(JOBS) == ["structuring", "rapid_movement", "high_risk_geo"]
-    with pytest.raises(JobError, match="No stream job called 'sanctions_name'"):
-        render("sanctions_name", "acme-bank", bootstrap=BROKERS)
+# ---- name screening: the client's list is written into the job
+
+AWKWARD = ["O'Brien & Sons; Ltd", "Semi;colon -- Holdings", "${BOOTSTRAP} Trading", "Zürich Über 中文 𝒜G", "Back\\slash\nNewline"]
+
+
+def test_name_screening_is_the_fourth_job_and_renders_on_the_starting_list():
+    assert list(JOBS) == ["structuring", "rapid_movement", "high_risk_geo", "sanctions_name"]
+    sql = render("sanctions_name", "acme-bank", bootstrap=BROKERS)
+    assert "CREATE TEMPORARY FUNCTION WATCH_MATCH AS 'caseforge.WatchMatch';" in sql and "CAST(0.86 AS DOUBLE)" in sql
+    assert "ARRAY[U&'Volkov Maritime Trading', U&'Northgate Petrochem FZE', U&'Darya Shipping Lines', U&'Zarin Exchange House'], ARRAY['']" in sql
+
+
+def test_a_listed_name_can_hold_nothing_but_itself_in_the_sql():
+    from app.streamjobs import gateway
+    from app.streamjobs.jobs import quoted
+
+    assert quoted("O'Brien; -- ${X}") == "U&'O\\0027Brien\\003B \\002D\\002D \\0024\\007BX\\007D'" and quoted("𝒜") == "U&'\\D835\\DC9C'"
+    plain = gateway.statements(render("sanctions_name", "acme-bank", bootstrap=BROKERS))
+    sql = render("sanctions_name", "acme-bank", {"names": [[n, f"e{i}"] for i, n in enumerate(AWKWARD)], "exempt": [["o'brien; x -- y", "e0"]]}, BROKERS)
+    sts = gateway.statements(sql)
+    assert len(sts) == len(plain) and "${" not in sql
+    array = sts[-1].split("WATCH_MATCH(counterparty, ")[1].split(", CAST(")[0]
+    assert re.fullmatch(r"ARRAY\[(U&'[A-Za-z0-9 \\]*'(, )?)+\], ARRAY\[(U&'[A-Za-z0-9 \\]*'(, )?)+\]", array), array
+    assert array.count("U&'") == len(AWKWARD) + 1
+
+
+def test_a_pair_ruled_out_is_written_against_every_name_of_that_entry_and_no_entry_id_reaches_the_job():
+    sql = render("sanctions_name", "acme-bank", {"names": [["Alpha Co", "wle_1"], ["Beta Shipping", "wle_2"], ["Beta Ship", "wle_2"]],
+                                                 "exempt": [["beta shipping gmbh", "wle_2"], ["someone else", "wle_9"]], "threshold": 0.9}, BROKERS)
+    assert "ARRAY[U&'1\\003Abeta shipping gmbh', U&'2\\003Abeta shipping gmbh'], CAST(0.9 AS DOUBLE)" in sql and "wle_" not in sql
+    assert "3 names and 2 pairs ruled out" in sql and "at least 90% alike" in sql
+
+
+@pytest.mark.parametrize("params", [
+    {"names": []}, {"names": [["", "e"]]}, {"names": [["x" * 201, "e"]]}, {"names": [["ok", "e"]] * 5001}, {"names": "Volkov"}, {"names": [["only one"]]},
+    {"threshold": 0}, {"threshold": 1.5}, {"threshold": "0.9 OR 1=1"}, {"threshold": None}, {"exempt": [["", "e"]]}, {"exempt": [["k" * 201, "e"]]}])
+def test_name_screening_refuses_a_list_or_threshold_it_cannot_run(params):
+    with pytest.raises(JobError, match="settings"):
+        render("sanctions_name", "acme-bank", params, BROKERS)
+
+
+def test_what_is_recorded_of_a_list_is_its_size_and_a_fingerprint_that_follows_every_change():
+    summary = JOBS["sanctions_name"].summary
+    base = {"threshold": 0.86, "names": [["Alpha Co", "e1"], ["Beta Shipping", "e2"]], "exempt": []}
+    first = summary(base)
+    assert first == {"threshold": 0.86, "names": 2, "ruled_out": 0, "list_fingerprint": first["list_fingerprint"]} and len(first["list_fingerprint"]) == 16
+    assert summary(base | {"exempt": [["beta shipping gmbh", "e2"]]})["list_fingerprint"] != first["list_fingerprint"]
+    assert summary(base | {"names": [["Alpha Co", "e1"], ["Beta Shiping", "e2"]]})["list_fingerprint"] != first["list_fingerprint"]
+    assert summary(dict(base)) == first and JOBS["structuring"].summary({"count": 3}) == {"count": 3}
 
 
 def test_the_topic_prefix_follows_the_platforms():
@@ -283,7 +328,8 @@ def test_a_job_that_was_never_submitted_is_reported_as_such(cluster):
     v = flink.status(T)
     assert v["connected"] and v["engine"] == "flink"
     assert [(j["job"], j["state"], j["since"], j["also_in_application"]) for j in v["jobs"]] == [
-        ("structuring", "NOT SUBMITTED", None, False), ("rapid_movement", "NOT SUBMITTED", None, False), ("high_risk_geo", "NOT SUBMITTED", None, False)]
+        ("structuring", "NOT SUBMITTED", None, False), ("rapid_movement", "NOT SUBMITTED", None, False), ("high_risk_geo", "NOT SUBMITTED", None, False),
+        ("sanctions_name", "NOT SUBMITTED", None, False)]
     assert cluster.paths == ["/jobs/overview"]
 
 

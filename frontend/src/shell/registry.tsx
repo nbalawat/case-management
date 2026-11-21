@@ -5,7 +5,7 @@
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import {
-  BarChart3, Bot, Boxes, CreditCard, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
+  BarChart3, Bot, Boxes, ClipboardList, CreditCard, Database, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
   PencilRuler, Radar, ScrollText, ShieldAlert, ShieldCheck, Siren, Sparkles, TableProperties, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { anyOf, can, desk, everyone, readOnly, type Rule } from './access'
@@ -79,6 +79,8 @@ export const MODULES: Module[] = [
     page: page(() => import('../pages/Overview')), visible: anyOf(manager, readOnly), keywords: ['overview', 'kpi'] },
   { id: 'mi', path: '/overview/report', label: 'Management reports', description: 'Month-by-month management information, with export', icon: BarChart3, group: 'oversight',
     page: page(() => import('../pages/Mi')), visible: manager, keywords: ['mi', 'board pack', 'trend'] },
+  { id: 'lake-sql', path: '/lake', label: 'Lake SQL', description: 'Read-only SQL over the full history in the lake, with time travel', icon: Database, group: 'oversight',
+    page: page(() => import('../pages/LakeSql')), visible: manager, keywords: ['sql', 'iceberg', 'duckdb', 'analytics', 'history', 'query'] },
   { id: 'team', path: '/team', label: 'Team and queues', description: 'Workload by person, backlogs, breaches and QA', icon: Users, group: 'oversight',
     page: page(() => import('../pages/Team')), visible: manager, keywords: ['workload', 'reassign', 'qa'] },
   { id: 'agents', path: '/agents', label: 'Agents', description: 'What each agent does, its autonomy and its record', icon: Bot, group: 'oversight',
@@ -91,6 +93,8 @@ export const MODULES: Module[] = [
     page: page(() => import('../pages/Workflows')), visible: anyOf(can('publish_workflow'), manager) },
   { id: 'decisions', path: '/decisions', label: 'Decision tables', description: 'Routing, priority and risk rules as DMN tables; check, replay and publish', icon: TableProperties, group: 'admin',
     page: page(() => import('../pages/Decisions')), visible: anyOf(can('publish_workflow'), manager), keywords: ['dmn', 'rules', 'routing', 'priority', 'risk band'] },
+  { id: 'forms', path: '/forms', label: 'Forms', description: 'Build the questionnaires and decision records a case asks for at a stage', icon: ClipboardList, group: 'admin',
+    page: page(() => import('../pages/Forms')), visible: anyOf(can('publish_workflow'), manager), keywords: ['form builder', 'questionnaire', 'edd', 'json schema'] },
   { id: 'workflow-designer', path: '/workflows/designer', label: 'Workflow designer', description: 'Compose your own workflow from blocks, try it, publish it',
     icon: PencilRuler, group: 'admin', page: page(() => import('../pages/WorkflowDesignerHome')), visible: anyOf(can('publish_workflow'), manager),
     keywords: ['compose', 'build', 'bpmn', 'import', 'drag and drop', 'new workflow', 'canvas'],
