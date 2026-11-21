@@ -23,6 +23,7 @@ permissions:
   tune_detection: Tune detection - propose scenario settings with a backtest, and plan and run lookback projects
   approve_tuning: Approve detection changes - put a proposed scenario change live, and sign off a lookback
   certify_access: Recertify access - start a review of who holds what, and decide whether each person keeps it
+  break_glass: Break glass - open one case or customer you cannot otherwise see, for a stated reason, for a few hours; every opening is reviewed afterwards
 
 queues:
   fraud: Fraud claims
@@ -38,15 +39,17 @@ queues:
 # 'sees' sees every case. Whatever the limit, people keep sight of cases they own or have acted on, and a person
 # with several roles sees what any of them shows. Restricted cases need 'view_restricted' on top.
 roles:
-  fraud_analyst:     {title: Fraud analyst, permissions: [work], sees: {scope: all, case_types: [fraud_claim]}}
+  fraud_analyst:     {title: Fraud analyst, permissions: [work], sees: {scope: all, case_types: [fraud_claim, scam_reimbursement, chargeback]}}
   analyst:           {title: Alert analyst, permissions: [work], sees: {scope: queues}}
-  investigator:      {title: Investigator, permissions: [work, reassign, resolve_entities], sees: {scope: all, case_types: [tm_alert_investigation]}}
+  investigator:      {title: Investigator, permissions: [work, reassign, resolve_entities, break_glass], sees: {scope: all, case_types: [tm_alert_investigation, info_request_314a, subpoena, lookback]}}
   sanctions_officer: {title: Sanctions officer, permissions: [work, sanctions_decisions], sees: {scope: all, case_types: [sanctions_hit]}}
   team_lead:         {title: Operations lead, permissions: [work, view_team, reassign, run_timers, resolve_entities]}
   mlro:              {title: MLRO, permissions: [work, view_team, view_restricted, restrict_case, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing, tune_detection, approve_tuning, certify_access]}
   head_fiu:          {title: Chief risk officer, permissions: [work, view_team, manage_agents, view_restricted, restrict_case, resolve_entities, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing, tune_detection, approve_tuning, certify_access]}
   admin:             {title: Operations engineer, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents, resolve_entities, manage_lists, tune_detection]}
   restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
+  account_manager:   {title: Account manager, permissions: [], read_only: true, customer_facing: true, customers: {book: own},
+                      sees: {scope: all, case_types: [fraud_claim]}}
   auditor:           {title: External auditor, permissions: [view_team, view_restricted], read_only: true}
 
 # The platform provider's managed-service team may work here. Each engagement names one member of their staff, the
@@ -58,6 +61,13 @@ managed_service:
   approval: client
   max_days: 180
   client_signoff: [four_eyes, submit_filings]
+
+# Tipping-off: customer-facing roles never see these case types or any regulatory report, even for their own customers.
+tipping_off: {case_types: [tm_alert_investigation, sanctions_hit], filings: hidden}
+
+# Break-glass: holders of the break_glass permission can open one case or customer they cannot otherwise see, for a
+# stated reason, for this many hours. Someone else reviews every opening afterwards. Restricted cases stay closed.
+break_glass: {hours: 4, restricted: false}
 
 people:
   - {id: nia, name: Nia Okoye, roles: [fraud_analyst, analyst], title: Financial crime analyst, queues: [fraud, aml-l1, sanctions-l1],
@@ -74,6 +84,8 @@ people:
      about: Second approval for high-value and politically exposed filings.}
   - {id: pat, name: Pat Novak, role: admin, queues: [],
      about: Loads data, publishes workflow versions and maintains the access policy.}
+  - {id: noor, name: Noor Rahman, role: account_manager, queues: [],
+     about: Looks after business accounts. Sees fraud claims on her own book, never an investigation or a report.}
   - {id: eli, name: Eli Brandt, role: auditor, queues: [],
      about: Read-only access for the annual independent review.}
 

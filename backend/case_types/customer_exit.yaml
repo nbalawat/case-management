@@ -1,0 +1,48 @@
+case_type: customer_exit
+title: Customer exit
+domain: KYC
+version: 1.0.0
+scenarios: []
+initial_state: decision
+
+# Ending a relationship for financial-crime risk: decided once, carried out in order, without tipping off.
+states:
+  decision:
+    label: Exit decision
+    queue: kyc-edd
+    sla_hours: 72
+    tasks:
+      - {id: grounds, label: Grounds for exit recorded}
+      - {id: filing_check, label: Checked whether a SAR is owed before the customer is told}
+      - {id: tipping_off, label: Wording of the notice reviewed for tipping-off}
+  notice:
+    label: Notice period
+    kind: wait
+    queue: kyc
+    sla_hours: 1440
+    tasks:
+      - {id: letter, label: Notice letter sent}
+      - {id: channels, label: New business and channels stopped}
+  closing:
+    label: Closing accounts
+    queue: kyc
+    sla_hours: 120
+    tasks:
+      - {id: balances, label: Balances returned to an account in the customer's own name}
+      - {id: closed, label: Accounts closed in core banking}
+      - {id: marker, label: Exit marker set so the customer is not re-onboarded}
+  exited:    {label: Relationship ended, kind: closed, disposition: exited}
+  retained:  {label: Exit withdrawn, kind: closed, disposition: exit_withdrawn}
+
+transitions:
+  - {from: decision, to: notice, label: Confirm exit and give notice, roles: [mlro, team_lead], requires: [tasks, note], four_eyes: true}
+  - {from: decision, to: retained, label: Withdraw the exit, roles: [mlro, team_lead], requires: [note]}
+  - {from: notice, to: closing, label: Notice period over, roles: [kyc_analyst], requires: [tasks]}
+  - {from: closing, to: exited, label: Relationship closed, roles: [kyc_analyst], requires: [tasks, note]}
+
+sla:
+  clock: Exit completed
+  due_days: 90
+agents:
+  on_create: [data_assembly]
+  autonomy: L1

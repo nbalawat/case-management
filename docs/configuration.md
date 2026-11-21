@@ -113,6 +113,12 @@ policy says what they may do.
 | `LAKE_FLUSH_ROWS`, `LAKE_FLUSH_SECONDS` | `20000`, `5` | The lake writer gathers this many messages, or waits this long, before writing: fewer, larger files |
 | `DETECTION_HISTORY` | `operational` | `lake`: backtests and lookbacks read history from the lake (falls back when there is none) |
 
+### Backups
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BACKUP_URL` | `data/backups` | Where `python -m app.backup` writes and reads backups: any object store URL. Helm sets it from `backup.url` and schedules a nightly backup and a weekly restore drill |
+
 ### Observability
 
 | Variable | Default | Meaning |
@@ -143,6 +149,20 @@ policy says what they may do.
 | `ASK_MODEL`, `ASK_EFFORT` | `claude-opus-5-5`, `medium` | Model and effort for Ask |
 | `AGENT_MODE` | `rules` | `model` runs specialist agents as tool loops on the model, rules as fallback |
 | `LLM_PROVIDER` | `mock` | The provider behind agent drafting |
+
+## Public API
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `API_SECRET_KEY` | empty (development key; refused under real sign-in) | Keys credential hashes and webhook secret encryption. 32+ characters, from the secret store |
+| `API_TOKEN_TTL` | `900` | Access token lifetime, seconds |
+| `API_RATE_LIMIT`, `API_TENANT_RATE_LIMIT` | `600`, `3000` | Requests a minute per application, per client |
+| `API_MAX_BODY` | `2097152` | Largest request body, bytes |
+| `API_CALL_KEEP_DAYS` | `30` | How long the call record is kept |
+| `WEBHOOK_WORKERS` | `0` | Deliver webhooks inside the API process (one process only) |
+| `WEBHOOK_ALLOW_PRIVATE` | `0` | Allow http and private webhook addresses, for a laptop receiver |
+
+See [public-api.md](public-api.md).
 
 ## Helm values
 

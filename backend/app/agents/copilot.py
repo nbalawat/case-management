@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..cases.service import record
 from ..domain.access import Persona
 from ..domain.models import AgentRun, Case, new_id
-from . import ledger, policy as policies
+from . import copilot_model, ledger, model_mode, policy as policies
 from .catalog import catalog
 from .runtime import context
 from .tools import Toolbox
@@ -118,6 +118,18 @@ def compose(s: Session, case: Case, question: str) -> dict:
             "customer, report adverse media, and draft a request to the customer or a closure note.", "cites": [], "sources": [briefing]}
 
 
+def _answer(s: Session, case: Case, question: str) -> dict:
+    """The model's checked answer when the client's policy gives the agents a model, otherwise (or when the model's
+    answer does not pass its check) the rule-based answer, saying why."""
+    chat = model_mode.chat_model(s, ref=case.id)
+    if chat is None:
+        return compose(s, case, question) | {"provider": "rules"}
+    try:
+        return copilot_model.answer(s, case, context(s, case), _run(s, case), question, chat)
+    except copilot_model.Fallback as e:
+        return compose(s, case, question) | {"provider": "rules", "fell_back": str(e)}
+
+
 @system_work
 def ask(s: Session, case: Case, persona: Persona, question: str) -> dict:
     question = question.strip()
@@ -131,9 +143,10 @@ def ask(s: Session, case: Case, persona: Persona, question: str) -> dict:
     box = Toolbox(spec, level)
     for tool in spec.tools:
         box.use(tool, case.id)
-    out = compose(s, case, question)
+    out = _answer(s, case, question)
     ledger.append(s, run_id=new_id("cop"), case_id=case.id, agent=AGENT, agent_version=spec.version, level=level, policy_version=pol.version,
                   summary=question, tools=box.calls, prompt=spec.goal,
-                  findings=[{"text": out["answer"], "cites": out["cites"], "sources": out["sources"]}])
+                  findings=[{"text": out.get("draft") or out["answer"], "cites": out["cites"], "sources": out["sources"]}],
+                  **({"model": out["provider"]} if out.get("provider") not in (None, "rules") else {}))
     record(s, case.id, persona.id, "human", "copilot.asked", {"question": question, "intent": out["intent"]})
     return out | {"question": question, "level": level}

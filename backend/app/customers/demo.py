@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..domain.identity import normalize
-from ..domain.models import Party, PartyIdentifier, Transaction
+from ..domain.models import Account, Party, PartyIdentifier, Transaction
 from ..domain.personas import policy_of
 from ..entities import names
 from ..tenancy import tenant_of
@@ -35,6 +35,8 @@ ABROAD = {"GB": [("London", "", "EC2A"), ("Manchester", "", "M1")], "DE": [("Ber
           "CH": [("Geneva", "", "1201")], "FR": [("Paris", "", "75008")], "CY": [("Limassol", "", "3036")], "PA": [("Panama City", "", "0801")]}
 FOREIGN_NATIONALITIES = ["GB", "DE", "FR", "IN", "BR", "NG", "MX", "PH", "CN", "PL", "IT", "GH"]
 BOOKED = {"alder": "LU"}  # where each demo client books its relationships; others book in the US
+# A second booking centre, for every fourth customer, so jurisdiction-scoped access has something to hold back.
+SECOND_BOOKING = {"meridian": "CA", "kestrel": "IE", "alder": "CH"}
 RELATIONSHIP_MANAGERS = {"meridian": "rosa", "alder": "gwen", "kestrel": "noor"}
 # Two firms whose names differ only a little but who are, in this story, one firm: they pay into the same account.
 SAME_FIRM = {"meridian trading partners intl": "meridian trade partners", "orion global consultants": "orion global consulting"}
@@ -105,7 +107,9 @@ def enrich_party(p: Party, tenant_id: str, managers: tuple[str, ...], today: dat
     if not p.email:
         local = ".".join(names.tokens(p.name)[:2]) or p.id.lower()
         p.email = f"{local}@{'example.com' if p.kind == 'person' else local.replace('.', '') + '.example'}"
-    p.booking_jurisdiction = p.booking_jurisdiction or BOOKED.get(tenant_id, "US")
+    if not p.booking_jurisdiction:  # from the id, not the generator, so no other synthetic value moves
+        second = SECOND_BOOKING.get(tenant_id) if int(hashlib.sha1(f"booking|{tenant_id}|{p.id}".encode()).hexdigest(), 16) % 4 == 0 else None
+        p.booking_jurisdiction = second or BOOKED.get(tenant_id, "US")
     if p.relationship_manager is None and managers and p.segment in ("business", "private"):
         p.relationship_manager = managers[r.randrange(len(managers))]
     have = {(i.kind, i.normalized) for i in p.identifiers}
@@ -137,6 +141,36 @@ def enrich_transactions(s: Session, tenant_id: str) -> int:
             t.counterparty_account, t.counterparty_institution = acct, bank
         n += 1
     return n
+
+
+REOPENED = {"meridian": "P90001"}  # the client where one customer was onboarded twice, and the second record's id
+
+
+def plant_duplicate(s: Session, end: datetime) -> int:
+    """One customer onboarded a second time, years later, by a branch that did not find the first record.
+
+    The new record writes the name with a middle initial and gives a new email, but the SSN, birth date and address are
+    the same: the kind of duplicate only the identity details can catch. Returns how many customers it added.
+    """
+    tenant = tenant_of(s)
+    new_id = REOPENED.get(tenant)
+    if new_id is None or s.scalars(select(Party.id).where(Party.id == new_id)).first():
+        return 0
+    first = next((p for p in s.scalars(select(Party).where(Party.kind == "person", Party.country == "US").order_by(Party.id))
+                  if p.born and any(i.kind == "ssn" for i in p.identifiers) and len(names.tokens(p.name)) == 2), None)
+    if first is None:
+        return 0
+    given, family = first.name.split(" ", 1) if " " in first.name else (first.name, "")
+    twin = Party(id=new_id, name=f"{given} {_rng('initial', tenant).choice('ABCDEJLMR')}. {family}".strip(), occupation=first.occupation,
+                 country=first.country, risk_rating="low", onboarded=end - timedelta(days=40), born=first.born, nationality=first.nationality,
+                 address_line1=first.address_line1, address_line2=first.address_line2, city=first.city, region=first.region,
+                 postal_code=first.postal_code, phone=first.phone, email=f"{given.lower()}{first.born.year % 100:02d}@example.net")
+    ssn = next(i for i in first.identifiers if i.kind == "ssn")
+    twin.identifiers.append(PartyIdentifier(id=f"pid-{hashlib.sha1(f'{tenant}|{new_id}|0'.encode()).hexdigest()[:12]}", tenant_id=tenant,
+                                            kind="ssn", value=ssn.value, normalized=ssn.normalized, issuer_country="US", source="branch onboarding"))
+    s.add_all([twin, Account(id=f"A{new_id[1:]}", party_id=new_id)])
+    s.flush()
+    return 1
 
 
 def seed(s: Session, end: datetime) -> dict:

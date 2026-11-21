@@ -140,12 +140,20 @@ def _apply(s: Session, wl: Watchlist, rows: list[dict], by: str, note: str, at: 
 def ensure(s: Session) -> None:
     """Give a client its starting list the first time lists are needed."""
     if s.scalars(select(Watchlist.id)).first() is None:
-        with side_ids(f"lists:{tenant_of(s)}"):
-            wl = Watchlist(id=new_id("wl"), code=STARTER["code"], name=STARTER["name"], kind=STARTER["kind"], source=STARTER["source"], history=[])
-            s.add(wl)
-            s.flush()
-            _apply(s, wl, _clean(STARTER["entries"]), "platform", "The list every client starts with", now())
-            s.flush()
+        from sqlalchemy.exc import IntegrityError
+
+        try:
+            # In a savepoint: two consumers can reach a new client's first payments at the same moment. The one that
+            # loses the race finds the list the other made, rather than failing its whole batch.
+            with s.begin_nested(), side_ids(f"lists:{tenant_of(s)}"):
+                wl = Watchlist(id=new_id("wl"), code=STARTER["code"], name=STARTER["name"], kind=STARTER["kind"], source=STARTER["source"], history=[])
+                s.add(wl)
+                s.flush()
+                _apply(s, wl, _clean(STARTER["entries"]), "platform", "The list every client starts with", now())
+                s.flush()
+        except IntegrityError:
+            if s.scalars(select(Watchlist.id)).first() is None:
+                raise
 
 
 @system_work

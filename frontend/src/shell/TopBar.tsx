@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronRight, Menu, Search } from 'lucide-react'
 import { Kbd } from '../components/kit/kbd'
+import Notifications from './Notifications'
 import { GROUPS, type Module } from './registry'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
@@ -25,7 +26,7 @@ export default function TopBar({ current, detail, onMenu, onPalette, identity }:
         className="palette-trigger mx-auto flex h-9 min-h-0 w-full max-w-[460px] items-center gap-2.5 rounded-lg border border-line bg-bg px-3 text-left text-[13.5px] font-normal text-muted hover:border-line-strong">
         <Search size={15} aria-hidden /><span className="flex-1 truncate">Search, go to, or ask anything</span><Kbd>{isMac ? '⌘K' : 'Ctrl K'}</Kbd>
       </button>
-      <div className="ml-auto flex shrink-0 items-center">{identity}</div>
+      <div className="ml-auto flex shrink-0 items-center"><Notifications />{identity}</div>
     </header>
   )
 }

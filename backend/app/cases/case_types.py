@@ -77,6 +77,8 @@ def validate(ct, origin: str = "definition") -> dict:
         for req in t.get("requires", []):
             if req not in REQUIREMENTS:
                 fail(f"{name} requires unknown '{req}'. Known: {', '.join(REQUIREMENTS)}")
+        if "forms" in t and (not isinstance(t["forms"], list) or not all(isinstance(f, str) and f for f in t["forms"])):
+            fail(f"{name}: forms must be a list of form ids")
         if states[t["from"]].get("kind", "open") == "closed":
             fail(f"{name} starts from a closed state")
         try:

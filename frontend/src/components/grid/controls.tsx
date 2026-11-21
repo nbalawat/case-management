@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BookmarkPlus, ChevronDown, ChevronLeft, ChevronRight, Search, Trash2, X } from 'lucide-react'
+import { BookmarkPlus, ChevronDown, ChevronLeft, ChevronRight, Search, Trash2, Users, X } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { Button } from '../kit/button'
 import {
@@ -75,37 +75,53 @@ export function Pager({ page, size, total, onPage, onSize, sizes = [25, 50, 100,
   )
 }
 
-/** Named views: the built-in ones every person gets, and the ones they saved. A view is just the list's address. */
-export function ViewsMenu({ builtIn, saved, current, onApply, onSave, onDelete }: {
-  builtIn: SavedView[]; saved: SavedView[]; current: string; onApply: (v: SavedView) => void; onSave: (name: string) => void; onDelete: (name: string) => void
+/**
+ * Named views: the built-in ones every person gets, the ones they saved, and the ones colleagues shared.
+ * A view is just the list's address. Only the person who saved a view can share, unshare or delete it.
+ */
+export function ViewsMenu({ builtIn, saved, current, onApply, onSave, onShare, onDelete }: {
+  builtIn: SavedView[]; saved: SavedView[]; current: string; onApply: (v: SavedView) => void
+  onSave: (name: string, shared: boolean) => void; onShare: (v: SavedView, shared: boolean) => void; onDelete: (v: SavedView) => void
 }) {
   const [naming, setNaming] = useState(false)
   const [name, setName] = useState('')
+  const [team, setTeam] = useState(false)
+  const mine = saved.filter(v => v.mine !== false), theirs = saved.filter(v => v.mine === false)
   const active = [...builtIn, ...saved].find(v => v.query === current)
+  const stop = (e: { stopPropagation: () => void; preventDefault: () => void }) => { e.stopPropagation(); e.preventDefault() }
   return (
     <div className="flex items-center gap-1.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button type="button" className="chip-btn view-btn" aria-label="Views"><span>View: <b>{active?.name ?? 'Custom'}</b></span><ChevronDown size={14} aria-hidden /></button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[260px]">
+        <DropdownMenuContent align="start" className="w-[280px]">
           <DropdownMenuLabel>Views</DropdownMenuLabel>
           {builtIn.map(v => <DropdownMenuItem key={v.name} onSelect={() => onApply(v)}>{v.name}</DropdownMenuItem>)}
-          {saved.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Saved by you</DropdownMenuLabel></>}
-          {saved.map(v => (
-            <DropdownMenuItem key={v.name} onSelect={() => onApply(v)}>
+          {mine.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Saved by you</DropdownMenuLabel></>}
+          {mine.map(v => (
+            <DropdownMenuItem key={v.id ?? v.name} onSelect={() => onApply(v)}>
               <span className="flex-1 truncate">{v.name}</span>
+              <span role="button" tabIndex={-1} aria-label={v.shared ? `Stop sharing ${v.name}` : `Share ${v.name} with the team`}
+                title={v.shared ? 'Shared with the team: click to keep it to yourself' : 'Share with the team'}
+                className={cn('hover:text-ink', v.shared ? 'text-brand' : 'text-muted')} onClick={e => { stop(e); onShare(v, !v.shared) }}><Users size={14} /></span>
               <span role="button" tabIndex={-1} aria-label={`Delete view ${v.name}`} className="text-muted hover:text-crit"
-                onClick={e => { e.stopPropagation(); e.preventDefault(); onDelete(v.name) }}><Trash2 size={14} /></span>
+                onClick={e => { stop(e); onDelete(v) }}><Trash2 size={14} /></span>
+            </DropdownMenuItem>))}
+          {theirs.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Shared by colleagues</DropdownMenuLabel></>}
+          {theirs.map(v => (
+            <DropdownMenuItem key={v.id ?? `${v.owner}:${v.name}`} onSelect={() => onApply(v)}>
+              <span className="flex-1 truncate">{v.name}</span><span className="text-muted text-xs">{v.owner_name ?? v.owner}</span>
             </DropdownMenuItem>))}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setNaming(true)}><BookmarkPlus size={15} /> Save current view…</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       {naming && (
-        <form className="flex items-center gap-1.5" onSubmit={e => { e.preventDefault(); if (name.trim()) { onSave(name.trim()); setName(''); setNaming(false) } }}>
+        <form className="flex items-center gap-1.5" onSubmit={e => { e.preventDefault(); if (name.trim()) { onSave(name.trim(), team); setName(''); setTeam(false); setNaming(false) } }}>
           <input autoFocus className="view-name" value={name} onChange={e => setName(e.target.value)} placeholder="Name this view" aria-label="View name"
             onKeyDown={e => e.key === 'Escape' && setNaming(false)} />
+          <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={team} onChange={e => setTeam(e.target.checked)} /> Share with the team</label>
           <Button size="sm" variant="primary" type="submit">Save</Button>
           <Button size="sm" variant="ghost" type="button" onClick={() => setNaming(false)}>Cancel</Button>
         </form>)}
