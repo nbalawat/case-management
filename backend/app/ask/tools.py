@@ -17,7 +17,8 @@ from ..domain.models import AgentRun, Alert, Case, CaseEvent, InfoRequest, Party
 from ..domain.personas import Persona, policy_of
 from ..tenancy import tenant_of
 from ..visibility import find_case
-from . import semantic
+from . import calculator, semantic
+from .landscape import catalog, query as landscape
 from .semantic import FIELDS, MEASURES, QueryError
 
 TEAM = "view_team"  # the permission that already guards the Team page
@@ -44,6 +45,8 @@ class ToolResult:
     case_ids: list[str] = field(default_factory=list)  # every case this result showed the model
     error: bool = False
     summary: str = ""
+    # Every other record this result showed the model, as (kind, id, link details), so an answer can cite them.
+    records: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -80,7 +83,40 @@ def _guard_owner(ctx: ToolContext, group_by: list[str]) -> None:
         _team_only(ctx, "Workload split by person")
 
 
+def _object(ctx: ToolContext, a: dict):
+    """The landscape object a call names, after the asker's permission on it is checked. None means cases."""
+    name = str(a.get("object") or "cases")
+    if name == "cases":
+        return None
+    try:
+        obj = catalog.get(name)
+    except KeyError:
+        raise QueryError(f"There is no object '{name}'. Objects: cases, {', '.join(catalog.objects())}") from None
+    denied = obj.permission(ctx.asker)
+    if denied:
+        raise QueryError(f"{obj.label.capitalize()}: {denied} Questions about cases still work.")
+    return obj
+
+
+def _refs(obj, rows: list[dict]) -> list[dict]:
+    out = []
+    for r in rows:
+        rid = r.get(obj.id_dim)
+        if rid is None:
+            continue
+        out.append({"kind": obj.kind, "id": str(rid), "case_id": r.get(obj.case_dim) if obj.case_dim else None,
+                    "customer_id": r.get(obj.customer_dim) if obj.customer_dim else None})
+    return out
+
+
 def _breakdown(ctx: ToolContext, a: dict) -> ToolResult:
+    obj = _object(ctx, a)
+    if obj is not None:
+        out = landscape.breakdown(ctx.s, ctx.asker, obj, group_by=a.get("group_by"), measures=a.get("measures"), filters=a.get("filters"),
+                                  sort_by=a.get("sort_by"), descending=a.get("descending", True), limit=a.get("limit", landscape.MAX_ROWS))
+        refs = [{"kind": obj.kind, "id": i} for r in out["rows"] for i in r["ids"]]
+        return ToolResult(out, [i for r in out["rows"] for i in r["ids"]] if obj.kind == "case" else [], records=refs,
+                          summary=f"{out['matching']} {obj.label} in {out['groups']} group(s)")
     _guard_owner(ctx, a.get("group_by") or [])
     out = semantic.breakdown(ctx.facts, group_by=a.get("group_by"), measures=a.get("measures"), filters=a.get("filters"),
                              sort_by=a.get("sort_by"), descending=a.get("descending", True), limit=a.get("limit", semantic.MAX_ROWS))
@@ -92,6 +128,34 @@ def _list(ctx: ToolContext, a: dict) -> ToolResult:
     out = semantic.list_cases(ctx.facts, filters=a.get("filters"), sort_by=a.get("sort_by", "opened"),
                               descending=a.get("descending", True), limit=a.get("limit", 10))
     return ToolResult(out, [c["id"] for c in out["cases"]], summary=f"{len(out['cases'])} of {out['matching_cases']} cases")
+
+
+def _list_records(ctx: ToolContext, a: dict) -> ToolResult:
+    obj = _object(ctx, a)
+    if obj is None:
+        return _list(ctx, {k: v for k, v in a.items() if k in ("filters", "sort_by", "descending", "limit")})
+    out = landscape.list_records(ctx.s, ctx.asker, obj, filters=a.get("filters"), sort_by=a.get("sort_by"), descending=a.get("descending", True),
+                                 limit=a.get("limit", 10), columns=a.get("fields"))
+    return ToolResult(out, [r["case_id"] for r in out["records"] if r.get("case_id")], records=_refs(obj, out["records"]),
+                      summary=f"{len(out['records'])} of {out['matching']} {obj.label}")
+
+
+def _record(ctx: ToolContext, a: dict) -> ToolResult:
+    obj = _object(ctx, a)
+    rid = str(a.get("id", "")).strip()
+    if obj is None:
+        return _case(ctx, {"case_id": rid})
+    row = landscape.get_one(ctx.s, ctx.asker, obj, rid)
+    if row is None:
+        raise QueryError(f"No {obj.kind.replace('_', ' ')} '{rid}' exists for this client, or it is not one you can see")
+    return ToolResult({"object": obj.id, "record": row}, [row["case_id"]] if row.get("case_id") else [], records=_refs(obj, [row]),
+                      summary=f"{obj.kind.replace('_', ' ')} {rid}")
+
+
+def _calculate(ctx: ToolContext, a: dict) -> ToolResult:
+    expr = str(a.get("expression", ""))
+    value = calculator.evaluate(expr)
+    return ToolResult({"expression": expr, "value": value}, summary=f"{expr} = {value}")
 
 
 def _case(ctx: ToolContext, a: dict) -> ToolResult:
@@ -130,7 +194,8 @@ def _customer(ctx: ToolContext, a: dict) -> ToolResult:
     q = str(a.get("name_or_id", "")).strip().lower()
     if len(q) < 2:
         raise QueryError("Give a customer name or id")
-    found = [p for p in ctx.s.scalars(select(Party).order_by(Party.name)) if q == p.id.lower() or q in p.name.lower()]
+    scope = landscape.Scope(ctx.s, ctx.asker)
+    found = [p for p in ctx.s.scalars(select(Party).where(scope.party_ok(Party.id)).order_by(Party.name)) if q == p.id.lower() or q in p.name.lower()]
     by_customer: dict[str, list[dict]] = {}
     for f in ctx.facts:
         by_customer.setdefault(f["customer_id"], []).append(f)
@@ -139,13 +204,16 @@ def _customer(ctx: ToolContext, a: dict) -> ToolResult:
     for p in found[:5]:
         cases = sorted(by_customer.get(p.id, []), key=lambda f: f["opened"], reverse=True)
         ids += [f["id"] for f in cases[:10]]
+        extra = landscape.get_one(ctx.s, ctx.asker, catalog.get("customers"), p.id) or {}
         out.append({"id": p.id, "name": p.name, "kind": p.kind, "country": p.country, "occupation": p.occupation,
+                    "kyc_band": extra.get("kyc_band"), "active_holds": extra.get("active_holds"), "transactions_90d": extra.get("transactions_90d"),
                     "risk_rating": p.risk_rating, "pep": bool(p.pep), "customer_since": p.onboarded.date().isoformat(),
                     "cases": len(cases), "open_cases": sum(f["status"] == "open" for f in cases),
                     "sars_filed": sum(f["sar_filed"] for f in cases), "alerted_amount": round(sum(f["alerted_amount"] for f in cases), 2),
                     "case_list": [{k: semantic._show(f[k]) for k in ("id", "case_type", "stage", "status", "outcome", "opened", "alerted_amount")}
                                   for f in cases[:10]]})
     return ToolResult({"customers": out, "matching_customers": len(found), "truncated": len(found) > 5}, ids,
+                      records=[{"kind": "customer", "id": c["id"], "case_id": None, "customer_id": c["id"]} for c in out],
                       summary=f"{len(found)} customer(s) matching '{q}'")
 
 
@@ -169,18 +237,77 @@ def _team(ctx: ToolContext, a: dict) -> ToolResult:
                       [f["id"] for f in worst], summary=f"{len(people)} people, {len(queues)} queues")
 
 
+def _all(kind: str) -> list[str]:
+    """Every field (or measure) name across cases and the landscape objects, for the tool schemas. Each call is checked
+    against its own object's vocabulary, with an error naming the allowed values."""
+    objs = catalog.objects().values()
+    if kind == "group":
+        names = [k for k, f in FIELDS.items() if f.group] + [d for o in objs for d, x in o.dims.items() if x.group]
+    elif kind == "field":
+        names = list(FIELDS) + [d for o in objs for d in o.dims]
+    else:
+        names = list(MEASURES) + [m for o in objs for m in o.measures]
+    return list(dict.fromkeys(names))
+
+
+ANY_FILTERS = {
+    "type": "array", "description": "All must hold. Text matching ignores case. Use 'in' with a list of ids to follow on from an earlier lookup.",
+    "items": {"type": "object", "additionalProperties": False, "required": ["field", "op", "value"], "properties": {
+        "field": {"type": "string", "enum": _all("field")},
+        "op": {"type": "string", "enum": sorted(semantic.OPS | set(landscape.OPS))},
+        "value": {"description": "A string, number or boolean; a list for 'in'; an ISO date for date fields"},
+    }},
+}
+OBJECT = {"type": "string", "enum": ["cases", *catalog.objects()], "description": "What to count or list. Defaults to cases."}
+
+
+def catalog_text(asker: Persona | None = None) -> str:
+    """The vocabulary of every object this person may read, for the model."""
+    objs = catalog.available(asker) if asker else list(catalog.objects().values())
+    parts = ["cases: " + _field_guide() + ". Measures: " + "; ".join(f"{k} ({v})" for k, v in MEASURES.items())]
+    for o in objs:
+        v = o.vocabulary()
+        parts.append(f"{o.id} ({o.description}): fields " + "; ".join(f"{k} {d}" for k, d in v["fields"].items())
+                     + ". Measures: " + "; ".join(f"{k} ({d})" for k, d in v["measures"].items()))
+    return "\n".join(parts)
+
+
 TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("breakdown",
-         "Count cases and compute measures, optionally split by one or two fields. Use this for any 'how many', 'how much', "
-         "'average', 'trend', 'compare' or 'which ... has the most' question. Each row also carries up to five example case ids "
-         "you can cite. Fields: " + _field_guide() + ". Measures: " + "; ".join(f"{k} ({v})" for k, v in MEASURES.items()) + ".",
+         "Count records and compute measures, optionally split by one or two fields, for any object: cases (the default), "
+         "transactions, alerts, customers, filings, holds, disputes, risk assessments, KYC triggers, agent runs, agent actions, "
+         "detection changes, lookbacks or pipeline runs. Use this for any 'how many', 'how much', 'average', 'trend', 'compare' or "
+         "'which ... has the most' question. Each row carries up to five example record ids you can cite. The fields and measures "
+         "of each object are listed below; a field or measure from another object is refused.\n{catalog}",
          {"type": "object", "additionalProperties": False, "properties": {
-             "group_by": {"type": "array", "maxItems": 2, "items": {"type": "string", "enum": [k for k, f in FIELDS.items() if f.group]}},
-             "measures": {"type": "array", "items": {"type": "string", "enum": list(MEASURES)}, "description": "Defaults to ['cases']"},
-             "filters": FILTERS,
+             "object": OBJECT,
+             "group_by": {"type": "array", "maxItems": 2, "items": {"type": "string", "enum": _all("group")}},
+             "measures": {"type": "array", "items": {"type": "string", "enum": _all("measure")}, "description": "Defaults to the object's first measure"},
+             "filters": ANY_FILTERS,
              "sort_by": {"type": "string", "description": "One of the measures or group_by fields in this call"},
              "descending": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": semantic.MAX_ROWS}}},
          _breakdown),
+    Tool("list_records",
+         "List individual records of any object that match, sorted: the largest transactions, the overdue filings, a customer's "
+         "holds, the alerts behind a number. For cases, list_cases gives more case detail. Same objects, fields and filters as "
+         "breakdown. `fields` picks the columns (the id, case and customer are always included).",
+         {"type": "object", "additionalProperties": False, "required": ["object"], "properties": {
+             "object": OBJECT, "filters": ANY_FILTERS, "sort_by": {"type": "string", "enum": _all("field")},
+             "descending": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": landscape.MAX_LIST},
+             "fields": {"type": "array", "items": {"type": "string", "enum": _all("field")}, "maxItems": 15}}},
+         _list_records),
+    Tool("record",
+         "Every field of one record of any object, by its id: a transaction, alert, filing, hold, dispute, risk assessment and so on. "
+         "For a case use case_detail, for a customer's whole picture use customer.",
+         {"type": "object", "additionalProperties": False, "required": ["object", "id"], "properties": {
+             "object": OBJECT, "id": {"type": "string"}}},
+         _record),
+    Tool("calculate",
+         "Work out a figure from figures you already have, for example a difference, a ratio or a percentage change: "
+         "'(1250 - 980) / 980 * 100'. Numbers, + - * / ( ) and round(x, n) only. Use it rather than doing arithmetic yourself, "
+         "so the figure in your answer can be checked.",
+         {"type": "object", "additionalProperties": False, "required": ["expression"], "properties": {"expression": {"type": "string", "maxLength": 300}}},
+         _calculate),
     Tool("list_cases",
          "List the individual cases that match, sorted, with customer, stage, owner and amount. Use this to find the largest, "
          "oldest or newest cases, or the cases behind a number. Same filter fields as breakdown.",
@@ -208,6 +335,12 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
 def available(asker: Persona) -> list[Tool]:
     """The tools this person's role may use. A tool they may not use is never offered to the model."""
     return [t for t in TOOLS.values() if t.permission is None or asker.can(t.permission)]
+
+
+def specs(asker: Persona) -> list[tuple[str, str, dict]]:
+    """(name, description, schema) for each tool this person may use, with the vocabulary of the objects they may read."""
+    text = catalog_text(asker)
+    return [(t.name, t.description.replace("{catalog}", text), t.schema) for t in available(asker)]
 
 
 def _check_args(tool: Tool, args: Any) -> dict:
