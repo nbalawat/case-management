@@ -112,6 +112,8 @@ class Settings:
     temporal_step_seconds: float = float(os.getenv("TEMPORAL_STEP_SECONDS", "20"))
     # Due data pipelines are started by a Temporal schedule this often (replaces PIPELINE_SCHEDULER on Temporal).
     temporal_pipeline_seconds: float = float(os.getenv("TEMPORAL_PIPELINE_SECONDS", "60"))
+    # How often each client's regulatory inbox is read for the regulator's answers (a schedule per client on Temporal).
+    temporal_answers_seconds: float = float(os.getenv("TEMPORAL_ANSWERS_SECONDS", "300"))
     # 0: the worker creates no schedules (the sweep and due pipelines are then started some other way).
     temporal_schedules: bool = os.getenv("TEMPORAL_SCHEDULES", "1") == "1"
     # What workflow ids start with, before the client. Empty: EVENT_TOPIC_PREFIX. Two deployments sharing a Temporal
