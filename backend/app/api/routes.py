@@ -12,16 +12,16 @@ from ..cases.assignments import can_claim
 from ..cases.requests import RECIPIENTS
 from ..cases.service import TransitionError, allowed_transitions, definition, facts, record, save_narrative, stage_tasks, transition
 from ..config import settings
-from ..db import get_session
 from ..detection.engine import run_detection
 from ..detection.scenarios import REGISTRY, describe
 from ..domain.models import AgentRun, Alert, Case, CaseEvent, Feed, Filing, InfoRequest, Party, Transaction
-from ..domain.personas import PERSONAS, QUEUES, Persona, queue_members
+from ..domain.personas import Persona
+from ..tenants.registry import TenantRuntime, all_runtimes
 from ..ingest.connectors import CONNECTOR_CATALOGUE, CsvConnector
 from ..ingest.service import profile, run_feed
 from ..reporting.metrics import dashboard
 from ..scale import benchmark
-from .deps import actor, case_row, persona, require
+from .deps import actor, case_row, get_session, persona, require, tenant
 from .deps import get_case_or_404 as _get_case
 
 router = APIRouter(prefix="/api")
@@ -32,10 +32,17 @@ def _txn(t: Transaction, alerted: set[str]) -> dict:
             "counterparty": t.counterparty, "country": t.counterparty_country, "alerted": t.id in alerted}
 
 
+@router.get("/tenants")
+def list_tenants():
+    """Demo only: the client switcher. A signed-in user belongs to one client and never sees this list."""
+    return [{"id": rt.id, "name": rt.name, "status": rt.status, "default_person": rt.policy.default_person} for rt in all_runtimes()]
+
+
 @router.get("/meta")
-def meta():
-    return {"tenant": settings.tenant, "personas": [{"id": p.id, "name": p.name, "role": p.role, "title": p.title, "about": p.about} for p in PERSONAS.values()],
-            "sample_data": True, "llm_provider": settings.llm_provider}
+def meta(rt: TenantRuntime = Depends(tenant)):
+    return {"tenant": {"id": rt.id, "name": rt.name},
+            "personas": [{"id": p.id, "name": p.name, "role": p.role, "title": p.title, "about": p.about} for p in rt.policy.people.values()],
+            "default_person": rt.policy.default_person, "sample_data": True, "llm_provider": settings.llm_provider}
 
 
 @router.get("/dashboard")
@@ -55,7 +62,7 @@ def list_cases(status: str = "open", s: Session = Depends(get_session)):
 
 
 @router.get("/cases/{case_id}")
-def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depends(persona)):
+def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depends(persona), rt: TenantRuntime = Depends(tenant)):
     c = _get_case(s, case_id)
     alerts = list(s.scalars(select(Alert).where(Alert.case_id == c.id).order_by(Alert.created)))
     alerted = {i for a in alerts for i in a.txn_ids}
@@ -91,8 +98,8 @@ def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depen
                      "autonomy": ct.get("agents", {}).get("autonomy"), "recipients": RECIPIENTS},
         "access": {"can_work": p.can("work") and not p.read_only, "can_claim": can_claim(c, p) and c.owner != p.id,
                    "can_reassign": p.can("reassign") and c.closed is None, "read_only": p.read_only,
-                   "queue_members": [{"id": m.id, "name": m.name} for m in queue_members(c.queue)],
-                   "queue_label": QUEUES.get(c.queue or "", "")},
+                   "queue_members": [{"id": m.id, "name": m.name} for m in rt.policy.queue_members(c.queue)],
+                   "queue_label": rt.policy.queues.get(c.queue or "", "")},
         "filing": None if filing is None else {"id": filing.id, "kind": filing.kind, "filed_by": filing.filed_by,
                                                "filed_at": filing.filed_at.isoformat(), "sha256": filing.sha256},
         "parent": case_row(s.get(Case, c.parent_id)) if c.parent_id and s.get(Case, c.parent_id) else None,

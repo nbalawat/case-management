@@ -1,0 +1,54 @@
+# Starting policy of the 'Payments fintech' template: a lean team where people hold more than one role.
+# Each client gets its own copy at onboarding and changes it from the Access page.
+policy: payments-fintech
+version: 1.0.0
+
+permissions:
+  work: Work cases - claim, complete tasks, write narratives, raise information requests
+  view_team: See team workload, queue backlogs and QA results
+  reassign: Reassign cases between members of a queue
+  run_timers: Run the stage-clock sweep on demand
+  publish_workflow: Publish new versions of case types
+  load_data: Load data feeds onto the platform
+  manage_access: Change this access policy - roles, queues and people
+
+queues:
+  fraud: Fraud claims
+  fraud-approval: Refund sign-off
+  aml-l1: Monitoring alerts
+  aml-l2: Investigations
+  mlro: MLRO review
+  senior-approval: Chief risk officer sign-off
+  sanctions-l1: Sanctions screening
+  sanctions-l2: Sanctions decisions
+
+roles:
+  fraud_analyst:     {title: Fraud analyst, permissions: [work]}
+  analyst:           {title: Alert analyst, permissions: [work]}
+  investigator:      {title: Investigator, permissions: [work, reassign]}
+  sanctions_officer: {title: Sanctions officer, permissions: [work]}
+  team_lead:         {title: Operations lead, permissions: [work, view_team, reassign, run_timers]}
+  mlro:              {title: MLRO, permissions: [work, view_team]}
+  head_fiu:          {title: Chief risk officer, permissions: [work, view_team]}
+  admin:             {title: Operations engineer, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access]}
+  auditor:           {title: External auditor, permissions: [view_team], read_only: true}
+
+people:
+  - {id: nia, name: Nia Okoye, roles: [fraud_analyst, analyst], title: Financial crime analyst, queues: [fraud, aml-l1, sanctions-l1],
+     about: Works fraud claims and takes the first look at monitoring alerts and sanctions hits.}
+  - {id: dev, name: Dev Malhotra, role: fraud_analyst, queues: [fraud],
+     about: Works fraud claims against the clock and contacts customers.}
+  - {id: ravi, name: Ravi Shah, roles: [investigator, sanctions_officer], title: Senior investigator, queues: [aml-l2, sanctions-l2],
+     about: Runs investigations and decides escalated sanctions matches.}
+  - {id: cleo, name: Cleo Martin, role: investigator, queues: [aml-l2],
+     about: Second investigator, so four-eyes controls have someone to balance against.}
+  - {id: joy, name: Joy Tanaka, roles: [mlro, team_lead], title: Head of compliance (MLRO), queues: [mlro, fraud-approval],
+     about: Files SARs, signs off larger refunds and balances the team's workload.}
+  - {id: sam, name: Sam Whitaker, role: head_fiu, queues: [senior-approval],
+     about: Second approval for high-value and politically exposed filings.}
+  - {id: pat, name: Pat Novak, role: admin, queues: [],
+     about: Loads data, publishes workflow versions and maintains the access policy.}
+  - {id: eli, name: Eli Brandt, role: auditor, queues: [],
+     about: Read-only access for the annual independent review.}
+
+default_person: nia

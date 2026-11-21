@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..cases.case_types import case_type_for_scenario, load_case_types
 from ..cases.service import create_case, record
+from ..tenancy import tenant_of
 from ..domain.models import Account, Alert, Case, Party, new_id, now
 
 PRIORITY_ORDER = ["low", "medium", "high", "critical"]
@@ -21,9 +22,10 @@ def priority_for(score: float, n_alerts: int = 1) -> str:
 def route_alerts(s: Session, alerts: list[Alert]) -> list[Case]:
     """Attach each alert to the party's open case of the right type, or open a new case."""
     touched: dict[str, Case] = {}
-    types = load_case_types()
+    tenant = tenant_of(s)
+    types = load_case_types(tenant)
     for a in sorted(alerts, key=lambda x: x.created):
-        ct = case_type_for_scenario(a.scenario)
+        ct = case_type_for_scenario(tenant, a.scenario)
         open_states = [k for k, v in ct["states"].items() if v.get("kind", "open") != "closed"]
         case = s.scalars(select(Case).where(Case.party_id == a.party_id, Case.case_type == ct["case_type"],
                                             Case.state.in_(open_states))).first()
@@ -53,7 +55,7 @@ def ingest_external_alert(s: Session, *, source: str, external_id: str, scenario
     existing = s.scalars(select(Alert).where(Alert.dedupe_key == key)).first()
     if existing:
         return existing, None
-    if s.get(Party, party_id) is None:
+    if s.get(Party, {"tenant_id": tenant_of(s), "id": party_id}) is None:
         s.add(Party(id=party_id, name=party_name or f"Customer {party_id}", risk_rating="medium"))
         s.add(Account(id=f"A-{party_id}", party_id=party_id))
         s.flush()

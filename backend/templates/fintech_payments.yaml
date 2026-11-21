@@ -1,0 +1,6 @@
+template: fintech_payments
+title: Payments fintech
+summary: Fraud first, with monitoring and sanctions run by a lean team where people hold more than one role. No QA sampling.
+access: fintech_payments.yaml
+case_types: [fraud_claim, tm_alert_investigation, sanctions_hit]
+settings: {default_case_type: tm_alert_investigation}

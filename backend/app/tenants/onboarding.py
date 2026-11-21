@@ -1,0 +1,149 @@
+"""Bringing a client onto the platform, and rebuilding every client's configuration at start-up.
+
+Onboarding is one transaction: the client row, its first access policy and its runtime entry are created
+together or not at all. Everything is validated first, so a client can never exist in a state where a
+workflow names a role or a queue its policy does not have.
+"""
+from __future__ import annotations
+
+import re
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..cases import case_types as registry
+from ..domain.access import AccessPolicy, AccessPolicyError, parse_policy
+from ..domain.models import AccessPolicyVersion, Tenant, WorkflowVersion
+from ..tenancy import TenantError, is_platform_session
+from .registry import TenantRuntime, install, reset, runtime
+from .templates import Template, templates
+
+SLUG = re.compile(r"^[a-z][a-z0-9-]{2,30}$")
+DEPLOYMENTS = {"pooled": "Shared platform", "dedicated": "Dedicated stamp", "client-cloud": "Client's own cloud"}
+STATUSES = ("live", "suspended")
+RESERVED = {"platform", "admin", "api", "system"}
+
+
+class OnboardingError(ValueError):
+    pass
+
+
+def _platform(s: Session) -> None:
+    if not is_platform_session(s):
+        raise TenantError("Client administration needs a platform session")
+
+
+def validate_configuration(policy: AccessPolicy, case_type_names: list[str], origin: str = "client") -> list[dict]:
+    """Every chosen case type must exist and be workable under this policy. Returns the definitions."""
+    library = registry.library()
+    if not case_type_names:
+        raise OnboardingError(f"{origin}: choose at least one case type")
+    unknown = [n for n in case_type_names if n not in library]
+    if unknown:
+        raise OnboardingError(f"{origin}: unknown case type(s): {', '.join(unknown)}")
+    if not any(p.can("manage_access") for p in policy.people.values()):
+        raise OnboardingError(f"{origin}: nobody holds the 'manage_access' permission, so the policy could never be changed")
+    for name in case_type_names:
+        try:
+            registry.check_policy(library[name], policy, library[name]["title"])
+        except registry.CaseTypeError as e:
+            raise OnboardingError(str(e)) from e
+    return [library[n] for n in case_type_names]
+
+
+def _template(template_id: str) -> Template:
+    try:
+        return templates()[template_id]
+    except KeyError:
+        raise OnboardingError(f"Unknown template '{template_id}'") from None
+
+
+def preview(template_id: str, case_types: list[str] | None = None, access_source: str | None = None) -> dict:
+    """What onboarding from this template would create. Changes nothing."""
+    tpl = _template(template_id)
+    names = list(case_types) if case_types is not None else list(tpl.case_types)
+    try:
+        policy = parse_policy(_yaml(access_source or tpl.access_source), "access policy")
+    except AccessPolicyError as e:
+        raise OnboardingError(str(e)) from e
+    definitions = validate_configuration(policy, names, tpl.title)
+    return {"template": tpl.id, "title": tpl.title, "summary": tpl.summary, "policy": policy, "definitions": definitions,
+            "case_types": names, "settings": tpl.settings}
+
+
+def _yaml(source: str):
+    import yaml
+
+    try:
+        return yaml.safe_load(source)
+    except yaml.YAMLError as e:
+        raise OnboardingError(f"access policy: not valid YAML ({str(e).splitlines()[0]})") from e
+
+
+def onboard(s: Session, *, tenant_id: str, name: str, template: str, region: str = "us-east", deployment: str = "pooled",
+            case_types: list[str] | None = None, access_source: str | None = None, by: str = "platform") -> TenantRuntime:
+    _platform(s)
+    if not SLUG.match(tenant_id or "") or tenant_id in RESERVED:
+        raise OnboardingError("Client id must be 3 to 31 characters: lower-case letters, digits and hyphens, starting with a letter")
+    if not (name or "").strip():
+        raise OnboardingError("Client name is required")
+    if deployment not in DEPLOYMENTS:
+        raise OnboardingError(f"Deployment must be one of: {', '.join(DEPLOYMENTS)}")
+    if s.get(Tenant, tenant_id) is not None:
+        raise OnboardingError(f"A client with id '{tenant_id}' already exists")
+    plan = preview(template, case_types, access_source)
+    tpl = _template(template)
+    row = Tenant(id=tenant_id, name=name.strip(), template=template, region=region, deployment=deployment, status="live",
+                 case_types=plan["case_types"], settings=dict(plan["settings"]))
+    s.add(row)
+    s.add(AccessPolicyVersion(tenant_id=tenant_id, version=plan["policy"].version, source=access_source or tpl.access_source,
+                              published_by=by, note=f"Created from the '{tpl.title}' template"))
+    s.flush()
+    return install(TenantRuntime(tenant_id, row.name, plan["policy"], list(row.case_types), row.status, dict(row.settings)))
+
+
+def hydrate(s: Session) -> list[TenantRuntime]:
+    """Rebuild every client's runtime from the database: the policy in force and its published workflow versions."""
+    _platform(s)
+    reset()
+    out = []
+    for row in s.scalars(select(Tenant).order_by(Tenant.created, Tenant.id)):
+        source = s.scalars(select(AccessPolicyVersion).where(AccessPolicyVersion.tenant_id == row.id)
+                           .order_by(AccessPolicyVersion.id.desc())).first()
+        rt = install(TenantRuntime(row.id, row.name, parse_policy(_yaml(source.source), f"{row.id} access policy"),
+                                   list(row.case_types), row.status, dict(row.settings or {})))
+        for wv in s.scalars(select(WorkflowVersion).where(WorkflowVersion.tenant_id == row.id).order_by(WorkflowVersion.id)):
+            registry.register_published(row.id, registry.parse(wv.source, f"{wv.case_type} {wv.version}"))
+        out.append(rt)
+    return out
+
+
+def set_status(s: Session, tenant_id: str, status: str) -> TenantRuntime:
+    _platform(s)
+    if status not in STATUSES:
+        raise OnboardingError(f"Status must be one of: {', '.join(STATUSES)}")
+    row = s.get(Tenant, tenant_id)
+    if row is None:
+        raise OnboardingError(f"Unknown client '{tenant_id}'")
+    row.status = status
+    s.flush()
+    rt = runtime(tenant_id)
+    rt.status = status
+    return rt
+
+
+def set_case_types(s: Session, tenant_id: str, names: list[str], in_use: set[str] = frozenset()) -> TenantRuntime:
+    """Change which case types a client uses. A type with open cases cannot be switched off."""
+    _platform(s)
+    row = s.get(Tenant, tenant_id)
+    if row is None:
+        raise OnboardingError(f"Unknown client '{tenant_id}'")
+    rt = runtime(tenant_id)
+    validate_configuration(rt.policy, names, rt.name)
+    blocked = sorted(in_use - set(names))
+    if blocked:
+        raise OnboardingError(f"Open cases still use: {', '.join(blocked)}. Close them before switching the case type off")
+    row.case_types = list(names)
+    s.flush()
+    rt.case_types = list(names)
+    return rt

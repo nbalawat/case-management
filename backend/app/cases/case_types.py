@@ -1,7 +1,8 @@
 """Case types are configuration: versioned YAML definitions.
 
-Files in `case_types/` are the shipped baseline. Versions published from the workflow editor are stored
-in the database and layered on top. A case stays on the version it was opened under.
+Files in `case_types/` are the shared library every client starts from. Each client chooses which of them to
+use and can publish its own versions, which are stored per client and never seen by another. A case stays on
+the version it was opened under.
 """
 from __future__ import annotations
 
@@ -11,7 +12,8 @@ from pathlib import Path
 import yaml
 
 from ..config import settings
-from ..domain.personas import PERMISSIONS, QUEUES
+from ..domain.access import AccessPolicy
+from ..tenants.registry import runtime
 from . import conditions
 
 REQUIREMENTS = {
@@ -29,6 +31,7 @@ class CaseTypeError(ValueError):
 
 
 def validate(ct, origin: str = "definition") -> dict:
+    """Structural rules that hold for any client. Roles and queues are checked against a policy separately."""
     def fail(msg: str):
         raise CaseTypeError(f"{origin}: {msg}")
 
@@ -45,8 +48,6 @@ def validate(ct, origin: str = "definition") -> dict:
             fail(f"state '{sid}' needs a label")
         if st.get("kind", "open") not in STATE_KINDS:
             fail(f"state '{sid}' kind must be one of {', '.join(STATE_KINDS)}")
-        if st.get("queue") and st["queue"] not in QUEUES:
-            fail(f"state '{sid}' uses unknown queue '{st['queue']}'")
         seen = set()
         for task in st.get("tasks", []):
             if not isinstance(task, dict) or "id" not in task or "label" not in task:
@@ -64,9 +65,6 @@ def validate(ct, origin: str = "definition") -> dict:
             fail(f"{name} needs a label")
         if not t.get("roles"):
             fail(f"{name} needs roles")
-        for role in t["roles"]:
-            if role not in PERMISSIONS:
-                fail(f"{name} uses unknown role '{role}'")
         for req in t.get("requires", []):
             if req not in REQUIREMENTS:
                 fail(f"{name} requires unknown '{req}'. Known: {', '.join(REQUIREMENTS)}")
@@ -100,6 +98,28 @@ def validate(ct, origin: str = "definition") -> dict:
     return ct
 
 
+def check_policy(ct: dict, policy: AccessPolicy, origin: str = "definition") -> None:
+    """Rules that depend on the client: every role and queue a definition names must exist in its access policy,
+    and someone in each working queue must be able to move the case on."""
+    def fail(msg: str):
+        raise CaseTypeError(f"{origin}: {msg}")
+
+    for sid, st in ct["states"].items():
+        queue = st.get("queue")
+        if queue and queue not in policy.queues:
+            fail(f"state '{sid}' uses unknown queue '{queue}'")
+    for t in ct["transitions"]:
+        for role in t["roles"]:
+            if role not in policy.roles:
+                fail(f"transition {t['from']} -> {t['to']} uses unknown role '{role}'")
+    for sid, st in ct["states"].items():
+        if st.get("kind", "open") == "closed" or not st.get("queue"):
+            continue
+        roles = {r for t in ct["transitions"] if t["from"] == sid for r in t["roles"]}
+        if not any(m.holds(roles) for m in policy.queue_members(st["queue"])):
+            fail(f"nobody in queue '{st['queue']}' holds a role that can move a case out of '{st['label']}'")
+
+
 def parse(source: str, origin: str = "definition") -> dict:
     try:
         raw = yaml.safe_load(source)
@@ -112,61 +132,60 @@ def parse(source: str, origin: str = "definition") -> dict:
 
 
 @lru_cache
-def _baseline(directory: str | None = None) -> dict[str, dict]:
+def library(directory: str | None = None) -> dict[str, dict]:
+    """The shared, read-only case types every client can start from."""
     d = Path(directory) if directory else settings.case_types_dir
     return {ct["case_type"]: ct for ct in (parse(p.read_text(), p.name) for p in sorted(d.glob("*.yaml")))}
 
 
-# Versions published at run time: (case_type, version) -> definition, in publish order.
-_published: dict[tuple[str, str], dict] = {}
+def register_published(tenant_id: str, ct: dict) -> None:
+    runtime(tenant_id).published[(ct["case_type"], ct["version"])] = ct
 
 
-def register_published(ct: dict) -> None:
-    _published[(ct["case_type"], ct["version"])] = ct
-
-
-def reset_published() -> None:
-    _published.clear()
-
-
-def load_case_types() -> dict[str, dict]:
-    """The active definition of every case type: the latest published version, else the baseline file."""
-    out = dict(_baseline())
-    for (name, _), ct in _published.items():
+def load_case_types(tenant_id: str) -> dict[str, dict]:
+    """The active definition of every case type this client uses: its latest published version, else the library one."""
+    rt = runtime(tenant_id)
+    out = {name: library()[name] for name in rt.case_types if name in library()}
+    for (name, _), ct in rt.published.items():
         out[name] = ct
     return out
 
 
-def get_definition(case_type: str, version: str | None = None) -> dict:
-    """The definition a case runs on: its own version where still known, else the active one."""
-    if version and (case_type, version) in _published:
-        return _published[(case_type, version)]
-    base = _baseline().get(case_type)
-    if base is not None and (version is None or base["version"] == version) and not (version is None and _has_published(case_type)):
+def get_definition(tenant_id: str, case_type: str, version: str | None = None) -> dict:
+    """The definition a case runs on: its own version where still known, else the client's active one."""
+    rt = runtime(tenant_id)
+    if version and (case_type, version) in rt.published:
+        return rt.published[(case_type, version)]
+    base = library().get(case_type)
+    if base is not None and version is not None and base["version"] == version:
         return base
-    return load_case_types()[case_type]
+    return load_case_types(tenant_id)[case_type]
 
 
-def _has_published(case_type: str) -> bool:
-    return any(name == case_type for name, _ in _published)
-
-
-def versions(case_type: str) -> list[dict]:
+def versions(tenant_id: str, case_type: str) -> list[dict]:
+    rt = runtime(tenant_id)
     out = []
-    base = _baseline().get(case_type)
+    base = library().get(case_type)
     if base:
-        out.append({"version": base["version"], "origin": "baseline file"})
-    out += [{"version": v, "origin": "published"} for (name, v) in _published if name == case_type]
-    active = load_case_types()[case_type]["version"]
+        out.append({"version": base["version"], "origin": "platform library"})
+    out += [{"version": v, "origin": "published by this client"} for (name, v) in rt.published if name == case_type]
+    active = load_case_types(tenant_id)[case_type]["version"]
     return [o | {"active": o["version"] == active} for o in out]
 
 
-def case_type_for_scenario(scenario: str) -> dict:
-    types = load_case_types()
+def case_type_for_scenario(tenant_id: str, scenario: str) -> dict:
+    """Which of the client's case types handles alerts of this scenario; its default type for anything unrecognised."""
+    types = load_case_types(tenant_id)
     for ct in types.values():
         if scenario in ct.get("scenarios", []):
             return ct
-    return types["tm_alert_investigation"]
+    default = runtime(tenant_id).settings.get("default_case_type")
+    if default in types:
+        return types[default]
+    with_scenarios = [ct for ct in types.values() if ct.get("scenarios")]
+    if not with_scenarios:
+        raise CaseTypeError(f"Client '{tenant_id}' has no case type that accepts alerts")
+    return with_scenarios[0]
 
 
 def version_key(version: str) -> tuple:
