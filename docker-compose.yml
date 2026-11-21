@@ -28,7 +28,9 @@ services:
       SEARCH_URL: ${SEARCH_URL:-}                # empty: names are searched in the database
       LAKE_CATALOG: ${LAKE_CATALOG:-}            # empty: no lake; make backbone sets an Iceberg catalog in Postgres
       GRAPH_URL: ${GRAPH_URL:-}                  # empty: routes between customers are found in the database
-      TEMPORAL_URL: ${TEMPORAL_URL:-}            # empty: stage clocks are checked by the sweep only
+      TEMPORAL_URL: ${TEMPORAL_URL:-}            # empty: case workflows run in the application and the sweep checks stage clocks
+      WORKFLOW_ENGINE: ${WORKFLOW_ENGINE:-}      # empty: temporal when TEMPORAL_URL is set, builtin otherwise
+      TEMPORAL_NAMESPACE_MODE: ${TEMPORAL_NAMESPACE_MODE:-per_client}  # each client's workflows in a namespace of its own
       FLINK_URL: ${FLINK_URL:-}                  # empty: no stream processor; scenarios run in the stream consumer
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
@@ -90,7 +92,7 @@ services:
       interval: 5s
       retries: 40
 
-  # ---- durable stage clocks on Temporal: docker compose --profile durable, with TEMPORAL_URL=temporal://temporal:7233
+  # ---- case workflows on Temporal: docker compose --profile durable, with TEMPORAL_URL=temporal://temporal:7233
   temporal:  # the development server: one process, its state in a file on a volume. A deployment runs a Temporal cluster.
     profiles: [durable]
     image: temporalio/temporal:1.10.1
@@ -98,7 +100,7 @@ services:
     user: root  # the volume is created owned by root
     ports: ["8233:8233"]  # Temporal's own console
     volumes: [temporaldata:/data]
-  durable-worker:  # runs the clock workflows and keeps them in step with the database
+  durable-worker:  # runs every client's case and filing workflows, schedules the sweep and due pipelines, adopts cases opened elsewhere
     profiles: [durable]
     build: .
     command: ["uv", "run", "--no-dev", "python", "-m", "app.durable.worker"]

@@ -78,7 +78,7 @@ export default function Team() {
                   </select></td>}
               </tr>))}</tbody>
           </table></div>)}
-        <p className="muted small">A stage clock breach raises the case priority and flags it here. In this build the clocks are checked when work lists load; the target architecture gives each case a durable timer.</p>
+        <p className="muted small">A stage clock breach raises the case priority and flags it here. On Temporal each open case holds a durable timer for its stage; without it the clocks are checked when work lists load.</p>
       </Card>
     </>
   )

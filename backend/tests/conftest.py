@@ -80,9 +80,81 @@ def client(tmp_path_factory):
     seed_module.engine = eng
     object.__setattr__(settings, "samples_dir", tmp_path_factory.mktemp("samples"))
     saved = registry.swap({})
+    previous = _engine_for_the_app()
     with TestClient(app) as c:
         yield c
+    _restore_engine(previous)
     registry.swap(saved)
     appdb.engine, appdb.SessionLocal = old[0], old[1]
     seed_module.engine = old[0]
     object.__setattr__(settings, "samples_dir", old[2])
+
+
+# ---- the whole suite on the Temporal engine -------------------------------------------------------------------------
+# TEST_WORKFLOW_ENGINE=temporal TEST_TEMPORAL_URL=temporal://127.0.0.1:7233 pytest
+# runs the suite with case workflows on a real Temporal server: every test that drives the application over HTTP (the
+# `client` fixture) has each person's step become an update to that case's workflow, applied by a worker running
+# beside the tests. Tests that call the case service on an in-memory database test the rules themselves, which are
+# the same on both engines, and run as they always do. Unset, everything runs on the built-in engine.
+
+@pytest.fixture(autouse=True, scope="session")
+def _workflow_engine():
+    import os
+
+    wanted = os.getenv("TEST_WORKFLOW_ENGINE", "builtin")
+    url = os.getenv("TEST_TEMPORAL_URL", "")
+    if wanted != "temporal":
+        yield "builtin"
+        return
+    if not url.startswith("temporal://"):
+        pytest.exit("TEST_WORKFLOW_ENGINE=temporal needs TEST_TEMPORAL_URL", returncode=2)
+    import asyncio
+    import threading
+    import uuid
+
+    from app.config import settings
+    from app.durable import worker
+    from app.durable.engine import TemporalEngine
+
+    run = uuid.uuid4().hex[:8]
+    saved = {k: getattr(settings, k) for k in ("temporal_url", "workflow_engine", "event_topic_prefix", "temporal_task_queue", "temporal_sync_seconds",
+                                               "temporal_namespace_mode", "temporal_namespace_prefix")}
+    for k, v in {"temporal_url": url, "workflow_engine": "temporal", "event_topic_prefix": f"cfs{run}", "temporal_task_queue": f"suite-{run}",
+                 "temporal_sync_seconds": 2.0, "temporal_namespace_mode": os.getenv("TEST_TEMPORAL_NAMESPACES", "shared"),
+                 "temporal_namespace_prefix": f"cfs{run}-"}.items():
+        object.__setattr__(settings, k, v)
+    _SUITE["engine"] = TemporalEngine()
+    stop: asyncio.Event | None = None
+    loop = asyncio.new_event_loop()
+
+    def serve() -> None:
+        nonlocal stop
+        asyncio.set_event_loop(loop)
+        stop = asyncio.Event()
+        loop.run_until_complete(worker.run(stop))
+
+    t = threading.Thread(target=serve, name="durable-worker", daemon=True)
+    t.start()
+    yield "temporal"
+    if stop is not None:
+        loop.call_soon_threadsafe(stop.set)
+    t.join(timeout=30)
+    _SUITE.pop("engine", None)
+    for k, v in saved.items():
+        object.__setattr__(settings, k, v)
+
+
+_SUITE: dict = {}
+
+
+def _engine_for_the_app():
+    """The application under test runs on the suite's engine: Temporal when asked for, otherwise the built-in one."""
+    from app.workflow import use
+
+    return use(_SUITE.get("engine"))
+
+
+def _restore_engine(previous) -> None:
+    from app.workflow import use
+
+    use(previous)

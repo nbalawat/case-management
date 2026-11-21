@@ -169,15 +169,17 @@ def test_the_whole_sweep_runs_for_every_client(cases):
 
 # ---- names and addresses
 
-def test_a_clock_is_named_for_its_client_and_case():
-    assert temporal.clock_id("meridian", "case-1") == "caseforge.meridian.clock.case-1"
-    assert temporal.clock_id("kestrel", "case-1") != temporal.clock_id("meridian", "case-1")
+def test_a_case_workflow_is_named_for_its_client_and_case():
+    assert temporal.case_id("meridian", "case-1") == "caseforge.meridian.case.case-1"
+    assert temporal.case_id("kestrel", "case-1") != temporal.case_id("meridian", "case-1")
+    assert temporal.clock_id("meridian", "case-1") == "caseforge.meridian.clock.case-1"  # the old stage clocks, still finished
+    assert temporal.sweep_id("meridian") != temporal.sweep_id("kestrel") and temporal.pipelines_id("meridian").endswith(".pipelines")
 
 
 @pytest.mark.parametrize("tenant", ["", "ab", "Acme", "a.b", "acme\n", None])
-def test_a_clock_is_never_named_for_something_that_is_not_a_client(tenant):
+def test_a_workflow_is_never_named_for_something_that_is_not_a_client(tenant):
     with pytest.raises(DurableError):
-        temporal.clock_id(tenant, "case-1")
+        temporal.case_id(tenant, "case-1")
 
 
 @pytest.mark.parametrize("url, want", [("temporal://localhost:7233", "localhost:7233"), ("temporal://temporal.internal:7233/", "temporal.internal:7233")])
@@ -191,25 +193,70 @@ def test_anything_else_is_refused(url):
         temporal.target(url)
 
 
+def _with(**kw):
+    old = {k: getattr(settings, k) for k in kw}
+    for k, v in kw.items():
+        object.__setattr__(settings, k, v)
+    return old
+
+
+def test_each_client_gets_a_namespace_of_its_own_unless_told_to_share():
+    from app.durable.namespaces import NamespaceError, namespace_for
+
+    old = _with(temporal_namespace_mode="per_client", temporal_namespace_prefix="caseforge-", temporal_namespace="default")
+    try:
+        assert namespace_for("meridian") == "caseforge-meridian" and namespace_for("kestrel") == "caseforge-kestrel"
+        object.__setattr__(settings, "temporal_namespace_mode", "shared")
+        assert namespace_for("meridian") == namespace_for("kestrel") == "default"
+        object.__setattr__(settings, "temporal_namespace_mode", "sideways")
+        with pytest.raises(NamespaceError):
+            namespace_for("meridian")
+        object.__setattr__(settings, "temporal_namespace_mode", "per_client")
+        with pytest.raises(NamespaceError):
+            namespace_for("Not A Client")
+    finally:
+        _with(**old)
+
+
+# ---- choosing the engine
+
+def test_the_engine_is_chosen_by_configuration():
+    from app.workflow.engine import choose
+
+    old = _with(workflow_engine="", temporal_url="")
+    try:
+        assert choose() == "builtin"
+        object.__setattr__(settings, "temporal_url", "temporal://localhost:7233")
+        assert choose() == "temporal"
+        object.__setattr__(settings, "workflow_engine", "builtin")
+        assert choose() == "builtin"  # Temporal can be there for clocks alone
+        object.__setattr__(settings, "workflow_engine", "airflow")
+        with pytest.raises(ValueError):
+            choose()
+    finally:
+        _with(**old)
+
+
 # ---- the workflow code
 
 def test_the_workflow_definitions_are_valid_and_named():
     from temporalio import workflow
 
-    from app.durable.workflows import StageClock, Sweep
+    from app.durable.workflows import CaseWorkflow, FilingWorkflow, PipelineRuns, StageClock, Sweep
 
-    for cls, name, signals in ((StageClock, "StageClock", {"stage"}), (Sweep, "Sweep", set())):
-        d = workflow._Definition.must_from_class(cls)
-        assert d.name == name and set(d.signals) == signals
-    assert set(workflow._Definition.must_from_class(StageClock).queries) >= {"state"}
+    case = workflow._Definition.must_from_class(CaseWorkflow)
+    assert case.name == "CaseWorkflow" and set(case.signals) == {"observed"} and set(case.updates) == {"perform"} and "state" in case.queries
+    assert set(workflow._Definition.must_from_class(FilingWorkflow).signals) == {"observed"}
+    for cls, name in ((Sweep, "Sweep"), (PipelineRuns, "PipelineRuns"), (StageClock, "StageClock"), (FilingWorkflow, "FilingWorkflow")):
+        assert workflow._Definition.must_from_class(cls).name == name
 
 
 def test_the_activities_carry_the_names_the_workflows_call():
     from temporalio import activity
 
-    from app.durable.workflows import STAGE_DUE, SWEEP
+    from app.durable.workflows import FILING_DUE, FILING_LOOK, LOOK, PERFORM, PIPELINES, STAGE_DUE, SWEEP
 
-    assert {activity._Definition.must_from_callable(a).name for a in temporal.activities()} == {STAGE_DUE, SWEEP}
+    assert {activity._Definition.must_from_callable(a).name for a in temporal.activities()} == {LOOK, PERFORM, STAGE_DUE, SWEEP, PIPELINES, FILING_LOOK, FILING_DUE}
 
 
 def test_workflow_code_imports_nothing_from_the_application():
@@ -224,23 +271,55 @@ def test_workflow_code_imports_nothing_from_the_application():
 
 # ---- what the platform reports
 
-def test_with_no_temporal_the_page_says_the_sweep_checks_clocks(s):
-    assert settings.temporal_url == ""
-    v = status.view(s)["clocks"]
-    assert v == {"engine": "sweep", "connected": False, "clocks": None, "note": "Stage clocks are checked by the sweep, when it is asked for and when work lists load."}
+def test_on_the_builtin_engine_the_page_says_the_sweep_checks_clocks(s):
+    from app.workflow import BuiltinEngine, use
+
+    old = use(BuiltinEngine())
+    try:
+        v = status.view(s)["clocks"]
+    finally:
+        use(old)
+    assert v["engine"] == "builtin" and v["connected"] is False and v["clocks"] is None and "sweep" in v["note"]
 
 
 def test_a_temporal_that_is_down_is_reported_not_raised():
-    object.__setattr__(settings, "temporal_url", "temporal://127.0.0.1:9")
+    from app.durable.engine import TemporalEngine
+
+    old = _with(temporal_url="temporal://127.0.0.1:9", temporal_namespace_mode="shared")
     try:
-        v = temporal.status(T)
+        v = TemporalEngine().status(T)
     finally:
-        object.__setattr__(settings, "temporal_url", "")
-    assert v == {"engine": "temporal", "connected": False, "clocks": None, "note": "Temporal did not answer. The sweep still checks stage clocks."}
+        _with(**old)
+    assert v["engine"] == "temporal" and v["connected"] is False and v["clocks"] is None and "did not answer" in v["note"]
+
+
+def test_a_step_with_temporal_down_changes_nothing_and_says_so(s):
+    from app.cases.service import TransitionError
+    from app.domain.personas import get_persona
+    from app.durable.engine import TemporalEngine
+    from app.workflow import Action, EngineUnavailable
+
+    c = case_due_in(s, "A", 600)
+    s.commit()
+    old = _with(temporal_url="temporal://127.0.0.1:9", temporal_namespace_mode="shared", temporal_step_seconds=3.0)
+    saved = appdb.engine
+    appdb.engine = s.get_bind()  # as if this were the application's database, so the step must go to Temporal
+    try:
+        with pytest.raises((EngineUnavailable, TransitionError)) as e:
+            TemporalEngine().perform(s, c, get_persona(T, "ana"), Action("task", "ana", task_id="nope"))
+        assert isinstance(e.value, EngineUnavailable)
+    finally:
+        appdb.engine = saved
+        _with(**old)
+    assert breaches(s, c.id) == []
 
 
 def test_the_worker_will_not_start_without_an_address(capsys):
     from app.durable import worker
 
-    assert worker.main() == 2 and "TEMPORAL_URL" in capsys.readouterr().out
+    old = _with(temporal_url="")
+    try:
+        assert worker.main() == 2 and "TEMPORAL_URL" in capsys.readouterr().out
+    finally:
+        _with(**old)
     assert appdb.engine is not None

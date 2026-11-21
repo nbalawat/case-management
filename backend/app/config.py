@@ -64,14 +64,27 @@ class Settings:
     # The payment network on a graph engine: age://user:password@host:5432/database (Apache AGE in Postgres). Empty:
     # routes between customers are found in the operational database.
     graph_url: str = os.getenv("GRAPH_URL", "")
-    # Durable stage clocks on Temporal: temporal://host:7233. Empty: clocks are checked by the sweep only. The worker
-    # (python -m app.durable.worker) brings clocks into step every TEMPORAL_SYNC_SECONDS and Temporal runs the
-    # periodic sweep every TEMPORAL_SWEEP_SECONDS.
+    # Temporal: temporal://host:7233. Set, case workflows run on it (see WORKFLOW_ENGINE): each open case is a durable
+    # workflow holding its stage clock and applying people's steps one at a time. The worker
+    # (python -m app.durable.worker) adopts cases opened elsewhere every TEMPORAL_SYNC_SECONDS and Temporal schedules
+    # the periodic sweep every TEMPORAL_SWEEP_SECONDS. Empty: the built-in engine and the sweep.
     temporal_url: str = os.getenv("TEMPORAL_URL", "")
     temporal_namespace: str = os.getenv("TEMPORAL_NAMESPACE", "default")
     temporal_task_queue: str = os.getenv("TEMPORAL_TASK_QUEUE", "caseforge")
     temporal_sync_seconds: float = float(os.getenv("TEMPORAL_SYNC_SECONDS", "15"))
     temporal_sweep_seconds: float = float(os.getenv("TEMPORAL_SWEEP_SECONDS", "300"))
+    # Where case workflows run: builtin (inside the application) or temporal (each case a durable workflow). Empty:
+    # temporal when TEMPORAL_URL is set, builtin otherwise.
+    workflow_engine: str = os.getenv("WORKFLOW_ENGINE", "")
+    # shared: every client in TEMPORAL_NAMESPACE. per_client: each client in a namespace of its own,
+    # TEMPORAL_NAMESPACE_PREFIX + client id, registered when first needed, with its own retention and history.
+    temporal_namespace_mode: str = os.getenv("TEMPORAL_NAMESPACE_MODE", "per_client")
+    temporal_namespace_prefix: str = os.getenv("TEMPORAL_NAMESPACE_PREFIX", "caseforge-")
+    temporal_retention_days: int = int(os.getenv("TEMPORAL_RETENTION_DAYS", "30"))
+    # How long a person's step waits for its case workflow before the request gives up (nothing is changed then).
+    temporal_step_seconds: float = float(os.getenv("TEMPORAL_STEP_SECONDS", "20"))
+    # Due data pipelines are started by a Temporal schedule this often (replaces PIPELINE_SCHEDULER on Temporal).
+    temporal_pipeline_seconds: float = float(os.getenv("TEMPORAL_PIPELINE_SECONDS", "60"))
     # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. Read-only here;
     # the platform page shows whether each client's jobs are running.
     flink_url: str = os.getenv("FLINK_URL", "")
