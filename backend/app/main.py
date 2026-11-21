@@ -17,6 +17,7 @@ from .auth import dev_idp
 from . import workflow
 from .config import ROOT, settings
 from .db import ensure_schema, session_scope
+from .tenants import provider
 from . import observability
 from .tenants.onboarding import hydrate
 
@@ -30,6 +31,7 @@ async def lifespan(_: FastAPI):
         metrics.serve(int(os.environ["METRICS_PORT"]))
     ensure_schema()
     with session_scope(platform=True) as s:
+        provider.bootstrap(s, settings.bootstrap_operator)
         clients = hydrate(s)
     if not clients and settings.demo_tenants:
         from .seed import seed_demo

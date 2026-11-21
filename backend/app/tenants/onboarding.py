@@ -15,6 +15,7 @@ from ..cases import case_types as registry
 from ..domain.access import AccessPolicy, AccessPolicyError, parse_policy
 from ..domain.models import AccessPolicyVersion, Tenant, WorkflowVersion
 from ..tenancy import TenantError, is_platform_session
+from . import provider
 from .registry import TenantRuntime, install, reset, runtime
 from .templates import Template, templates
 
@@ -199,6 +200,8 @@ def hydrate(s: Session) -> list[TenantRuntime]:
                                    list(row.case_types), row.status, dict(row.settings or {})))
         for wv in s.scalars(select(WorkflowVersion).where(WorkflowVersion.tenant_id == row.id).order_by(WorkflowVersion.id)):
             registry.register_published(row.id, registry.parse(wv.source, f"{wv.case_type} {wv.version}"))
+        provider.expire(s, row.id)
+        provider.refresh(s, rt)
         out.append(rt)
     return out
 

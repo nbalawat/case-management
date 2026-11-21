@@ -7,7 +7,7 @@ from ..auth import dev_idp
 from ..auth.identity import PLATFORM, Identity, operator_provider, provider_of
 from ..config import settings
 from ..tenants.registry import UnknownTenant, runtime
-from .deps import OPERATORS, identity
+from .deps import identity, staff_member
 
 router = APIRouter(prefix="/api/auth")
 PUBLIC = True  # signing in cannot require being signed in
@@ -43,6 +43,7 @@ def whoami(who: Identity | None = Depends(identity)):
     if who is None:
         return {"mode": "demo"}
     if who.operator:
-        return {"mode": "oidc", "operator": OPERATORS.get(who.subject), "subject": who.subject}
+        member = staff_member(who.subject)
+        return {"mode": "oidc", "operator": member if member and member["console"] else None, "staff": member, "subject": who.subject}
     known = who.subject in who.tenant.policy.people
     return {"mode": "oidc", "subject": who.subject, "tenant": {"id": who.tenant.id, "name": who.tenant.name}, "known": known}

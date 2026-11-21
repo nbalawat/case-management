@@ -26,7 +26,7 @@ from .config import settings
 from .db import Base, engine, ensure_schema, session_scope
 from .detection.engine import run_detection
 from .domain.access import Persona
-from .domain.models import Account, Case, MediaItem, Party, Transaction, now, repeatable_ids
+from .domain.models import Account, Case, MediaItem, Party, Transaction, now, repeatable_ids, side_ids
 from .domain.personas import policy_of
 from .tenancy import tenant_of
 from .tenants.onboarding import onboard, set_filing
@@ -827,8 +827,65 @@ def seed_demo() -> dict:
             out[tid]["landed"] = land_core_banking_files(store_for(tid, "landing"), now(), seed=11 + n)
             admin = next(p for p in policy_of(tid).people.values() if p.can("load_data"))
             register_core_banking_sources(s, admin.id)
+    out["managed_service"] = seed_managed_service()
     out["sample_feed_rows"] = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", now())
     return out
+
+
+PROVIDER_STAFF = [
+    {"id": "priya", "name": "Priya Raman", "title": "Managed-service analyst"},
+    {"id": "marcus", "name": "Marcus Webb", "title": "Managed-service investigator"},
+    {"id": "tomas", "name": "Tomas Lindqvist", "title": "Managed-service due diligence analyst"},
+]
+# (client, staff, roles, queues, days, approved by the client?)
+DEMO_ENGAGEMENTS = [
+    ("kestrel", "priya", ["analyst", "fraud_analyst"], ["aml-l1", "fraud"], 120, True),
+    ("kestrel", "marcus", ["investigator"], ["aml-l2"], 120, True),
+    ("alder", "tomas", ["kyc_analyst"], ["kyc"], 90, True),
+    ("alder", "marcus", ["investigator"], ["aml-l2"], 60, False),
+]
+
+
+def seed_managed_service() -> dict:
+    """The provider's own staff, engaged at the two clients whose policies allow it. Meridian, deployed for a large bank, does not.
+
+    Each engagement goes through the real path: the provider proposes it, the client's access administrator approves it.
+    One at Alder is left waiting for approval. Then the engaged staff pick up work in their queues.
+    """
+    from .tenants import provider
+
+    with session_scope(platform=True) as s:
+        provider.bootstrap(s, settings.bootstrap_operator)
+        for m in PROVIDER_STAFF:
+            if provider.staff(s, m["id"]) is None:
+                provider.add_staff(s, **m)
+        with side_ids("managed-service"):
+            made = [(provider.propose(s, tid, sid, roles, queues, now() + timedelta(days=days), "olivia",
+                                      f"{', '.join(roles)} cover for {tid}"), tid, ok)
+                    for tid, sid, roles, queues, days, ok in DEMO_ENGAGEMENTS]
+    worked = 0
+    for e, tid, ok in made:
+        if not ok:
+            continue
+        with session_scope(tid) as s:
+            admin = next(p for p in policy_of(tid).own_people.values() if p.can("manage_access"))
+            provider.decide(s, e.id, True, admin, "Agreed in the statement of work")
+    for tid, sid in (("kestrel", "priya"), ("kestrel", "marcus"), ("alder", "tomas")):
+        with session_scope(tid) as s:
+            worked += _staff_claims(s, policy_of(tid).people[provider.persona_id(sid)])
+    return {"staff": len(PROVIDER_STAFF), "engagements": len(made), "claimed": worked}
+
+
+def _staff_claims(s: Session, p: Persona, n: int = 2) -> int:
+    """A member of the provider's staff takes the oldest unassigned cases in their queues, as they would on a first morning."""
+    from .visibility import bind_viewer
+
+    bind_viewer(s, p)
+    cases = list(s.scalars(select(Case).where(Case.closed.is_(None), Case.owner.is_(None), Case.queue.in_(p.queues))
+                           .order_by(Case.created, Case.id).limit(n)))
+    for c in cases:
+        assignments.claim(s, c, p)
+    return len(cases)
 
 
 def main() -> None:

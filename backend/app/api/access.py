@@ -29,7 +29,7 @@ def describe_policy(policy: AccessPolicy, titles: dict[str, str] | None = None) 
                    "people": [p.name for p in policy.holders(r.id)]} for r in policy.roles.values()],
         "queues": [{"id": q, "label": label, "members": [p.name for p in policy.queue_members(q)]} for q, label in policy.queues.items()],
         "people": [{"id": p.id, "name": p.name, "title": p.title, "roles": list(p.roles), "queues": list(p.queues),
-                    "read_only": p.read_only, "sees": sees(p.views), "restricted": p.can("view_restricted")} for p in policy.people.values()],
+                    "read_only": p.read_only, "sees": sees(p.views), "restricted": p.can("view_restricted"), "org": p.org} for p in policy.people.values()],
     }
 
 
