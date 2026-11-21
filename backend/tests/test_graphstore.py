@@ -18,13 +18,19 @@ class Fake:
     """An engine that answers what it is told to, and remembers what it was asked."""
 
     def __init__(self, answer=None, fail=False):
-        self.answer, self.fail, self.asked, self.rebuilt = answer, fail, [], 0
+        self.answer, self.fail, self.asked, self.rebuilt, self.pairs = answer, fail, [], 0, []
 
     def route(self, tenant_id, start, goal, max_hops):
         self.asked.append((tenant_id, start, goal, max_hops))
         if self.fail:
             raise GraphError("down")
         return self.answer
+
+    def shared(self, tenant_id, start):
+        self.asked.append((tenant_id, start))
+        if self.fail:
+            raise GraphError("down")
+        return self.pairs
 
     def rebuild(self, s):
         self.rebuilt += 1
@@ -144,7 +150,7 @@ def test_only_an_age_address_is_accepted(url):
 
 
 def test_the_platform_view_says_where_routes_are_found(s, engine):
-    assert status.graph_engine(T) == {"engine": "database", "entities": None, "links": None, "note": "Routes between customers are found in the operational database."}
+    assert status.graph_engine(T) == {"engine": "database", "entities": None, "links": None, "note": "The payment network is walked in the operational database."}
     engine(Fake((63, 3)))
     assert status.graph_engine(T) | {"note": ""} == {"engine": "age", "entities": 63, "links": 3, "note": ""}
     engine(Fake(None))
@@ -155,3 +161,60 @@ def test_the_platform_view_says_where_routes_are_found(s, engine):
     assert v["engine"] == "database" and "did not answer" in v["note"]
     assert "stand-in" not in str(v)
     assert status.view(s)["graph"]["engine"] == "database"
+
+
+# ---- the picture around a customer, two steps out
+
+def two_steps(s, start):
+    """What a correct engine answers for `shared`, worked out from what it was handed."""
+    near: dict[str, set[str]] = {}
+    for a, b in graphstore.links(s)[1]:
+        near.setdefault(a, set()).add(b)
+        near.setdefault(b, set()).add(a)
+    return sorted((c, o) for c in near.get(start, ()) for o in near[c] if o != start)
+
+
+def pictures(w, pid):
+    return graph.related_customers(w.s, pid), graph.neighbourhood(w.s, pid)
+
+
+def test_the_engine_is_asked_who_shares_a_counterparty_and_the_answer_is_the_databases(w, engine):
+    trio(w)
+    want = pictures(w, "P1")
+    assert [r["party_id"] for r in want[0]] == ["P2", "P3"] and want[0][0]["shared"] == ["Sable Ridge Imports"]
+    fake = engine(Fake())
+    fake.pairs = two_steps(w.s, cust("P1"))
+    assert pictures(w, "P1") == want
+    assert fake.asked == [(T, cust("P1")), (T, cust("P1"))] and len(fake.pairs) == 2  # nothing is reached through the utility
+
+
+def test_an_engine_that_fails_leaves_the_picture_as_the_database_draws_it(w, engine, caplog):
+    trio(w)
+    want = pictures(w, "P1")
+    fake = engine(Fake(fail=True))
+    assert pictures(w, "P1") == want and len(fake.asked) == 2
+    assert "reading the network from the database" in caplog.text
+
+
+def test_what_the_engine_names_is_only_shown_if_the_session_can_read_it(w, engine):
+    """Ids the database does not hold, a customer reached through a common counterparty, the customer themselves: none appear."""
+    sable = trio(w)
+    want = pictures(w, "P1")
+    fake = engine(Fake())
+    utility = w.entity("Citywide Utilities").id
+    fake.pairs = [*two_steps(w.s, cust("P1")), (sable, "E-ghost"), ("E-ghost", cust("P9")), (utility, cust("P40")), (sable, cust("P1")), (cust("P2"), sable)]
+    assert pictures(w, "P1") == want
+
+
+def test_an_engine_that_knows_of_nobody_shows_nobody_beyond_the_first_step(w, engine):
+    """The engine is believed. It is rebuilt with the relationships, in the same step of each resolution."""
+    trio(w)
+    engine(Fake())
+    related, picture = pictures(w, "P1")
+    assert related == [] and {n["label"] for n in picture["nodes"]} == {"Person Number1", "Sable Ridge Imports", "Citywide Utilities"}
+
+
+def test_a_customer_with_no_uncommon_counterparty_never_troubles_the_engine_for_relations(w, engine):
+    trio(w)
+    fake = engine(Fake())
+    assert graph.related_customers(w.s, "P30") == [] and fake.asked == []

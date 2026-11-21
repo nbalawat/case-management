@@ -33,6 +33,29 @@ def _edge(e: EntityEdge) -> dict:
             "total": round(e.sent + e.received, 2), "first": e.first.isoformat(), "last": e.last.isoformat(), "channels": e.channels}
 
 
+def _shared(s: Session, focus: str) -> dict[str, set[str]] | None:
+    """From the graph engine: each entity linked to this one, with the other entities linked to it. None means there
+    is no engine, or it could not answer, and the caller reads the same thing from the database."""
+    engine = graphstore.current()
+    if engine is None:
+        return None
+    try:
+        out: dict[str, set[str]] = defaultdict(set)
+        for via, other in engine.shared(tenant_of(s), focus):
+            out[via].add(other)
+        return out
+    except Exception:  # noqa: BLE001  an engine outage must not take the network view away
+        graphstore.log.warning("Graph engine could not answer; reading the network from the database", exc_info=True)
+        return None
+
+
+def _owners(s: Session, entity_ids: set[str]) -> dict[str, str]:
+    """Which customer each customer entity stands for, read through the caller's session."""
+    if not entity_ids:
+        return {}
+    return dict(s.execute(select(Entity.id, Entity.party_id).where(Entity.id.in_(entity_ids), Entity.kind == "customer", Entity.party_id.is_not(None))).all())
+
+
 def neighbourhood(s: Session, party_id: str, per_hop: int = 14, per_counterparty: int = 6) -> dict | None:
     """Two hops out from one customer: their counterparties, then the other customers of the uncommon ones."""
     focus = customer_entity_id(party_id)
@@ -46,12 +69,16 @@ def neighbourhood(s: Session, party_id: str, per_hop: int = 14, per_counterparty
     first = list({e.id: e for e in flagged + mine[:per_hop]}.values())
     edges, hidden = list(first), len(mine) - len(first)
     second: list[EntityEdge] = []
+    reached = _shared(s, focus)  # who else is on the far side of each counterparty, when a graph engine holds the network
+    owners = _owners(s, {o for os in reached.values() for o in os}) if reached is not None else {}
     for e in first:
         target = ents.get(e.entity_id)
         if target is None or target.kind != "counterparty" or "common" in target.flags:
             continue
-        others = list(s.scalars(select(EntityEdge).where(EntityEdge.entity_id == e.entity_id, EntityEdge.party_id != party_id)
-                                .order_by((EntityEdge.sent + EntityEdge.received).desc()).limit(per_counterparty + 1)))
+        q = select(EntityEdge).where(EntityEdge.entity_id == e.entity_id, EntityEdge.party_id != party_id)
+        if reached is not None:  # the engine found them: the database is asked only for those relationships, by id
+            q = q.where(EntityEdge.party_id.in_({owners[o] for o in reached.get(e.entity_id, ()) if o in owners}))
+        others = list(s.scalars(q.order_by((EntityEdge.sent + EntityEdge.received).desc(), EntityEdge.id).limit(per_counterparty + 1)))
         hidden += max(0, len(others) - per_counterparty)
         second += others[:per_counterparty]
     edges += second
@@ -71,8 +98,16 @@ def related_customers(s: Session, party_id: str, limit: int = 12) -> list[dict]:
     ents = {e.id: e for e in s.scalars(select(Entity).where(Entity.id.in_(set(mine))))}
     rare = [i for i, e in ents.items() if e.kind == "counterparty" and "common" not in e.flags]
     via: dict[str, list[Entity]] = defaultdict(list)
-    for e in s.scalars(select(EntityEdge).where(EntityEdge.entity_id.in_(rare), EntityEdge.party_id != party_id)) if rare else []:
-        via[e.party_id].append(ents[e.entity_id])
+    reached = _shared(s, focus) if rare else None
+    if reached is not None:  # walked in the graph engine: it answers with ids, and the rows are read here
+        owners = _owners(s, {o for c in rare for o in reached.get(c, ())})
+        for c in rare:
+            for o in reached.get(c, ()):
+                if owners.get(o) not in (None, party_id):
+                    via[owners[o]].append(ents[c])
+    else:
+        for e in s.scalars(select(EntityEdge).where(EntityEdge.entity_id.in_(rare), EntityEdge.party_id != party_id)) if rare else []:
+            via[e.party_id].append(ents[e.entity_id])
     direct = {e.party_id for e in s.scalars(select(EntityEdge).where(EntityEdge.entity_id == focus))} \
         | {ents[i].party_id for i in mine if i in ents and ents[i].kind == "customer"}
     people = {p.id: p for p in s.scalars(select(Party).where(Party.id.in_(set(via) | direct)))} if via or direct else {}
