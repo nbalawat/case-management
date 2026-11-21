@@ -93,3 +93,29 @@
 .lk-tools{margin:0}.lk-tools .seg{margin:0}
 .lk-grid{overflow:auto;max-height:560px}.lk-grid th small{display:block;color:var(--muted);font-weight:400;font-size:10.5px}
 .lk-grid td{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* Data lineage */
+.lin{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}.lin:has(.lin-side){grid-template-columns:minmax(0,1fr) 320px}
+.lin .card{margin-bottom:0}.lin-main{overflow:auto}.lin-graph svg{display:block}
+.lin-edge path{fill:none;stroke:var(--edge);stroke-width:1.6;transition:opacity .15s}.lin-edge.dim{opacity:.18}
+#lin-arrow path{fill:var(--edge)}
+.lin-node{cursor:pointer;outline:none;transition:opacity .15s}.lin-node.dim{opacity:.3}
+.lin-node rect{fill:var(--surface);stroke:var(--edge);stroke-width:1.2}
+.lin-node.job rect{fill:var(--brand-soft);stroke:var(--brand)}.lin-node.failed rect{stroke:var(--crit)}
+.lin-node.k-lake rect{fill:var(--bg-2)}.lin-node.k-backup rect{fill:var(--chip)}.lin-node.k-topic rect{stroke-dasharray:4 3}
+.lin-node.sel rect,.lin-node:focus-visible rect{stroke:var(--brand);stroke-width:2.4}
+.lin-label{display:flex;gap:8px;align-items:center;height:100%;color:var(--ink);font-size:12.5px;line-height:1.25}
+.lin-label svg{flex:none;color:var(--soft)}.lin-node.job .lin-label svg{color:var(--brand)}
+.lin-label span{display:flex;flex-direction:column;min-width:0}.lin-label b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.lin-label small{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lin-side .facts{grid-template-columns:92px minmax(0,1fr)}.lin-mono{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.lin-more{margin-top:10px}.lin-raw{max-height:360px;overflow:auto;margin:0;padding:10px;border-radius:8px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code-bg);color:var(--code-ink)}
+@media (max-width:1100px){.lin:has(.lin-side){grid-template-columns:minmax(0,1fr)}}
+
+/* Models */
+.ml-registry tr.selected td{background:var(--brand-soft)}
+.ml-train,.ml-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.ml-note{white-space:pre-line;background:var(--bg);border-radius:8px;padding:8px 12px;font-size:13px}
+.ml-features{columns:2;margin:0;padding-left:18px;font-size:13px}.ml-features li{margin:2px 0}
+.ml-history{margin:0;padding-left:18px;font-size:13px}.ml-history li{margin:4px 0}
+.alert .ml-reading{margin-top:6px;font-size:12.5px;color:var(--soft)}

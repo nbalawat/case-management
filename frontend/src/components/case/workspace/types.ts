@@ -9,7 +9,9 @@ export type Transition = { to: string; label: string; to_label: string; needs_no
 export type CaseDetail = {
   case: CaseRow & { narrative: string; drafted_by: string | null; type_version: string }
   party: { id: string; name: string; kind: string; occupation: string; country: string; risk_rating: string; pep: boolean; onboarded: string; accounts: string[] }
-  alerts: { id: string; title: string; version: string; typology: string; score: number; explanation: string; created: string; source: string; txn_ids: string[] }[]
+  alerts: { id: string; title: string; version: string; typology: string; score: number; explanation: string; created: string; source: string; txn_ids: string[]
+    /** The champion model's reading, when one is ranking alerts. */
+    model?: { version: number; probability: number; reasons: { label: string; value: number; typical: number }[] } | null }[]
   transactions: Txn[]
   agent_run: null | { provider: string; recommendation: string; confidence: number; steps: Step[] }
   events: { id: number; ts: string; actor: string; actor_kind: string; kind: string; payload: Record<string, unknown> }[]

@@ -42,6 +42,7 @@ services:
       FLINK_GATEWAY_URL: ${FLINK_GATEWAY_URL:-}  # Flink's SQL Gateway: start and stop jobs from the Integrations page
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}  # empty: no traces; make observability sends them to Jaeger
       LOG_FORMAT: ${LOG_FORMAT:-text}            # json: one object per line, with request id, client and trace id
+      LINEAGE_URL: ${LINEAGE_URL:-}              # empty: lineage is kept in the app only; make lineage sends it to Marquez too
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, keys:/app/data/keys, warehouse:/app/data/warehouse]  # documents, the keyring that seals them, and lake tables outlive the container
     depends_on:
@@ -218,6 +219,28 @@ services:
     profiles: [observability]
     image: jaegertracing/jaeger:2.9.0
     ports: ["16686:16686"]
+  # ---- an OpenLineage catalog: docker compose --profile lineage (make lineage adds it to `make full`)
+  marquez-db:
+    profiles: [lineage]
+    image: postgres:17-alpine
+    environment: {POSTGRES_USER: marquez, POSTGRES_PASSWORD: marquez, POSTGRES_DB: marquez}  # the password Marquez's bundled config expects
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marquez"]
+      interval: 3s
+      retries: 20
+  marquez:  # takes OpenLineage events on /api/v1/lineage; its API is on http://localhost:5050 (5000 is AirPlay on a Mac)
+    profiles: [lineage]
+    image: marquezproject/marquez:0.51.1
+    environment: {MARQUEZ_PORT: "5000", MARQUEZ_ADMIN_PORT: "5001", POSTGRES_HOST: marquez-db, POSTGRES_PORT: "5432"}
+    ports: ["5050:5000"]
+    depends_on:
+      marquez-db: {condition: service_healthy}
+  marquez-web:  # the lineage graph on http://localhost:3001
+    profiles: [lineage]
+    image: marquezproject/marquez-web:0.51.1
+    environment: {MARQUEZ_HOST: marquez, MARQUEZ_PORT: "5000", WEB_PORT: "3000"}
+    ports: ["3001:3000"]
+    depends_on: [marquez]
 
 volumes:
   pgdata:

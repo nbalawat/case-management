@@ -1,4 +1,4 @@
-.PHONY: backup backup-drill observability load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
+.PHONY: backup backup-drill observability lineage load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -18,6 +18,9 @@ full:            ## Docker: the demo with Kafka, the Iceberg lake, OpenSearch, t
 
 observability:   ## Docker: everything in `full`, plus Prometheus (http://localhost:9090), Grafana (http://localhost:3000) and Jaeger (http://localhost:16686)
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 LOG_FORMAT=json docker compose --profile backbone --profile search --profile graph --profile durable --profile observability up --build
+
+lineage:         ## Docker: everything in `full`, plus Marquez, an OpenLineage catalog that every lineage event is also sent to (http://localhost:3001)
+	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 LINEAGE_URL=http://marquez:5000/api/v1/lineage docker compose --profile backbone --profile search --profile graph --profile durable --profile lineage up --build
 
 streaming:       ## Docker: everything in `full`, plus an Apache Flink cluster for stream detection (console on http://localhost:8081)
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 FLINK_URL=http://flink-jobmanager:8081 FLINK_GATEWAY_URL=http://flink-sql-gateway:8083 docker compose --profile backbone --profile search --profile graph --profile durable --profile streaming up --build

@@ -119,6 +119,18 @@ def _evidence(scope: str) -> ObjectStore | None:
         return None
 
 
+def _lineage(tenant_id: str, m: Manifest, store: ObjectStore) -> None:
+    from ..db import session_scope
+    from ..lineage import jobs
+    from ..lineage.events import files
+
+    try:
+        with session_scope(tenant_id) as s:
+            jobs.backup(s, tenant_id, {name: t.rows for name, t in m.tables.items() if t.rows}, files(store.url), m.id)
+    except Exception as e:  # noqa: BLE001  a backup is complete without its lineage
+        log.warning("Lineage for backup %s not recorded: %s", m.id, e)
+
+
 def create(*, scope: str = "platform", store: ObjectStore | None = None, engine: Engine | None = None,
            evidence: ObjectStore | None = None, with_documents: bool = True) -> Manifest:
     from ..db import engine as default_engine
@@ -150,6 +162,8 @@ def create(*, scope: str = "platform", store: ObjectStore | None = None, engine:
             m.evidence["parts"].append({"key": obj.key, "sha256": hashlib.sha256(data).hexdigest()})
     m.seconds = round(time.perf_counter() - t0, 3)
     store.write(f"{bid}/manifest.json", m.to_json())  # last: until it exists, the backup does not
+    if scope != "platform" and engine is default_engine:  # the client's own history says it was backed up, and where
+        _lineage(scope, m, store)
     log.info("Backup %s: %d rows in %d tables, %d documents, %.1f s", bid, m.rows, len(m.tables), m.evidence["objects"], m.seconds)
     return m
 

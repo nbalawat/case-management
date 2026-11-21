@@ -46,6 +46,10 @@ def backfill(s: Session, store: HistoryStore, tenant_id: str, batch: int = 50_00
             pending = []
     if pending:
         written += store.append(tenant_id, TABLE, pending, {})
+    if written:
+        from ..lineage import jobs
+
+        jobs.lake_backfill(s, tenant_id, written)
     return {"tenant": tenant_id, "written": written, "already_there": skipped, "seconds": round(time.perf_counter() - started, 2)}
 
 

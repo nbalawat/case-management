@@ -164,6 +164,19 @@ sign_in:
 | `METRICS_PORT` | empty | Serve Prometheus metrics on this port (the workers always need it to be scraped). Set: the API's own `/metrics` answers 404, so metrics never go out through the ingress. Helm sets `9100` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Send traces over OTLP/HTTP (Jaeger, Tempo, an OpenTelemetry Collector). The other standard `OTEL_*` variables apply |
 
+### Lineage
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LINEAGE_URL` | empty | Where OpenLineage events also go: `http(s)://host/api/v1/lineage` (Marquez, DataHub, OpenMetadata, a cloud catalog's OpenLineage endpoint) or `file:///path/events.jsonl`. Empty: events are kept in the app only |
+| `LINEAGE_API_KEY` | empty | Sent as a bearer token with each event, for endpoints that need one. Keep it in the Secret |
+
+### Alert-ranking models
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MODEL_STORE_URL` | `file://<repo>/data/models` | Where trained models are kept: a storage URL (`file://`, `s3://`, `abfss://`, `gs://`). Each file is checked against the digest recorded at training before it is loaded. Helm sets it from `storage.modelStoreUrl`. See [models](models.md) |
+
 ### Engines
 
 | Variable | Default | Meaning |
