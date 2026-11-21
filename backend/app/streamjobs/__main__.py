@@ -12,13 +12,12 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .jobs import JOBS, JobError, render
+from .jobs import JOBS, JobError, in_force, render
 
 
 def _params(job: str, tenant_id: str) -> dict:
     from ..backbone.worker import reload_clients
     from ..db import ensure_schema, session_scope
-    from ..detection import tuning
 
     from ..tenants import registry
 
@@ -27,7 +26,7 @@ def _params(job: str, tenant_id: str) -> dict:
     if tenant_id not in {rt.id for rt in registry.all_runtimes()}:
         raise JobError(f"There is no client called '{tenant_id}'.")
     with session_scope(tenant_id) as s:
-        params, on, _revision = tuning.current(s, JOBS[job].scenario)
+        params, on = in_force(s, job)
     if not on:
         print(f"Note: '{JOBS[job].scenario}' is switched off in the application for {tenant_id}, so only this job will raise it.", file=sys.stderr)
     else:
