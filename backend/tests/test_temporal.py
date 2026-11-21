@@ -295,7 +295,11 @@ def test_a_deadline_is_acted_on_when_it_passes_with_nobody_looking(world):
             assert await temporal.sync(base) == {T: 1, OTHER: 0}
             assert breach_count(world, cid) == 0 and await running(client, T, 1)
             await until(lambda: breach_count(world, cid))
-            state = await handle(client, T, cid).query("state")
+
+            async def seen() -> dict | None:  # the database commits before the workflow takes in the activity's result
+                state = await handle(client, T, cid).query("state")
+                return state if state["view"]["breached"] else None
+            state = await until(seen)
             assert state["view"]["breached"] is True and state["log"][-1] == state["log"][-1] | {"what": "deadline", "outcome": "breached"}
             assert await running(client, T, 1)  # the case is still open: its workflow waits for the next step
             await handle(client, T, cid).terminate("test over")
