@@ -164,9 +164,18 @@ class _Worker:
         ready.wait(10)
 
     def close(self) -> None:
+        """Stop the worker and wait until its last activity has returned.
+
+        An activity runs on a thread and cannot be interrupted, and the worker's run waits for it. If this gave up
+        early, the activity would carry on after the module, against whatever database the next test points the
+        application at, which is often an in-memory one whose single connection that test is using (on a busy CI
+        runner a new case's briefing can take longer than 30 seconds).
+        """
         if self.stop is not None:
             self.loop.call_soon_threadsafe(self.stop.set)
-        self.thread.join(timeout=30)
+        self.thread.join(timeout=300)
+        if self.thread.is_alive():
+            raise RuntimeError("The durable worker did not stop within 5 minutes; an activity is still running.")
 
 
 def _engine_for_the_app():
