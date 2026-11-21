@@ -144,3 +144,23 @@ jobs:
           # And the least it must accept
           helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e > /dev/null
           helm template demo . --set existingSecret=s --set demoTenants=true --set schemaOnMismatch=rebuild --set auth.mode=demo > /dev/null
+
+  image:
+    name: Image builds and starts as a non-root user
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t caseforge:ci .
+      - name: Start as the user Kubernetes runs the pods as
+        run: |
+          set -euo pipefail
+          docker run -d --name app --user 10001:10001 -p 8000:8000 caseforge:ci
+          for i in $(seq 1 120); do
+            if curl -sf http://localhost:8000/api/tenants > /dev/null; then echo "answered after $((i * 5)) s"; break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' app)" != "true" ]; then docker logs app | tail -60; echo "the app stopped"; exit 1; fi
+            sleep 5
+          done
+          curl -sf http://localhost:8000/api/tenants > /dev/null
+          test "$(docker exec app id -u)" = "10001"
+          docker logs app | tail -5
