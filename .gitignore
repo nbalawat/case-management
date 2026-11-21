@@ -27,3 +27,5 @@ data/quarantine/
 
 !docs/screenshots/34-report-accepted.png
 data/evidence/
+# Stream jobs rendered for a client by `make flink-job`
+deploy/flink/jobs/

@@ -61,7 +61,7 @@ async def lifespan(_: FastAPI):
         backbone[1].set()
 
 
-app = FastAPI(title="CaseForge demo API", version="0.17.0", lifespan=lifespan)
+app = FastAPI(title="CaseForge demo API", version="0.18.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, backbone_router, navigation_router):
     app.include_router(r, dependencies=[Depends(signed_in)])

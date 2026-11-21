@@ -61,6 +61,9 @@ class Settings:
     # OpenSearch behind the same interface; SEARCH_CONFIG is a JSON object of extra client options (http_auth, ca_certs).
     search_url: str = os.getenv("SEARCH_URL", "")
     search_config: str = os.getenv("SEARCH_CONFIG", "")
+    # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. Read-only here;
+    # the platform page shows whether each client's jobs are running.
+    flink_url: str = os.getenv("FLINK_URL", "")
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
 
 

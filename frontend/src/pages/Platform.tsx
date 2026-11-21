@@ -11,6 +11,7 @@ type Backbone = {
   outbox: { waiting: number | null; oldest_waiting: string | null; published: number | null; last_published: string | null; total: number; by_type: { type: string; count: number }[] }
   lake: { connected: boolean; note: string; tables: { name: string; rows: number; commits: number; last_commit: string | null }[] }
   search: { engine: string; names: number | null; note: string }
+  stream_jobs: { engine: string; connected: boolean; note: string; jobs: { job: string; title: string; source: string; state: string; since: string | null; also_in_application: boolean }[] }
   topics: { out: string[]; in: string[]; dead_letter: string }; streams: Stream[]
 }
 type Bench = { events: number; parties: number; map_seconds: number; detect_seconds: number; map_per_sec: number; end_to_end_per_sec: number; alerts: number }
@@ -53,6 +54,13 @@ function BackboneCard() {
       {data.lake.connected && <p className="muted small">{data.lake.note}. Each message from the bus is written once, and a table can be read as it stood at any earlier commit.</p>}
       <h4>Name search <Pill tone={data.search.engine === 'opensearch' ? 'good' : 'neutral'}>{data.search.engine === 'opensearch' ? 'OpenSearch' : 'Database'}</Pill></h4>
       <p className="muted">{data.search.note}{data.search.names !== null && ` ${data.search.names.toLocaleString()} customers and counterparties indexed for this client.`}</p>
+      <h4>Stream detection <Pill tone={data.stream_jobs.connected ? 'good' : 'neutral'}>{data.stream_jobs.engine === 'flink' ? (data.stream_jobs.connected ? 'Apache Flink' : 'Flink not answering') : 'In the application'}</Pill></h4>
+      {data.stream_jobs.jobs.length === 0 ? <p className="muted">{data.stream_jobs.note}</p> : (
+        <table><thead><tr><th>Job</th><th>State</th><th>Running since</th><th>Alerts arrive as</th></tr></thead>
+          <tbody>{data.stream_jobs.jobs.map(x => <tr key={x.job}>
+            <td><b>{x.title}</b>{x.also_in_application && <div className="muted small">The application is raising this rule as well. Switch it off under Detection to stop the double work.</div>}</td>
+            <td><Pill tone={x.state === 'RUNNING' ? 'good' : x.state === 'NOT SUBMITTED' ? 'neutral' : 'warning'}>{x.state === 'NOT SUBMITTED' ? 'Not submitted' : x.state.charAt(0) + x.state.slice(1).toLowerCase()}</Pill></td>
+            <td>{x.state === 'RUNNING' && x.since ? fmtDateTime(x.since) : '–'}</td><td>{x.source}</td></tr>)}</tbody></table>)}
       <p className="muted small">Out: {data.topics.out.join(', ')}. Records that cannot be loaded go to {data.topics.dead_letter} with the reason.</p>
     </Card>
   )
