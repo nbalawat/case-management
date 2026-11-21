@@ -31,3 +31,4 @@ data/evidence/
 deploy/flink/jobs/
 # Secrets and local settings (ANTHROPIC_API_KEY, OPEN_MODEL_URL). Docker Compose and the app both read it.
 .env
+.schemas/

@@ -51,12 +51,35 @@ or an address has the wrong scheme.
   upgrade between two real versions has happened yet, and there are no downgrade tests. Take a backup first.
 - The pipeline schedule timer is off, because it is wrong with more than one API pod. Scheduled pipelines run when
   "Run what is due" is called; nothing calls it for you here.
-- Pods run as a non-root user with no privilege escalation and write only to `/tmp` and `/app/data`, both scratch volumes that go with the pod.
+- Pods run as a non-root user with no privilege escalation and a read-only root filesystem, and write only to `/tmp`
+  and `/app/data`, both scratch volumes that go with the pod.
 - `networkPolicy.enabled` limits what may reach the pods. It does not limit what the pods may reach.
 - One release serves the clients in its database. A dedicated stamp per client is one release per client; nothing
   here creates the client's database, topics or bucket.
 - No control plane: onboarding a stamp, metering and release rings across stamps are not built.
 
+## Cloud identity and extra mounts
+
+Three values exist so the infrastructure code (`infra/`) can wire a stamp to its cloud without forking the chart:
+
+| Value | Used for |
+|---|---|
+| `serviceAccount.annotations` | Binding the pods to the stamp's cloud identity (IRSA on EKS, workload identity on AKS and GKE) |
+| `podLabels` | Labels on every pod; Azure workload identity needs `azure.workload.identity/use: "true"` |
+| `extraVolumes`, `extraVolumeMounts` | Mounting a CA bundle, for example the in-cluster OpenSearch's CA from `search-http-tls` |
+
+On a cloud, nobody runs `helm install` by hand: `infra/modules/kubernetes/stamp-release` creates the namespace, its
+policies and secrets, and an Argo CD application that installs this chart with the image tag from
+`deploy/environments/<env>/<stamp>.yaml`. See `infra/README.md`. In-cluster Kafka and OpenSearch for a stamp come
+from the sibling chart `deploy/helm/caseforge-data`; cluster-wide policies from `deploy/helm/caseforge-policies`.
+
 ## What has and has not been run
+
+`.github/workflows/deploy-test.yml` installs this chart on a kind cluster with the caseforge Kyverno policies
+enforced and the namespace held to the restricted pod security standard, waits for the migration hook and the pods,
+calls the API, and upgrades the release. A second job brings up `caseforge-data` (Kafka and OpenSearch through their
+operators) on kind. `deploy/scripts/check-charts.sh` lints and renders every chart and checks every object strictly
+against the Kubernetes and operator CRD schemas.
+
 
 See the "Kubernetes" row in the repository README for exactly what was run and where.

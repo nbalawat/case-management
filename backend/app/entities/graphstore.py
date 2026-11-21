@@ -1,7 +1,7 @@
 """Where the payment network is walked: the database, or a graph engine behind the same question.
 
 `GraphStore` is the seam. The network pages read their rows through the caller's session either way; an engine is
-only ever asked which entities lie on a route, and answers with ids. So the client boundary and what a person may
+only ever asked which entities lie on a route or two steps from a customer, and answers with ids. So the client boundary and what a person may
 see never depend on the engine, and an engine that is down costs speed, not the feature.
 """
 from __future__ import annotations
@@ -25,6 +25,7 @@ class GraphError(Exception):
 class GraphStore(Protocol):
     def rebuild(self, s: Session) -> dict: ...
     def route(self, tenant_id: str, start: str, goal: str, max_hops: int) -> list[str] | None: ...
+    def shared(self, tenant_id: str, start: str) -> list[tuple[str, str]]: ...
     def size(self, tenant_id: str) -> tuple[int, int] | None: ...
 
 

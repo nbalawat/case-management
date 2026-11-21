@@ -1,0 +1,22 @@
+# Keep pinned actions, providers, base images and packages current. Each update is a pull request that CI checks.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule: {interval: weekly}
+    groups: {actions: {patterns: ["*"]}}
+  - package-ecosystem: terraform
+    directories: ["/infra/stacks/*/*", "/infra/modules/*/*"]
+    schedule: {interval: weekly}
+    groups: {providers: {patterns: ["*"]}}
+  - package-ecosystem: docker
+    directory: /
+    schedule: {interval: weekly}
+  - package-ecosystem: uv
+    directory: /backend
+    schedule: {interval: weekly}
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: {interval: weekly}
+    open-pull-requests-limit: 5
