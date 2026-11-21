@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..domain.models import Account, Feed, Party, Transaction, new_id
 from .connectors import Connector
 from .mapping import CANONICAL_FIELDS, VALUE_MAPS, HeuristicProposer, MappingProposer, proposals_as_dicts
+from ..visibility import system_work
 
 
 def profile(conn: Connector, proposer: MappingProposer | None = None, sample: int = 200) -> dict:
@@ -69,6 +70,7 @@ def transform(row: dict, mapping: dict[str, str | None]) -> dict:
     return out
 
 
+@system_work
 def run_feed(s: Session, conn: Connector, mapping: dict[str, str | None], source_system: str = "legacy-core") -> Feed:
     """Load a feed through the mapping and reconcile source against the canonical store."""
     feed = Feed(id=new_id("feed"), name=conn.name, source_system=source_system, mapping=mapping)

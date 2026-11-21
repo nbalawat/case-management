@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from ..domain.models import Alert, Transaction, new_id
 from .scenarios import REGISTRY
+from ..visibility import system_work
 
 
+@system_work
 def run_detection(s: Session, party_ids: set[str] | None = None) -> list[Alert]:
     q = select(Transaction).order_by(Transaction.party_id, Transaction.ts)
     if party_ids is not None:

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { api, getPersonaId, getTenantId, isOperator, OPERATOR, setPersonaId, setTenantId, type Persona } from './api'
+import { authMode, signOut } from './auth'
 import MyWork from './pages/MyWork'
 import Ask from './pages/Ask'
 import Overview from './pages/Overview'
@@ -58,14 +59,15 @@ export default function App() {
   const [clients, setClients] = useState<Client[]>([])
   const [meta, setMeta] = useState<Meta | null>(null)
   const [pid, setPid] = useState(getPersonaId())
-  useEffect(() => { api.get<Client[]>('/tenants').then(setClients).catch(() => setClients([])) }, [])
+  const sso = authMode() === 'oidc'
+  useEffect(() => { if (!sso) api.get<Client[]>('/tenants').then(setClients).catch(() => setClients([])) }, [sso])
   useEffect(() => {
     if (operator) return
     api.get<Meta>('/meta').then(m => {
       if (!m.personas.some(p => p.id === getPersonaId())) { setPersonaId(m.default_person); setPid(m.default_person) }
       setMeta(m)
-    }).catch(() => { if (getTenantId() !== 'meridian') switchClient('meridian') }) // the stored client no longer exists
-  }, [operator])
+    }).catch(() => { if (!sso && getTenantId() !== 'meridian') switchClient('meridian') }) // the stored client no longer exists
+  }, [operator, sso])
   const people = useMemo<People>(() => {
     const all = meta?.personas ?? []
     const byId = new Map(all.map(p => [p.id, p]))
@@ -81,8 +83,9 @@ export default function App() {
       <header className="top operator">
         <div className="brand"><span className="mark" aria-hidden />CaseForge</div>
         <nav><NavLink to="/" end>Clients</NavLink></nav>
-        <ClientPicker clients={clients} />
+        {!sso && <ClientPicker clients={clients} />}
         <span className="persona"><span>Signed in as</span><b>Olivia Grant · Platform operations</b></span>
+        {sso && <button className="link signout" onClick={signOut}>Sign out</button>}
       </header>
       <div className="sample">Operator console. Platform staff see how each client is running, in counts only. Client data is visible only inside that client, under its own access policy.</div>
       <main><Routes><Route path="*" element={<Clients />} /></Routes></main>
@@ -93,15 +96,22 @@ export default function App() {
       <header className="top">
         <div className="brand"><span className="mark" aria-hidden />CaseForge</div>
         <nav>{NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}</nav>
-        <ClientPicker clients={clients} />
-        <label className="persona">
-          <span>Signed in as</span>
-          <select value={pid} onChange={e => { setPersonaId(e.target.value); setPid(e.target.value) }}>
-            {meta?.personas.map(p => <option key={p.id} value={p.id}>{p.name} · {p.title}</option>)}
-          </select>
-        </label>
+        {sso ? <>
+          <span className="persona"><span>{meta?.tenant.name}</span><b>{people.persona ? `${people.persona.name} · ${people.persona.title}` : ''}</b></span>
+          <button className="link signout" onClick={signOut}>Sign out</button>
+        </> : <>
+          <ClientPicker clients={clients} />
+          <label className="persona">
+            <span>Signed in as</span>
+            <select value={pid} onChange={e => { setPersonaId(e.target.value); setPid(e.target.value) }}>
+              {meta?.personas.map(p => <option key={p.id} value={p.id}>{p.name} · {p.title}</option>)}
+            </select>
+          </label>
+        </>}
       </header>
-      {meta?.sample_data && <div className="sample">Demo environment for <b>{meta.tenant.name}</b>. All customers, companies and transactions are synthetic. Switch client or person at the top right: each client has its own people, roles, workflows and data.</div>}
+      {meta?.sample_data && <div className="sample">Demo environment for <b>{meta.tenant.name}</b>. All customers, companies and transactions are synthetic. {sso
+        ? 'You are signed in through your organisation, and see only what your roles allow.'
+        : 'Switch client or person at the top right: each client has its own people, roles, workflows and data.'}</div>}
       {meta && people.persona && <main key={pid}>
         <Routes>
           <Route path="/" element={<MyWork />} />

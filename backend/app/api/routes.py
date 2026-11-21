@@ -21,8 +21,9 @@ from ..ingest.connectors import CONNECTOR_CATALOGUE, CsvConnector
 from ..ingest.service import profile, run_feed
 from ..reporting.metrics import dashboard
 from ..scale import benchmark
-from .deps import actor, case_row, get_session, persona, require, tenant
+from .deps import actor, case_row, get_session, machine_session, persona, require, tenant
 from .deps import get_case_or_404 as _get_case
+from ..visibility import find_case
 
 router = APIRouter(prefix="/api")
 
@@ -35,6 +36,8 @@ def _txn(t: Transaction, alerted: set[str]) -> dict:
 @router.get("/tenants")
 def list_tenants():
     """Demo only: the client switcher. A signed-in user belongs to one client and never sees this list."""
+    if settings.auth_mode == "oidc":
+        raise HTTPException(404, "Not available when sign-in is on")
     return [{"id": rt.id, "name": rt.name, "status": rt.status, "default_person": rt.policy.default_person} for rt in all_runtimes()]
 
 
@@ -73,6 +76,7 @@ def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depen
     filing = s.scalars(select(Filing).where(Filing.case_id == c.id)).first()
     related = [x for x in s.scalars(select(Case).where(Case.party_id == c.party_id, Case.id != c.id).order_by(Case.created.desc()))]
     ct = definition(c)
+    parent = find_case(s, c.parent_id)
     return {
         "case": case_row(c) | {"narrative": c.narrative, "drafted_by": c.drafted_by, "type_version": c.type_version},
         "party": {"id": c.party.id, "name": c.party.name, "kind": c.party.kind, "occupation": c.party.occupation,
@@ -99,11 +103,12 @@ def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depen
                      "autonomy": ct.get("agents", {}).get("autonomy"), "recipients": RECIPIENTS},
         "access": {"can_work": p.can("work") and not p.read_only, "can_claim": can_claim(c, p) and c.owner != p.id,
                    "can_reassign": p.can("reassign") and c.closed is None, "read_only": p.read_only,
+                   "can_restrict": p.can("restrict_case"), "restricted_reason": c.restricted_reason,
                    "queue_members": [{"id": m.id, "name": m.name} for m in rt.policy.queue_members(c.queue)],
                    "queue_label": rt.policy.queues.get(c.queue or "", "")},
         "filing": None if filing is None else {"id": filing.id, "kind": filing.kind, "filed_by": filing.filed_by,
                                                "filed_at": filing.filed_at.isoformat(), "sha256": filing.sha256},
-        "parent": case_row(s.get(Case, c.parent_id)) if c.parent_id and s.get(Case, c.parent_id) else None,
+        "parent": case_row(parent) if parent else None,
         "children": [case_row(x) for x in s.scalars(select(Case).where(Case.parent_id == c.id))],
         "other_cases": [case_row(x) for x in related if x.id != c.parent_id and x.parent_id != c.id],
     }
@@ -204,7 +209,7 @@ class AlertIn(BaseModel):
 
 
 @router.post("/alerts", status_code=201)
-def post_alert(body: AlertIn, s: Session = Depends(get_session)):
+def post_alert(body: AlertIn, s: Session = Depends(machine_session)):
     """Overlay mode: an incumbent monitoring engine pushes its alerts here; the hub groups them into cases."""
     key = f"ext:{body.source}:{body.external_id}"
     duplicate = s.scalars(select(Alert.id).where(Alert.dedupe_key == key)).first() is not None
@@ -225,7 +230,7 @@ def integrations():
             {"name": "Access policy API", "status": "live", "note": "Check and publish each client's roles, queues and people"},
             {"name": "Client onboarding API", "status": "live", "note": "Operator console: create a client from a template in one call"},
             {"name": "MCP tool server for agents", "status": "planned", "note": "With the model gateway"},
-            {"name": "SSO via OIDC (Keycloak)", "status": "planned", "note": "Milestone 3; demo uses a persona switch"},
+            {"name": "SSO via OIDC (Keycloak, Entra ID, Okta)", "status": "live", "note": "AUTH_MODE=oidc; each client signs in through its own identity provider"},
             {"name": "SAR e-filing (FinCEN BSA XML, goAML)", "status": "planned", "note": "Milestone 3; demo files a hashed JSON record"},
         ],
     }

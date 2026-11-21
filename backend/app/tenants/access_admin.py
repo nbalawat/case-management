@@ -15,6 +15,7 @@ from ..domain.access import AccessPolicy, AccessPolicyError, Persona, parse_poli
 from ..domain.models import AccessPolicyVersion, Case
 from ..tenancy import tenant_of
 from .registry import runtime
+from ..visibility import system_work
 
 
 def active(s: Session) -> AccessPolicyVersion:
@@ -44,6 +45,32 @@ def _displaced(s: Session, policy: AccessPolicy) -> list[Case]:
             if c.owner not in members.get(c.queue or "", set())]
 
 
+def _check_views(policy: AccessPolicy, case_types: dict[str, dict]) -> list[str]:
+    """What people see must fit the work that reaches them. Returns warnings; raises on a policy that cannot work."""
+    warnings = []
+    for r in policy.roles.values():
+        unknown = sorted((r.sees.case_types or set()) - set(case_types)) if r.sees else []
+        if unknown:
+            warnings.append(f"Role '{r.title}' names case type(s) this client does not run: {', '.join(unknown)}")
+    arrives: dict[str, set[str]] = {}
+    for ct in case_types.values():
+        for st in ct["states"].values():
+            if st.get("queue"):
+                arrives.setdefault(st["queue"], set()).add(ct["case_type"])
+    for q, types in arrives.items():
+        for p in policy.queue_members(q):
+            blind = sorted(t for t in types if p.views is not None and not any(
+                v.scope != "own" and (v.case_types is None or t in v.case_types) for v in p.views))
+            if blind:
+                raise AccessPolicyError(f"draft: {p.name} is in the queue '{policy.queues[q]}' but could not see the "
+                                        f"{', '.join(case_types[t]['title'] for t in blind)} cases that arrive there")
+    if any("restrict_case" in r.permissions for r in policy.roles.values()):
+        stuck = [policy.queues[q] for q in arrives if q in policy.queues and not any(p.can("view_restricted") for p in policy.queue_members(q))]
+        if stuck:
+            warnings.append(f"A restricted case waits to be moved on in: {', '.join(sorted(stuck))} (nobody there can see restricted cases)")
+    return warnings
+
+
 def diff(old: AccessPolicy, new: AccessPolicy) -> list[str]:
     out = []
     for rid, r in new.roles.items():
@@ -55,6 +82,9 @@ def diff(old: AccessPolicy, new: AccessPolicy) -> list[str]:
             out.append(f"'{r.title}' gains: {', '.join(g.replace('_', ' ') for g in gained)}")
         if lost:
             out.append(f"'{r.title}' loses: {', '.join(g.replace('_', ' ') for g in lost)}")
+        if r.sees != old.roles[rid].sees:
+            was, now_ = (x.sees.describe() if x.sees else "Every case" for x in (old.roles[rid], r))
+            out.append(f"'{r.title}' now sees: {now_} (was: {was})")
         if r.read_only != old.roles[rid].read_only:
             out.append(f"'{r.title}' becomes {'read-only' if r.read_only else 'able to make changes'}")
     out += [f"Removes role '{r.title}'" for rid, r in old.roles.items() if rid not in new.roles]
@@ -76,6 +106,7 @@ def diff(old: AccessPolicy, new: AccessPolicy) -> list[str]:
     return out or ["No change to roles, queues or people"]
 
 
+@system_work
 def check(s: Session, source: str) -> dict:
     """Validate a draft policy for this client and describe its effect. Changes nothing."""
     tenant = tenant_of(s)
@@ -96,9 +127,11 @@ def check(s: Session, source: str) -> dict:
             raise AccessPolicyError(f"draft: {e}") from e
     displaced = _displaced(s, policy)
     warnings = [f"{len(displaced)} open case(s) go back to their queue because the owner is no longer a member"] if displaced else []
+    warnings += _check_views(policy, registry.load_case_types(tenant))
     return {"policy": policy, "changes": diff(rt.policy, policy), "warnings": warnings, "displaced": displaced}
 
 
+@system_work
 def publish(s: Session, source: str, persona: Persona, note: str = "") -> dict:
     if not persona.can("manage_access"):
         raise AccessPolicyError("Changing the access policy needs the 'manage access' permission")

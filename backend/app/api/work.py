@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..cases import assignments, requests
+from ..cases import assignments, requests, restriction
+from ..cases.case_types import load_case_types
+from ..domain.access import RESTRICT, RESTRICTED_VIEW
 from ..cases.qa import QA_CASE_TYPE
 from ..cases.service import TransitionError, set_task
 from ..cases.timers import run_timers
@@ -18,6 +20,14 @@ from ..tenants.registry import TenantRuntime
 from .deps import actor, case_row, get_case_or_404, get_session, persona, require, tenant
 
 router = APIRouter(prefix="/api")
+
+
+def describe_view(p: Persona, rt: TenantRuntime) -> dict:
+    """In words, which cases this person can see."""
+    titles = {k: v["title"] for k, v in load_case_types(rt.id).items()}
+    views = ["Every case"] if p.views is None else [v.describe(titles) for v in p.views]
+    return {"everything": p.views is None, "views": views, "restricted": p.can(RESTRICTED_VIEW),
+            "note": "Always includes cases they own or have acted on." if p.views is not None else ""}
 PRIORITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 
@@ -35,6 +45,7 @@ def _urgency(row: dict):
 def _persona_out(p: Persona, rt: TenantRuntime) -> dict:
     return {"id": p.id, "name": p.name, "role": p.role, "roles": list(p.roles), "title": p.title, "about": p.about, "read_only": p.read_only,
             "queues": [{"id": q, "label": rt.policy.queues[q]} for q in p.queues], "permissions": sorted(p.permissions),
+            "sees": describe_view(p, rt),
             "tenant": {"id": rt.id, "name": rt.name}}
 
 
@@ -110,6 +121,17 @@ def reassign(case_id: str, body: ReassignIn, s: Session = Depends(get_session), 
     return {"ok": True}
 
 
+class RestrictIn(BaseModel):
+    restricted: bool = True
+    reason: str = Field(min_length=1, max_length=400)
+
+
+@router.post("/cases/{case_id}/restrict")
+def restrict(case_id: str, body: RestrictIn, s: Session = Depends(get_session), p: Persona = Depends(require(RESTRICT))):
+    changed = _guard(restriction.set_restricted, s, get_case_or_404(s, case_id), p, body.restricted, body.reason)
+    return {"ok": True, "cases": [c.id for c in changed]}
+
+
 class TaskIn(BaseModel):
     done: bool = True
 
@@ -138,7 +160,7 @@ class AnswerIn(BaseModel):
 
 @router.post("/requests/{request_id}/answer")
 def post_answer(request_id: str, body: AnswerIn, s: Session = Depends(get_session), p: Persona = Depends(actor)):
-    r = s.get(InfoRequest, request_id)
+    r = s.scalars(select(InfoRequest).where(InfoRequest.id == request_id)).first()
     if r is None:
         raise HTTPException(404, "Request not found")
     _guard(requests.answer_request, s, r, p, body.response)

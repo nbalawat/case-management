@@ -7,9 +7,9 @@ import { Card, Loading, Pill } from '../components/ui'
 type Policy = {
   policy: { name: string; version: string }
   permissions: { id: string; label: string }[]
-  roles: { id: string; title: string; permissions: string[]; read_only: boolean; people: string[] }[]
+  roles: { id: string; title: string; permissions: string[]; read_only: boolean; people: string[]; sees: string; limited: boolean; restricted: boolean }[]
   queues: { id: string; label: string; members: string[] }[]
-  people: { id: string; name: string; title: string; roles: string[]; queues: string[]; read_only: boolean }[]
+  people: { id: string; name: string; title: string; roles: string[]; queues: string[]; read_only: boolean; sees: string[]; restricted: boolean }[]
 }
 type AccessData = Policy & {
   tenant: { id: string; name: string }; yaml: string; can_edit: boolean
@@ -83,6 +83,14 @@ export default function Access() {
         </table></div>
         <ul className="legend-list">{data.permissions.map(p => <li key={p.id}><b>{words(p.id)}</b> {p.label.split(' - ')[1] ?? p.label}</li>)}</ul>
       </Card>
+      <Card title="What each role can see" action={<span className="muted small">Applied in the data layer to every list, number, search and answer</span>}>
+        <table><thead><tr><th>Role</th><th>Cases they can see</th><th>Restricted cases</th></tr></thead>
+          <tbody>{data.roles.map(r => (
+            <tr key={r.id}><td><b>{r.title}</b></td>
+              <td>{r.limited ? <Pill tone="warning">limited</Pill> : <Pill tone="good">all</Pill>}{r.sees}</td>
+              <td>{r.restricted ? <Pill tone="critical">cleared</Pill> : <span className="muted">Hidden</span>}</td></tr>))}</tbody></table>
+        <p className="muted small">Whatever the limit, people keep sight of cases they own or have worked on. Someone with several roles sees what any of them shows. A restricted case is hidden from everyone who is not cleared, whatever their role. An automated test signs in as every person at every client and checks each case against this table.</p>
+      </Card>
       <Card title="Workflow steps by role">
         <div className="seg" role="group" aria-label="Case type">
           {types.map(([id, title]) => <button key={id} aria-pressed={id === current} onClick={() => setType(id)}>{title}</button>)}
@@ -98,11 +106,12 @@ export default function Access() {
       </Card>
       <div className="cols-2">
         <Card title="People">
-          <table><thead><tr><th>Person</th><th>Roles</th><th>Queues</th></tr></thead>
+          <table><thead><tr><th>Person</th><th>Roles</th><th>Queues</th><th>Sees</th></tr></thead>
             <tbody>{data.people.map(p => (
               <tr key={p.id}><td><b>{p.name}</b><div className="muted small">{p.title}</div></td>
                 <td>{p.roles.map(r => <Pill key={r} tone={p.read_only ? 'warning' : 'human'}>{roleTitle(r)}</Pill>)}</td>
-                <td className="small">{p.queues.map(queueLabel).join(', ') || <span className="muted">None</span>}</td></tr>))}</tbody></table>
+                <td className="small">{p.queues.map(queueLabel).join(', ') || <span className="muted">None</span>}</td>
+                <td className="small">{p.sees.join('; ')}{p.restricted && <Pill tone="critical">restricted</Pill>}</td></tr>))}</tbody></table>
         </Card>
         <Card title="Queues and their members">
           <table><thead><tr><th>Queue</th><th>Members</th></tr></thead>

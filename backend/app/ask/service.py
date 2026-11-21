@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..domain.models import AskLog, Case, new_id, now
 from ..domain.personas import Persona, policy_of
 from ..tenancy import tenant_of
+from ..visibility import find_case
 from ..tenants.registry import runtime
 from . import semantic, tools
 from .gateway import ChatModel, ModelUnavailable, ToolOutput, ToolSpec, get_model
@@ -124,7 +125,7 @@ def ask(s: Session, asker: Persona, question: str, conversation_id: str | None =
     # A case id counts as verified when a tool showed it in this answer, or it is a real case of this client
     # (for example one the person typed themselves). Anything else is reported, never linked.
     mentioned = list(dict.fromkeys(CASE_ID.findall(answer)))
-    verified = [i for i in mentioned if i in seen or s.get(Case, i) is not None]
+    verified = [i for i in mentioned if i in seen or find_case(s, i) is not None]
     unverified = [i for i in mentioned if i not in verified]
     by_id = {f["id"]: f for f in ctx.facts}
     cited = [{"id": i, "customer": by_id[i]["customer"], "case_type": by_id[i]["case_type"], "stage": by_id[i]["stage"],

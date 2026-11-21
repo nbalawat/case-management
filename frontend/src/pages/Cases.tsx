@@ -7,7 +7,7 @@ import { Card, Loading, Pill, Priority, Rec, Sla, StageClock } from '../componen
 
 export type CaseRow = {
   id: string; case_type: string; type_title: string; state: string; state_label: string; open: boolean; priority: string
-  owner: string | null; party_id: string; party_name: string; created: string; sla_due: string | null; sla_clock: string | null
+  owner: string | null; party_id: string; party_name: string; restricted?: boolean; created: string; sla_due: string | null; sla_clock: string | null
   disposition: string | null; agent_recommendation: string | null; alerts: number
   domain: string; state_kind: string; queue: string | null; queue_label: string; stage_due: string | null; stage_breached: boolean; parent_id: string | null
 }
@@ -45,7 +45,7 @@ export default function Cases() {
             <tbody>{rows.map(c => (
               <tr key={c.id} tabIndex={0} onClick={() => nav(`/cases/${c.id}`)} onKeyDown={e => e.key === 'Enter' && nav(`/cases/${c.id}`)}>
                 <td><Priority p={c.priority} /></td>
-                <td><b>{c.party_name}</b><div className="muted small">{c.id}</div></td>
+                <td><b>{c.party_name}</b>{c.restricted && <Pill tone="critical">Restricted</Pill>}<div className="muted small">{c.id}</div></td>
                 <td>{c.type_title}</td><td>{c.state_label}{c.state_kind === 'wait' && <Pill tone="warning">waiting</Pill>}</td>
                 <td>{c.open ? <StageClock hours={hoursUntil(c.stage_due)} /> : <span className="muted">–</span>}</td><td className="num">{c.alerts}</td>
                 <td><Rec r={c.agent_recommendation} /></td>

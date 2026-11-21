@@ -15,10 +15,12 @@ from ..tenancy import tenant_of
 from . import evals, ledger, policy as policies
 from .catalog import ACTS, HUMAN_ONLY, LEVEL_LABELS, catalog
 from .triage import POSITIVE
+from ..visibility import system_work
 
 RUBBER_STAMP = {"min_decisions": 8, "agreement": 0.98}
 
 
+@system_work
 def agreement(s: Session) -> dict:
     """For each person who closed cases that had a recommendation: how often they agreed with it, and which way they overrode it."""
     tenant = tenant_of(s)
@@ -51,6 +53,7 @@ def agreement(s: Session) -> dict:
             "rule": f"Flagged for review at {RUBBER_STAMP['min_decisions']} or more decisions with {RUBBER_STAMP['agreement']:.0%} or more agreement."}
 
 
+@system_work
 def inventory(s: Session) -> dict:
     """Every agent this client runs: what it is for, what it may touch, how far it may go here, and how it has performed."""
     tenant, pol = tenant_of(s), policies.current(s)

@@ -14,12 +14,39 @@ class AccessPolicyError(ValueError):
     pass
 
 
+SCOPES = ("all", "queues", "own")
+RESTRICTED_VIEW, RESTRICT = "view_restricted", "restrict_case"
+
+
+@dataclass(frozen=True)
+class Sees:
+    """Which cases a role can see. Absent from a role, the role sees every case at the client.
+
+    scope: all    every case of the listed types
+           queues cases in a queue the person belongs to
+           own    only cases the person owns
+    Whatever the scope, people keep sight of cases they own or have acted on, so history and four-eyes still work.
+    Restricted cases are a separate matter: they need the view_restricted permission, whatever a role sees.
+    """
+    scope: str = "all"
+    case_types: frozenset[str] | None = None  # None: every case type
+
+    def describe(self, titles: dict[str, str] | None = None) -> str:
+        if self.scope == "own":
+            return "Only cases they own or have worked on"
+        where = " in their own queues" if self.scope == "queues" else ""
+        if self.case_types is None:
+            return f"Every case{where}"
+        return f"{', '.join(sorted((titles or {}).get(t, t) for t in self.case_types))} cases{where}"
+
+
 @dataclass(frozen=True)
 class Role:
     id: str
     title: str
     permissions: frozenset[str]
     read_only: bool = False
+    sees: Sees | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +60,8 @@ class Persona:
     permissions: frozenset[str] = frozenset()
     read_only: bool = False
     roles: tuple[str, ...] = ()  # every role held; `role` is the first and is the one shown
+    # What this person can see, one entry per role that limits it. None: at least one role sees everything.
+    views: tuple[Sees, ...] | None = None
 
     def holds(self, roles) -> bool:
         return any(r in roles for r in (self.roles or (self.role,)))
@@ -80,7 +109,22 @@ def parse_policy(raw: dict, origin: str = "access policy") -> AccessPolicy:
         read_only = bool(r.get("read_only", False))
         if read_only and any(not p.startswith("view_") for p in r.get("permissions", [])):
             fail(f"role '{rid}' is read-only but is granted a permission that changes data")
-        roles[rid] = Role(rid, r.get("title", rid), frozenset(r.get("permissions", [])), read_only)
+        sees = None
+        if r.get("sees") not in (None, "all"):
+            v = r["sees"]
+            if not isinstance(v, dict) or set(v) - {"scope", "case_types"}:
+                fail(f"role '{rid}': 'sees' takes a scope (all, queues or own) and an optional list of case_types")
+            scope = v.get("scope", "all")
+            if scope not in SCOPES:
+                fail(f"role '{rid}' has unknown visibility scope '{scope}'; use all, queues or own")
+            types = v.get("case_types")
+            if types is not None and (not isinstance(types, list) or not types or not all(isinstance(x, str) for x in types)):
+                fail(f"role '{rid}': case_types must be a non-empty list of case type ids")
+            if scope != "all" or types is not None:
+                sees = Sees(scope, None if types is None else frozenset(types))
+        if RESTRICT in r.get("permissions", []) and RESTRICTED_VIEW not in r.get("permissions", []):
+            fail(f"role '{rid}' can restrict cases but could not then see them; grant it '{RESTRICTED_VIEW}' as well")
+        roles[rid] = Role(rid, r.get("title", rid), frozenset(r.get("permissions", [])), read_only, sees)
     people: dict[str, Persona] = {}
     for item in raw["people"]:
         pid = item.get("id")
@@ -102,8 +146,9 @@ def parse_policy(raw: dict, origin: str = "access policy") -> AccessPolicy:
             fail(f"person '{pid}' is in unknown queue(s): {', '.join(bad)}")
         if item.get("queues") and "work" not in granted:
             fail(f"person '{pid}' is in a queue but holds no role that can work cases")
+        views = None if any(r.sees is None for r in held) else tuple(dict.fromkeys(r.sees for r in held))
         people[pid] = Persona(pid, item.get("name", pid), role.id, item.get("title", role.title), tuple(item.get("queues", [])),
-                              item.get("about", ""), granted, role.read_only, tuple(names))
+                              item.get("about", ""), granted, role.read_only, tuple(names), views)
     default = raw.get("default_person") or next(iter(people))
     if default not in people:
         fail(f"default_person '{default}' is not one of the people")

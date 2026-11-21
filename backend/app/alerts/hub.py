@@ -10,6 +10,7 @@ from ..cases.case_types import case_type_for_scenario, load_case_types
 from ..cases.service import create_case, record
 from ..tenancy import tenant_of
 from ..domain.models import Account, Alert, Case, Party, new_id, now
+from ..visibility import system_work
 
 PRIORITY_ORDER = ["low", "medium", "high", "critical"]
 
@@ -19,6 +20,7 @@ def priority_for(score: float, n_alerts: int = 1) -> str:
     return PRIORITY_ORDER[min(base + (1 if n_alerts >= 3 else 0), 3)]
 
 
+@system_work
 def route_alerts(s: Session, alerts: list[Alert], screened: bool = False) -> list[Case]:
     """Attach each alert to the party's open case of the right type, or open a new case.
 
@@ -52,6 +54,7 @@ def route_alerts(s: Session, alerts: list[Alert], screened: bool = False) -> lis
     return list(touched.values())
 
 
+@system_work
 def ingest_external_alert(s: Session, *, source: str, external_id: str, scenario: str, party_id: str, score: float,
                           explanation: str, party_name: str | None = None, txn_ids: list[str] | None = None,
                           created: datetime | None = None) -> tuple[Alert, Case | None]:

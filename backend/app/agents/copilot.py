@@ -16,6 +16,7 @@ from . import ledger, policy as policies
 from .catalog import catalog
 from .runtime import context
 from .tools import Toolbox
+from ..visibility import system_work
 
 STANDARD_QUESTIONS = ["Why is this the recommendation?", "Summarise this case", "What are the largest transactions?",
                       "Draft a request to the customer", "Draft a closure note"]
@@ -40,6 +41,7 @@ def _merge(findings: list[dict]) -> tuple[list[str], list[str]]:
     return cites, sources
 
 
+@system_work
 def compose(s: Session, case: Case, question: str) -> dict:
     """Work out an answer. Reads only."""
     q = question.lower()
@@ -116,6 +118,7 @@ def compose(s: Session, case: Case, question: str) -> dict:
             "customer, report adverse media, and draft a request to the customer or a closure note.", "cites": [], "sources": [briefing]}
 
 
+@system_work
 def ask(s: Session, case: Case, persona: Persona, question: str) -> dict:
     question = question.strip()
     if not question or len(question) > 500:

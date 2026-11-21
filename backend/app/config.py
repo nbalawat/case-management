@@ -29,6 +29,15 @@ class Settings:
     quarantine_url: str = os.getenv("QUARANTINE_URL", f"file://{ROOT / 'data' / 'quarantine'}")
     allow_memory_storage: bool = os.getenv("ALLOW_MEMORY_STORAGE", "0") == "1"
     pipeline_scheduler: bool = os.getenv("PIPELINE_SCHEDULER", "0") == "1"
+    # demo: the client and the person come from request headers (the persona switch). oidc: only from a signed token.
+    auth_mode: str = os.getenv("AUTH_MODE", "demo")
+    public_url: str = os.getenv("PUBLIC_URL", "http://localhost:8000")
+    # Platform staff sign in through the provider's own identity system, separate from every client's.
+    oidc_operator_issuer: str = os.getenv("OIDC_OPERATOR_ISSUER", "")
+    oidc_operator_audience: str = os.getenv("OIDC_OPERATOR_AUDIENCE", "caseforge")
+    oidc_operator_claim: str = os.getenv("OIDC_OPERATOR_CLAIM", "preferred_username")
+    # A built-in identity provider for laptops and tests. Never switch it on in a real deployment.
+    dev_idp: bool = os.getenv("DEV_IDP", "0") == "1"
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
 
 

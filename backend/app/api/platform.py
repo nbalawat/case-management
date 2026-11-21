@@ -35,7 +35,8 @@ def _tenant_out(row: Tenant) -> dict:
             "region": row.region, "region_label": REGIONS.get(row.region, row.region), "deployment": row.deployment,
             "deployment_label": DEPLOYMENTS.get(row.deployment, row.deployment), "status": row.status,
             "created": row.created.isoformat(), "case_types": list(rt.case_types), "people": len(rt.policy.people),
-            "roles": len(rt.policy.roles), "queues": len(rt.policy.queues), "policy_version": rt.policy.version}
+            "roles": len(rt.policy.roles), "queues": len(rt.policy.queues), "policy_version": rt.policy.version,
+            "identity": (rt.settings or {}).get("identity")}
 
 
 @router.get("/overview")
@@ -157,3 +158,17 @@ def put_storage(tenant_id: str, body: StorageIn, s: Session = Depends(platform_s
     except OnboardingError as e:
         raise HTTPException(422, str(e)) from e
     return {"id": tenant_id, "locations": rt.settings["storage"]}
+
+
+class IdentityIn(BaseModel):
+    provider: dict | None
+
+
+@router.put("/tenants/{tenant_id}/identity")
+def put_identity(tenant_id: str, body: IdentityIn, s: Session = Depends(platform_session)):
+    """Register the identity provider a client's people sign in through. Only platform staff can do this."""
+    try:
+        rt = onboarding.set_identity(s, tenant_id, body.provider)
+    except OnboardingError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"id": tenant_id, "identity": rt.settings.get("identity")}

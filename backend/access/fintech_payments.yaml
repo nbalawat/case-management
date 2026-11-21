@@ -12,6 +12,8 @@ permissions:
   load_data: Load data feeds onto the platform
   manage_access: Manage access - change the roles, queues and people in this policy
   manage_agents: Manage agents - set autonomy, switch agents off, run evaluations and batch reviews
+  view_restricted: See restricted cases - matters hidden from everyone else, whatever their role
+  restrict_case: Restrict a case, or lift a restriction
 
 queues:
   fraud: Fraud claims
@@ -23,16 +25,20 @@ queues:
   sanctions-l1: Sanctions screening
   sanctions-l2: Sanctions decisions
 
+# Each role can be limited in what it sees: sees: {scope: all | queues | own, case_types: [...]}. A role with no
+# 'sees' sees every case. Whatever the limit, people keep sight of cases they own or have acted on, and a person
+# with several roles sees what any of them shows. Restricted cases need 'view_restricted' on top.
 roles:
-  fraud_analyst:     {title: Fraud analyst, permissions: [work]}
-  analyst:           {title: Alert analyst, permissions: [work]}
-  investigator:      {title: Investigator, permissions: [work, reassign]}
-  sanctions_officer: {title: Sanctions officer, permissions: [work]}
+  fraud_analyst:     {title: Fraud analyst, permissions: [work], sees: {scope: all, case_types: [fraud_claim]}}
+  analyst:           {title: Alert analyst, permissions: [work], sees: {scope: queues}}
+  investigator:      {title: Investigator, permissions: [work, reassign], sees: {scope: all, case_types: [tm_alert_investigation]}}
+  sanctions_officer: {title: Sanctions officer, permissions: [work], sees: {scope: all, case_types: [sanctions_hit]}}
   team_lead:         {title: Operations lead, permissions: [work, view_team, reassign, run_timers]}
-  mlro:              {title: MLRO, permissions: [work, view_team]}
-  head_fiu:          {title: Chief risk officer, permissions: [work, view_team, manage_agents]}
+  mlro:              {title: MLRO, permissions: [work, view_team, view_restricted, restrict_case]}
+  head_fiu:          {title: Chief risk officer, permissions: [work, view_team, manage_agents, view_restricted, restrict_case]}
   admin:             {title: Operations engineer, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents]}
-  auditor:           {title: External auditor, permissions: [view_team], read_only: true}
+  restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
+  auditor:           {title: External auditor, permissions: [view_team, view_restricted], read_only: true}
 
 people:
   - {id: nia, name: Nia Okoye, roles: [fraud_analyst, analyst], title: Financial crime analyst, queues: [fraud, aml-l1, sanctions-l1],
@@ -41,7 +47,7 @@ people:
      about: Works fraud claims against the clock and contacts customers.}
   - {id: ravi, name: Ravi Shah, roles: [investigator, sanctions_officer], title: Senior investigator, queues: [aml-l2, sanctions-l2],
      about: Runs investigations and decides escalated sanctions matches.}
-  - {id: cleo, name: Cleo Martin, role: investigator, queues: [aml-l2],
+  - {id: cleo, name: Cleo Martin, roles: [investigator, restricted_matters], title: Investigator, queues: [aml-l2],
      about: Second investigator, so four-eyes controls have someone to balance against.}
   - {id: joy, name: Joy Tanaka, roles: [mlro, team_lead], title: Head of compliance (MLRO), queues: [mlro, fraud-approval],
      about: Files SARs, signs off larger refunds and balances the team's workload.}

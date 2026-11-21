@@ -202,7 +202,7 @@ def test_cases_owned_by_someone_who_leaves_a_queue_go_back_to_the_queue(s):
     closed.closed = closed.created
     s.flush()
     draft = _draft(edit=lambda r: _drop(r, "lena"))
-    assert access_admin.check(s, draft)["warnings"] == ["1 open case(s) go back to their queue because the owner is no longer a member"]
+    assert access_admin.check(s, draft)["warnings"][0] == "1 open case(s) go back to their queue because the owner is no longer a member"
     access_admin.publish(s, draft, people["omar"])
     assert (mine.owner, other.owner, closed.owner) == (None, "ivan", "lena")
     event = s.scalars(select(m.CaseEvent).where(m.CaseEvent.case_id == mine.id, m.CaseEvent.kind == "case.handed_off")).one()

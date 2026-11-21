@@ -300,7 +300,7 @@ def test_an_agent_at_l3_discounts_a_weak_hit_inside_the_limit_and_people_can_reo
 
     r = client.post(f"/api/agents/closed-alerts/{a0.id}/review", headers=h(T, "tara"), json={"confirm": False})
     assert r.status_code == 200 and r.json()["result"] == "reopened" and r.json()["case_id"]
-    detail = client.get(f"/api/cases/{r.json()['case_id']}", headers=h(T)).json()
+    detail = client.get(f"/api/cases/{r.json()['case_id']}", headers=h(T, "audra")).json()
     assert detail["case"]["case_type"] == "sanctions_hit" and detail["agent_run"]["recommendation"] in ("escalate", "close")
     assert client.post(f"/api/agents/closed-alerts/{a0.id}/review", headers=h(T, "tara"), json={"confirm": True}).status_code == 422
     assert client.post(f"/api/agents/closed-alerts/{a1.id}/review", headers=h(T, "tara"), json={"confirm": True}).status_code == 422
@@ -436,7 +436,7 @@ def test_a_challenger_runs_in_shadow_and_is_never_shown_on_the_case(client):
         report = evals.challenger(s)
         assert report["live_runs"] == 1 and report["champion"]["escalate_at"] == 0.25 and report["challenger"]["escalate_at"] == 0.45
         assert report["champion"]["items"] == report["challenger"]["items"] and isinstance(report["better"], bool)
-    shown = client.get(f"/api/cases/{case.id}", headers=h(T)).json()
+    shown = client.get(f"/api/cases/{case.id}", headers=h(T, "audra")).json()
     assert "shadow" not in shown["agent_run"] and "stricter" not in str(shown["agent_run"])
 
 

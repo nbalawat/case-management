@@ -12,6 +12,8 @@ permissions:
   load_data: Load data feeds onto the platform
   manage_access: Manage access - change the roles, queues and people in this policy
   manage_agents: Manage agents - set autonomy, switch agents off, run evaluations and batch reviews
+  view_restricted: See restricted cases - matters hidden from everyone else, whatever their role
+  restrict_case: Restrict a case, or lift a restriction
 
 queues:
   kyc: Client due diligence
@@ -24,18 +26,22 @@ queues:
   sanctions-l2: Sanctions officer review
   qa: Quality assurance
 
+# Each role can be limited in what it sees: sees: {scope: all | queues | own, case_types: [...]}. A role with no
+# 'sees' sees every case. Whatever the limit, people keep sight of cases they own or have acted on, and a person
+# with several roles sees what any of them shows. Restricted cases need 'view_restricted' on top.
 roles:
-  kyc_analyst:          {title: Due diligence analyst, permissions: [work]}
+  kyc_analyst:          {title: Due diligence analyst, permissions: [work], sees: {scope: all, case_types: [kyc_onboarding, kyc_refresh]}}
   team_lead:            {title: Head of client due diligence, permissions: [work, view_team, reassign, run_timers]}
-  analyst:              {title: Alert analyst, permissions: [work]}
-  investigator:         {title: Investigator, permissions: [work]}
-  sanctions_officer:    {title: Sanctions officer, permissions: [work]}
+  analyst:              {title: Alert analyst, permissions: [work], sees: {scope: queues}}
+  investigator:         {title: Investigator, permissions: [work], sees: {scope: all, case_types: [tm_alert_investigation]}}
+  sanctions_officer:    {title: Sanctions officer, permissions: [work], sees: {scope: all, case_types: [sanctions_hit]}}
   qa_reviewer:          {title: QA reviewer, permissions: [work, view_team]}
-  mlro:                 {title: MLRO, permissions: [work, view_team, reassign]}
-  head_fiu:             {title: Head of financial crime, permissions: [work, view_team, reassign, manage_agents]}
-  relationship_manager: {title: Private banker, permissions: [], read_only: true}
+  mlro:                 {title: MLRO, permissions: [work, view_team, reassign, view_restricted, restrict_case]}
+  head_fiu:             {title: Head of financial crime, permissions: [work, view_team, reassign, manage_agents, view_restricted, restrict_case]}
+  relationship_manager: {title: Private banker, permissions: [], read_only: true, sees: {scope: all, case_types: [kyc_onboarding, kyc_refresh]}}
   admin:                {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents]}
-  auditor:              {title: Internal auditor, permissions: [view_team], read_only: true}
+  restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
+  auditor:              {title: Internal auditor, permissions: [view_team, view_restricted], read_only: true}
 
 people:
   - {id: mira, name: Mira Solberg, role: kyc_analyst, queues: [kyc],
@@ -48,7 +54,7 @@ people:
      about: Triages monitoring alerts and first-line sanctions hits.}
   - {id: carl, name: Carl Jensen, role: investigator, queues: [aml-l2],
      about: Runs full investigations and drafts SAR narratives.}
-  - {id: dana, name: Dana Whitfield, role: investigator, queues: [aml-l2],
+  - {id: dana, name: Dana Whitfield, roles: [investigator, restricted_matters], title: Investigator, queues: [aml-l2],
      about: Second investigator.}
   - {id: noel, name: Noel Adair, role: sanctions_officer, queues: [sanctions-l1, sanctions-l2],
      about: Decides escalated sanctions matches.}

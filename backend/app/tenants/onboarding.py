@@ -110,6 +110,30 @@ def default_storage(tenant_id: str) -> dict:
             "provider": "Local directory"}
 
 
+def set_identity(s: Session, tenant_id: str, provider: dict | None) -> TenantRuntime:
+    """Register the identity provider a client's people sign in through, or remove it. One provider speaks for one client."""
+    from ..auth.identity import IdentityError, check_provider
+
+    _platform(s)
+    row = s.get(Tenant, tenant_id)
+    if row is None:
+        raise OnboardingError(f"Unknown client '{tenant_id}'")
+    cleaned = None
+    if provider is not None:
+        try:
+            cleaned = check_provider(provider)
+        except IdentityError as e:
+            raise OnboardingError(str(e)) from None
+        for other in s.scalars(select(Tenant).where(Tenant.id != tenant_id)):
+            if ((other.settings or {}).get("identity") or {}).get("issuer") == cleaned["issuer"]:
+                raise OnboardingError("Another client already signs in through that issuer. Each client needs its own realm or tenant at the provider.")
+    row.settings = {k: v for k, v in dict(row.settings or {}).items() if k != "identity"} | ({"identity": cleaned} if cleaned else {})
+    s.flush()
+    rt = runtime(tenant_id)
+    rt.settings = dict(row.settings)
+    return rt
+
+
 def set_storage(s: Session, tenant_id: str, roots: list[dict]) -> TenantRuntime:
     """Replace the storage locations a client's pipelines may read. A location in use by a data source cannot be removed."""
     from ..ingest.locations import check_root

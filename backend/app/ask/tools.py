@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from ..domain.models import AgentRun, Alert, Case, CaseEvent, InfoRequest, Party
 from ..domain.personas import Persona, policy_of
 from ..tenancy import tenant_of
+from ..visibility import find_case
 from . import semantic
 from .semantic import FIELDS, MEASURES, QueryError
 
@@ -95,7 +96,7 @@ def _list(ctx: ToolContext, a: dict) -> ToolResult:
 
 def _case(ctx: ToolContext, a: dict) -> ToolResult:
     s, cid = ctx.s, str(a.get("case_id", "")).strip()
-    c = s.get(Case, cid)
+    c = find_case(s, cid)
     if c is None:
         raise QueryError(f"No case '{cid}' exists for this client")
     fact = next(f for f in ctx.facts if f["id"] == c.id)

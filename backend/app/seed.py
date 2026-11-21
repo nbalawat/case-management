@@ -609,10 +609,27 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     s.flush()
     if "qa_review" in types:
         _work_qa(desk)
+    _restrict_one(s, g.end)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))
     return {"parties": g.n, "transactions": len(g.txns), "alerts": len(alerts) + len(planted), "cases": total,
             "stage_breaches": sweep["stage_breaches"]}
+
+
+def _restrict_one(s: Session, at: datetime) -> None:
+    """One open investigation is a restricted matter, so the demo shows a case most of the team cannot see."""
+    from .cases import assignments, restriction
+
+    policy = policy_of(tenant_of(s))
+    officer = next((p for p in policy.people.values() if p.can("restrict_case")), None)
+    if officer is None:
+        return
+    for c in s.scalars(select(Case).where(Case.closed.is_(None), Case.case_type == "tm_alert_investigation").order_by(Case.created, Case.id)):
+        cleared = [p for p in policy.queue_members(c.queue) if p.can("view_restricted") and p.id != officer.id]
+        if cleared:
+            restriction.set_restricted(s, c, officer, True, "The subject is a member of staff. Handled by the restricted matters team.")
+            assignments.claim(s, c, cleared[0], ts=at)
+            return
 
 
 # The demo's managed-service book: three clients of different kinds, each with its own configuration and data.
