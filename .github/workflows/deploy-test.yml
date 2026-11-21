@@ -183,7 +183,7 @@ jobs:
           done
           [ "$phase" = RUNNING ]
           kubectl -n cf-ci wait externalsecret --all --for=condition=Ready --timeout=5m
-          kubectl -n cf-ci get secret search-user search-http-tls
+          kubectl -n cf-ci get secret search-user search-http-tls search-admin-tls
       - name: Diagnostics
         if: failure()
         run: |

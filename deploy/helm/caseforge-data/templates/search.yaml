@@ -48,6 +48,22 @@ spec:
     - {{ $s.name }}.{{ .Release.Namespace }}.svc.cluster.local
   issuerRef: {name: {{ $s.name }}-ca, kind: Issuer}
 ---
+# The operator's admin client certificate (it applies the security config with it). Required when the HTTP
+# certificate is ours rather than generated. Its DN is listed as adminDn below and never matches a node's.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $s.name }}-admin
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $s.name }}-admin-tls
+  commonName: {{ $s.name }}-operator-admin
+  duration: 2160h
+  renewBefore: 360h
+  privateKey: {algorithm: RSA, size: 2048, encoding: PKCS8, rotationPolicy: Always}
+  usages: [client auth, digital signature, key encipherment]
+  issuerRef: {name: {{ $s.name }}-ca, kind: Issuer}
+---
 apiVersion: opensearch.org/v1
 kind: OpenSearchCluster
 metadata:
@@ -64,6 +80,8 @@ spec:
     additionalConfig:
       node.store.allow_mmap: "false"
   security:
+    config:
+      adminSecret: {name: {{ $s.name }}-admin-tls}
     tls:
       transport:
         generate: true
@@ -72,6 +90,7 @@ spec:
         generate: false
         secret: {name: {{ $s.name }}-http-tls}
         caSecret: {name: {{ $s.name }}-http-tls}
+        adminDn: ["CN={{ $s.name }}-operator-admin"]
   nodePools:
     - component: nodes
       replicas: {{ $s.replicas }}
