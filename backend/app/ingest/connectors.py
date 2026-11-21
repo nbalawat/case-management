@@ -37,8 +37,8 @@ class CsvConnector:
 CONNECTOR_CATALOGUE = [
     {"id": "csv", "name": "File drop (CSV)", "kind": "batch", "status": "live", "note": "SFTP or object storage via the S3 API"},
     {"id": "rest", "name": "REST and webhooks", "kind": "stream", "status": "live", "note": "This API accepts alerts and case actions"},
-    {"id": "cdc", "name": "Database CDC (Debezium)", "kind": "stream", "status": "planned", "note": "Milestone 2, with Kafka"},
-    {"id": "kafka", "name": "Kafka topics", "kind": "stream", "status": "planned", "note": "Milestone 2"},
+    {"id": "cdc", "name": "Database CDC (Debezium)", "kind": "stream", "status": "planned", "note": "Outbound capture of this platform's own outbox is configured; capture from a client's core database is not built"},
+    {"id": "kafka", "name": "Kafka topics", "kind": "stream", "status": "live", "note": "Each client's transactions and third-party alerts, when an event bus is connected"},
     {"id": "iso20022", "name": "ISO 20022 and SWIFT MT", "kind": "stream", "status": "planned", "note": "Milestone 3"},
     {"id": "tm-alerts", "name": "Third-party alert engines", "kind": "stream", "status": "live", "note": "Canonical alert format via POST /api/alerts"},
 ]

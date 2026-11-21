@@ -1,19 +1,62 @@
 import { useState } from 'react'
-import { api } from '../api'
+import { api, fmtDateTime } from '../api'
 import { useApi } from '../useApi'
-import { Card, Loading, Pill } from '../components/ui'
+import { Card, Kpi, Loading, Pill } from '../components/ui'
 
 type Item = { name: string; status: string; note: string; kind?: string }
 type Integrations = { connectors: Item[]; interfaces: Item[] }
+type Stream = { stream: string; label: string; topic: string; received: number; loaded: number; duplicates: number; rejected: number; alerts: number; last_at: string | null; last_reject: string }
+type Backbone = {
+  bus: { kind: string; note: string; workers: boolean }; publisher: string
+  outbox: { waiting: number | null; oldest_waiting: string | null; published: number | null; last_published: string | null; total: number; by_type: { type: string; count: number }[] }
+  lake: { connected: boolean; note: string; tables: { name: string; rows: number; commits: number; last_commit: string | null }[] }
+  search: { engine: string; names: number | null; note: string }
+  topics: { out: string[]; in: string[]; dead_letter: string }; streams: Stream[]
+}
 type Bench = { events: number; parties: number; map_seconds: number; detect_seconds: number; map_per_sec: number; end_to_end_per_sec: number; alerts: number }
 
 const Status = ({ s }: { s: string }) => <Pill tone={s === 'live' ? 'good' : 'neutral'}>{s === 'live' ? 'Live in demo' : 'Planned'}</Pill>
 const TARGET = [
-  ['Event backbone', 'In-process', 'Apache Kafka'], ['Stream detection', 'Python batch per feed', 'Apache Flink'],
+  ['Event backbone', 'Outbox in the database; Kafka when one is connected', 'Apache Kafka, with Debezium on the outbox'], ['Stream detection', 'Python consumers in micro-batches', 'Apache Flink'],
   ['Workflow', 'Synchronous service calls', 'Temporal durable workflows'], ['Case store', 'SQLite or Postgres', 'Postgres, partitioned per tenant'],
-  ['History and analytics', 'Operational tables', 'Apache Iceberg lakehouse'], ['Search', 'SQL filters', 'OpenSearch'],
+  ['History and analytics', 'Operational tables; Iceberg tables when a catalog is connected', 'Apache Iceberg lakehouse with a REST catalog'], ['Search', 'The database; OpenSearch when one is connected', 'OpenSearch'],
   ['Agents', 'Offline rule-and-template provider', 'LLM gateway with hosted or self-hosted models'], ['Identity', 'Persona switch', 'OIDC via Keycloak'],
 ]
+
+const BUS: Record<string, [string, string]> = { none: ['neutral', 'No bus connected'], memory: ['warning', 'In this process only'], kafka: ['good', 'Kafka'] }
+
+/** This client's side of the event backbone: what has gone out, what is waiting, and what its inbound streams have taken in. */
+function BackboneCard() {
+  const { data } = useApi<Backbone>('/backbone')
+  if (!data) return null
+  const o = data.outbox
+  const [tone, label] = BUS[data.bus.kind] ?? ['neutral', data.bus.kind]
+  return (
+    <Card title="Event backbone" action={<Pill tone={tone}>{label}</Pill>}>
+      <p>Every audit event and every new alert is written to an outbox in the same transaction as the change, then published as a CloudEvent to this client's own topics. {data.bus.note}</p>
+      <div className="kpis">
+        <Kpi label="Events recorded" value={o.total.toLocaleString()} sub={data.publisher === 'debezium' ? 'published by change data capture' : 'published by the relay'} />
+        {o.waiting !== null && <Kpi label="Waiting to go out" value={o.waiting.toLocaleString()} sub={o.oldest_waiting ? `oldest from ${fmtDateTime(o.oldest_waiting)}` : 'nothing waiting'} />}
+        {o.published !== null && <Kpi label="Published" value={o.published.toLocaleString()} sub={o.last_published ? `last ${fmtDateTime(o.last_published)}` : 'none yet'} />}
+      </div>
+      <table><thead><tr><th>Inbound stream</th><th className="num">Received</th><th className="num">Loaded</th><th className="num">Already held</th><th className="num">Set aside</th><th className="num">Alerts</th><th>Last message</th></tr></thead>
+        <tbody>{data.streams.map(x => <tr key={x.stream}>
+          <td><b>{x.label}</b><div className="muted small">{x.topic}</div></td>
+          <td className="num">{x.received.toLocaleString()}</td><td className="num">{x.loaded.toLocaleString()}</td><td className="num">{x.duplicates.toLocaleString()}</td>
+          <td className="num" title={x.last_reject}>{x.rejected.toLocaleString()}</td><td className="num">{x.alerts.toLocaleString()}</td>
+          <td>{x.last_at ? fmtDateTime(x.last_at) : <span className="muted">Nothing yet</span>}</td></tr>)}</tbody></table>
+      <h4>History on the lake <Pill tone={data.lake.connected ? 'good' : 'neutral'}>{data.lake.connected ? 'Connected' : 'Not connected'}</Pill></h4>
+      {data.lake.tables.length === 0 ? <p className="muted">{data.lake.connected ? 'Connected, and nothing has been written for this client yet.' : data.lake.note}</p> : (
+        <table><thead><tr><th>Table</th><th className="num">Rows</th><th className="num">Commits</th><th>Last written</th></tr></thead>
+          <tbody>{data.lake.tables.map(x => <tr key={x.name}><td><b>{x.name}</b></td><td className="num">{x.rows.toLocaleString()}</td><td className="num">{x.commits.toLocaleString()}</td>
+            <td>{x.last_commit ? fmtDateTime(x.last_commit) : '–'}</td></tr>)}</tbody></table>)}
+      {data.lake.connected && <p className="muted small">{data.lake.note}. Each message from the bus is written once, and a table can be read as it stood at any earlier commit.</p>}
+      <h4>Name search <Pill tone={data.search.engine === 'opensearch' ? 'good' : 'neutral'}>{data.search.engine === 'opensearch' ? 'OpenSearch' : 'Database'}</Pill></h4>
+      <p className="muted">{data.search.note}{data.search.names !== null && ` ${data.search.names.toLocaleString()} customers and counterparties indexed for this client.`}</p>
+      <p className="muted small">Out: {data.topics.out.join(', ')}. Records that cannot be loaded go to {data.topics.dead_letter} with the reason.</p>
+    </Card>
+  )
+}
 
 export default function Platform() {
   const { data, error } = useApi<Integrations>('/integrations')
@@ -29,6 +72,7 @@ export default function Platform() {
         <Card title="Interfaces"><table><tbody>{data.interfaces.map(c => <tr key={c.name}><td><b>{c.name}</b><div className="muted small">{c.note}</div></td><td><Status s={c.status} /></td></tr>)}</tbody></table>
           <p><a href="/docs" target="_blank" rel="noreferrer">Open the interactive API reference</a></p></Card>
       </div>}
+      <BackboneCard />
       <Card title="Throughput check on this machine">
         <p>Pushes synthetic events through the same mapping and detection code the onboarding page uses, in one Python process, and reports the measured rate.</p>
         <div className="toolbar">
@@ -40,7 +84,7 @@ export default function Platform() {
           <div className="kpi"><span>Mapping plus detection</span><b>{bench.end_to_end_per_sec.toLocaleString()}/s</b><small>{bench.detect_seconds}s detection across {bench.parties.toLocaleString()} customers</small></div>
           <div className="kpi"><span>Alerts raised</span><b>{bench.alerts}</b><small>three scenarios; pass-through excluded here</small></div>
         </div>}
-        <p className="muted small">This is a single-process measurement on your laptop, not a production figure. Billion-event days need the streaming path in the table below, which milestone 2 adds.</p>
+        <p className="muted small">This is a single-process measurement on your laptop, not a production figure. Billion-event days need the distributed path in the table below.</p>
       </Card>
       <Card title="From laptop build to cloud build">
         <table><thead><tr><th>Capability</th><th>This build</th><th>Target architecture</th></tr></thead>

@@ -32,6 +32,21 @@ with TestClient(app) as c:  # startup creates the schema and seeds every demo cl
         first = c.get(f"/api/cases/{cases.json()[0]['id']}", headers=h)
         out[t['id']] = {'cases': len(cases.json()), 'counterparties': desk.json()['counts']['counterparties'],
                         'codes': [cases.status_code, desk.status_code, hit.status_code, first.status_code]}
+    # The outbox relay on Postgres: rows are taken with FOR UPDATE SKIP LOCKED, published in id order and marked.
+    from sqlalchemy import func, select
+    from app.backbone import relay
+    from app.backbone.bus import MemoryBus
+    from app.db import session_scope
+    from app.domain.models import OutboxEvent
+    bus = MemoryBus()
+    with session_scope(platform=True) as s:
+        rows = s.scalar(select(func.count()).select_from(OutboxEvent))
+        ids = list(s.scalars(select(OutboxEvent.event_id).order_by(OutboxEvent.id)))
+    sent = relay.drain(bus, batch=200)
+    with session_scope(platform=True) as s:
+        waiting = s.scalar(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.published_at.is_(None)))
+    on_bus = [m.headers['id'] for t in bus.topics() for m in bus.read(t)]
+    out['_outbox'] = {'rows': rows, 'sent': sent, 'waiting': waiting, 'on_bus': len(on_bus), 'same': sorted(on_bus) == sorted(ids), 'again': relay.drain(bus)}
 print('RESULT ' + json.dumps(out))
 """
 
@@ -41,6 +56,8 @@ def test_the_demo_starts_and_answers_on_postgres():
     run = subprocess.run([sys.executable, "-c", SCRIPT], cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True, timeout=600)
     assert run.returncode == 0, run.stderr[-3000:]
     out = json.loads(next(line for line in run.stdout.splitlines() if line.startswith("RESULT ")).removeprefix("RESULT "))
+    box = out.pop("_outbox")
+    assert box["rows"] > 1000 and box["sent"] == box["rows"] == box["on_bus"] and box["same"] and box["waiting"] == 0 and box["again"] == 0, box
     assert set(out) == {"meridian", "kestrel", "alder"}
     for tenant, got in out.items():
         assert got["codes"] == [200, 200, 200, 200], (tenant, got)

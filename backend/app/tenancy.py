@@ -56,9 +56,25 @@ def is_platform_session(session: Session) -> bool:
     return session.info.get("platform") is True
 
 
+def _ours(session: Session) -> bool:
+    """Whether the session talks to this application's database.
+
+    Every engine the application builds is marked (db.make_engine, the only place one is built). A library that keeps
+    its own bookkeeping in its own database through SQLAlchemy, as the lake catalog does, is left alone: it holds
+    none of this application's rows. A session with no engine at all is treated as ours.
+    """
+    try:
+        bind = session.get_bind()
+    except Exception:  # noqa: BLE001  unbound: fall on the side of the guard
+        return True
+    return getattr(getattr(bind, "engine", bind), "caseforge", False) is True
+
+
 @event.listens_for(Session, "do_orm_execute")
 def _filter_by_tenant(state) -> None:
     session = state.session
+    if not _ours(session):
+        return
     tenant = session.info.get(TENANT_KEY)
     if tenant is None:
         if is_platform_session(session):

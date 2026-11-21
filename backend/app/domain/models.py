@@ -754,3 +754,40 @@ class AccessReview(TenantScoped, Base):
     items: Mapped[list] = mapped_column(JSON, default=list)
     closed_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class OutboxEvent(TenantScoped, Base):
+    """A domain event waiting to be published, written in the same transaction as the change it describes.
+
+    The row holds the finished message, so whichever publisher moves it (the built-in relay, or Debezium reading the
+    database log) sends the same bytes. `id` gives the order rows were written within one database.
+    """
+
+    __tablename__ = "outbox_event"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(36), unique=True)  # consumers drop a redelivery by this
+    topic: Mapped[str] = mapped_column(String(120))
+    key: Mapped[str] = mapped_column(String(60))  # everything about one case or one customer stays in order
+    type: Mapped[str] = mapped_column(String(80), index=True)
+    payload: Mapped[str] = mapped_column(Text)  # a CloudEvents 1.0 JSON envelope
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class StreamStat(TenantScoped, Base):
+    """Running totals for one inbound stream at one client: what arrived, what was loaded and what was set aside."""
+
+    __tablename__ = "stream_stat"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stream: Mapped[str] = mapped_column(String(40))
+    received: Mapped[int] = mapped_column(Integer, default=0)
+    loaded: Mapped[int] = mapped_column(Integer, default=0)
+    duplicates: Mapped[int] = mapped_column(Integer, default=0)
+    rejected: Mapped[int] = mapped_column(Integer, default=0)
+    alerts: Mapped[int] = mapped_column(Integer, default=0)
+    last_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_reject: Mapped[str] = mapped_column(String(300), default="")
+    __table_args__ = (UniqueConstraint("tenant_id", "stream"),)
+
+
+from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox
