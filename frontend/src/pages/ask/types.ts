@@ -17,12 +17,12 @@ export type TeamLoad = { people: { name: string; title: string; open_cases: numb
 
 export type StepInput = {
   object?: string; filters?: Filter[]; group_by?: string[]; measures?: string[]; sort_by?: string
-  case_id?: string; name_or_id?: string; id?: string; expression?: string
+  case_id?: string; name_or_id?: string; id?: string; expression?: string; query?: string
 }
 export type Step = { tool: string; input: StepInput; ok: boolean; summary: string; result?: unknown }
 
 export type Cited = { id: string; customer: string; case_type: string; stage: string; status: string }
-export type Source = { kind: string; id: string; label: string; link: string; shown_by_tool: boolean }
+export type Source = { kind: string; id: string; label: string; link: string; shown_by_tool: boolean; excerpt?: string; client_document?: boolean }
 export type Figures = { stated: number; verified: string[]; unverified: string[] }
 
 export type Answer = {
