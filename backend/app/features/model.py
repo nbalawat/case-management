@@ -51,10 +51,16 @@ class FeatureSet:
                               "window_days": f.window_days, "where": f.where} for f in self.features]}
 
 
+KEYS = {"name", "label", "source", "agg", "field", "window_days", "where"}
+
+
 def _feature(raw: dict) -> Feature:
     name = str(raw.get("name") or "")
     if not name.isidentifier() or name != name.lower():
         raise FeatureError(f"Feature names are lower_snake_case: '{name}'")
+    if unknown := set(raw) - KEYS:
+        # Usually an unquoted comma in a one-line YAML mapping: "label: 8,000 and 10,000" splits into stray keys.
+        raise FeatureError(f"{name}: unknown key(s) {', '.join(sorted(map(str, unknown)))}. Quote a label that has a comma in it")
     src = raw.get("source")
     if src not in SOURCES:
         raise FeatureError(f"{name}: source must be one of {', '.join(sorted(SOURCES))}")

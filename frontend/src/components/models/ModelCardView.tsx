@@ -5,7 +5,7 @@ import { Card, Kpi, Loading, Pill } from '../ui'
 import WorkloadChart from './WorkloadChart'
 import { day, num, pct, STATUS_TONE, type ModelCard, type Registry } from './types'
 
-const DRIFT_TONE = { stable: 'good', watch: 'warning', moved: 'serious' } as const
+const DRIFT_TONE = { stable: 'good', watch: 'warning', moved: 'serious', too_few: 'neutral' } as const
 
 /** One version's model card: how it did on alerts it never saw, what it reads, whether today's alerts still look like
  * the ones it learned from, and who did what to it. The approve and promote controls sit here, beside the evidence. */
@@ -24,7 +24,8 @@ export default function ModelCardView({ id, can, onChange }: { id: string; can: 
   }
   const own = m.trained_by === can.me
   const mt = m.metrics
-  const moved = m.drift.features.filter(f => f.state !== 'stable')
+  const moved = m.drift.features.filter(f => f.state === 'watch' || f.state === 'moved')
+  const judged = m.drift.enough !== false
 
   return (
     <div className="ws-stack">
@@ -65,12 +66,14 @@ export default function ModelCardView({ id, can, onChange }: { id: string; can: 
           <WorkloadChart work={mt.work} />
           <p className="muted small">Working the newest alerts highest score first. Where the line crosses 95%, everything to its right could wait or go to a lighter review.</p>
         </Card>
-        <Card title={`Drift in the last ${m.drift.days} days`} action={moved.length ? <Pill tone="warning">{moved.length} moved</Pill> : <Pill tone="good">stable</Pill>}>
+        <Card title={`Drift in the last ${m.drift.days} days`} action={!judged ? <Pill>too few alerts to judge</Pill> : moved.length ? <Pill tone="warning">{moved.length} moved</Pill> : <Pill tone="good">stable</Pill>}>
           {m.drift.alerts === 0 ? <p className="empty">No alerts in the last {m.drift.days} days to compare.</p> : (<>
             <p className="muted small">{m.drift.alerts.toLocaleString()} recent alerts compared with what it learned from (population stability index; over 0.25 has moved).
               {m.drift.scored ? ` It scored ${m.drift.scored.toLocaleString()} of them, ${pct(m.drift.mean_score ?? 0)} on average.` : ''}</p>
+            {!judged && <p className="notice small">With {m.drift.alerts} alerts, chance alone can move these figures a long way, so they are shown for reference and not judged.
+              Drift is judged from {m.drift.min_alerts} alerts in the period.</p>}
             <table><thead><tr><th>Feature</th><th className="num">PSI</th><th /></tr></thead>
-              <tbody>{m.drift.features.slice(0, 8).map(f => <tr key={f.feature}><td>{f.label}</td><td className="num">{f.psi.toFixed(3)}</td><td><Pill tone={DRIFT_TONE[f.state]}>{f.state}</Pill></td></tr>)}</tbody></table>
+              <tbody>{m.drift.features.slice(0, 8).map(f => <tr key={f.feature}><td>{f.label}</td><td className="num">{f.psi.toFixed(3)}</td><td><Pill tone={DRIFT_TONE[f.state]}>{f.state === 'too_few' ? 'not judged' : f.state}</Pill></td></tr>)}</tbody></table>
           </>)}
         </Card>
       </div>

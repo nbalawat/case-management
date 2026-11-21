@@ -38,6 +38,8 @@ for the feature store, and any object store (local folder, S3, ADLS, GCS through
   wait, reaching 95%" is the share of alerts that could go to a lighter review while still reaching 95% of the ones
   that mattered.
 - **Drift** for each feature over the last 30 days: under 0.1 stable, 0.1 to 0.25 worth a look, over 0.25 moved.
+  With fewer than 200 alerts in the period the figures are shown but not judged, because with ten bins chance alone
+  gives an index of about 9 divided by the number of alerts.
 - The features it reads, the history of who did what, and the model file's digest.
 
 ## Reasons on an alert
@@ -50,7 +52,7 @@ median) value. The three that matter most are kept with the score, so the case s
 
 The seed gives each client a synthetic history of decided alerts at real transaction times (marked
 `synthetic history (demo)`), trains version 1, has a second person approve it, makes it champion and scores the open
-alerts. At the Meridian client, Omar (administrator) can train and Hugo (head of the FIU) approves.
+alerts. At Meridian, Omar (administrator) trained it and Maya, who holds the approval permission, approved it.
 
 Open **Models** under Oversight to see the registry, a model card and the feature store. A case's **Alerts** card
 shows the champion's reading on each alert.

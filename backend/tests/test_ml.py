@@ -13,6 +13,7 @@ from app.features import online
 from app.features.model import from_dict
 from app.ml import artifacts, registry
 from app.ml.dataset import examples
+from app.ml import monitoring
 from app.ml.monitoring import drift
 from app.ml.scoring import score
 from app.ml.train import TrainingError, train
@@ -50,6 +51,7 @@ def pay(s, pid, when, amount, direction="in", channel="ach", country="US", cp="A
     ({"name": "x", "source": "transactions", "agg": "count", "window_days": 9999}, "window_days"),
     ({"name": "x", "source": "transactions", "agg": "count", "window_days": 5, "where": {"colour": "red"}}, "unknown condition"),
     ({"name": "x", "source": "party", "field": "salary"}, "party feature"),
+    ({"name": "x", "label": "Between 8", "000 and 10": None, "source": "party", "field": "pep"}, "Quote a label"),
 ])
 def test_feature_definitions_are_checked(bad, says):
     with pytest.raises(FeatureError, match=says):
@@ -162,7 +164,7 @@ def test_trainer_cannot_approve_their_own(s):
         registry.approve(s, mv.id, head)
 
 
-def test_the_champion_scores_new_alerts_with_reasons_and_the_challenger_alongside(s):
+def test_the_champion_scores_new_alerts_with_reasons_and_the_challenger_alongside(s, monkeypatch):
     from app.alerts.hub import route_alerts
 
     history(s)
@@ -180,7 +182,9 @@ def test_the_champion_scores_new_alerts_with_reasons_and_the_challenger_alongsid
     assert reading["version"] == 1 and 0 <= reading["probability"] <= 1 and a.triage["challenger_model"]["version"] == 2
     assert reading["reasons"] and reading["reasons"][0]["feature"] in FS.names and reading["reasons"][0]["effect"] > 0
     out = drift(s, one)
-    assert out["alerts"] == 1 and out["scored"] == 1 and all(f["state"] in ("stable", "watch", "moved") for f in out["features"])
+    assert out["alerts"] == 1 and out["scored"] == 1 and not out["enough"] and all(f["state"] == "too_few" for f in out["features"])
+    monkeypatch.setattr(monitoring, "MIN_ALERTS", 1)  # judged once there are enough alerts
+    assert all(f["state"] in ("stable", "watch", "moved") for f in drift(s, one)["features"])
 
 
 def test_no_champion_scores_nothing(s):

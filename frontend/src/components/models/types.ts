@@ -14,8 +14,8 @@ export type Registry = {
 }
 
 export type Drift = {
-  days: number; alerts: number; scored?: number; mean_score?: number | null
-  features: { feature: string; label: string; psi: number; state: 'stable' | 'watch' | 'moved' }[]
+  days: number; alerts: number; min_alerts?: number; enough?: boolean; scored?: number; mean_score?: number | null
+  features: { feature: string; label: string; psi: number; state: 'stable' | 'watch' | 'moved' | 'too_few' }[]
 }
 
 export type ModelCard = ModelRow & {

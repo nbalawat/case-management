@@ -11,12 +11,15 @@ from ..features import compute, get as feature_set
 from .metrics import psi, shares
 
 WATCH, MOVED = 0.1, 0.25
+# With ten bins, chance alone gives a population stability index of roughly (bins - 1) / n, so below a few hundred
+# alerts a high figure is as likely to be noise as a moved population. Under this, figures are shown but not judged.
+MIN_ALERTS = 200
 
 
 def drift(s: Session, mv: ModelVersion, days: int = 30) -> dict:
     alerts = list(s.scalars(select(Alert).where(Alert.created >= now() - timedelta(days=days))))
     fs = feature_set(mv.feature_set)
-    out = {"days": days, "alerts": len(alerts), "features": []}
+    out = {"days": days, "alerts": len(alerts), "min_alerts": MIN_ALERTS, "enough": len(alerts) >= MIN_ALERTS, "features": []}
     if not alerts:
         return out
     values = compute(s, fs, [(a.party_id, a.created) for a in alerts])
@@ -28,7 +31,7 @@ def drift(s: Session, mv: ModelVersion, days: int = 30) -> dict:
         now_shares = shares([values[(a.party_id, a.created)][name] for a in alerts], ref["edges"])
         index = psi(ref["shares"], now_shares)
         out["features"].append({"feature": name, "label": labels.get(name, name), "psi": index,
-                                "state": "moved" if index > MOVED else "watch" if index > WATCH else "stable"})
+                                "state": "too_few" if not out["enough"] else "moved" if index > MOVED else "watch" if index > WATCH else "stable"})
     out["features"].sort(key=lambda f: -f["psi"])
     scored = [a.triage["model"]["probability"] for a in alerts if (a.triage or {}).get("model", {}).get("version") == mv.version]
     out["scored"] = len(scored)

@@ -9,13 +9,13 @@ export default function WorkloadChart({ work }: { work: ModelCard['metrics']['wo
   const option = useCallback((t: ChartTheme) => {
     const pts = [{ reviewed: 0, found: 0 }, ...work.curve]
     const b = base(t)
-    const axis = (name: string) => ({ type: 'value', min: 0, max: 1, name, nameLocation: 'middle', nameGap: 28, nameTextStyle: { color: t.muted, fontSize: 11 },
+    const axis = (name: string, gap: number) => ({ type: 'value', min: 0, max: 1, name, nameLocation: 'middle', nameGap: gap, nameTextStyle: { color: t.muted, fontSize: 11 },
       ...b.axis, axisLabel: { ...b.axis.axisLabel, formatter: (v: number) => `${Math.round(v * 100)}%` } })
     return {
-      ...b, grid: { ...b.grid, left: 20, bottom: 24 },
+      ...b, grid: { ...b.grid, left: 28, bottom: 24 },
       tooltip: { ...b.tooltip, trigger: 'axis', valueFormatter: (v: number) => `${Math.round(v * 100)}%` },
-      xAxis: axis('Alerts reviewed, highest score first'),
-      yAxis: axis('Alerts that mattered, reached'),
+      xAxis: axis('Alerts reviewed, highest score first', 28),
+      yAxis: axis('Alerts that mattered, reached', 44),
       series: [
         { name: 'With the model', type: 'line', data: pts.map(p => [p.reviewed, p.found]), symbolSize: 6, lineStyle: { width: 2.5 },
           markLine: { silent: true, symbol: 'none', lineStyle: { color: t.muted, type: 'dashed' }, label: { color: t.muted, formatter: '95% reached' }, data: [{ yAxis: 0.95 }] } },
