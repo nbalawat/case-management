@@ -31,12 +31,16 @@ import { can } from '../shell/access'
 import { page } from '../shell/page'
 import type { Module } from '../shell/registry'
 
-export default {
+const workflowDesigner: Module = {
   id: 'workflow-designer', path: '/workflows/designer', label: 'Workflow designer', group: 'admin',
   description: 'Compose your own workflow from blocks', icon: PencilRuler, visible: can('publish_workflow'),
   page: page(() => import('../pages/WorkflowDesignerHome')), after: 'forms',
-} satisfies Module
+}
+export default workflowDesigner
 ```
+
+Name the object and export it (as above): `export default { ... }` fails `npm run lint`, which forbids anonymous
+default exports.
 
 `after` places it in its group after another module's id; without it, it goes at the end of its group. Import
 `page` from `shell/page`, not from the registry (the registry imports these files). `npm test` fails on a
