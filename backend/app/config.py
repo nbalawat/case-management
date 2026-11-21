@@ -54,6 +54,9 @@ class Settings:
     outbox_keep_days: int = int(os.getenv("OUTBOX_KEEP_DAYS", "7"))
     # What the transaction stream does with a payment for a customer or account it has never seen: reject or create.
     stream_unknown_customer: str = os.getenv("STREAM_UNKNOWN_CUSTOMER", "reject")
+    # History on the lake: a JSON object of Iceberg catalog properties. Unset: no lake. On a laptop, for example
+    # {"type": "sql", "uri": "sqlite:///data/lake-catalog.db", "warehouse": "file:///abs/path/data/warehouse"}.
+    lake_catalog: str = os.getenv("LAKE_CATALOG", "")
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
 
 

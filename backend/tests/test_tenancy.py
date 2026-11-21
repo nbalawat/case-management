@@ -215,3 +215,30 @@ def test_an_incoming_alert_only_ever_touches_the_receiving_client(two):
     with two.tenant(A) as s:
         assert s.get(m.Case, case_b.id) is None and s.get(m.Alert, alert_b.id) is None
         assert s.scalars(select(m.CaseEvent).where(m.CaseEvent.case_id == case_b.id)).first() is None
+
+
+def test_the_guard_covers_every_engine_the_application_builds():
+    """The guard recognises the application's database by a mark set where engines are made, so there must be one such place."""
+    from pathlib import Path
+
+    from app.db import make_engine
+
+    assert make_engine("sqlite://").caseforge is True
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    makers = sorted(str(p.relative_to(app_dir)) for p in app_dir.rglob("*.py") if "create_engine(" in p.read_text())
+    assert makers == ["db.py"]
+
+
+def test_a_session_with_no_engine_is_still_guarded():
+    from sqlalchemy.orm import Session as PlainSession
+
+    with PlainSession() as s, pytest.raises(TenantError):
+        s.execute(select(m.Case))
+
+
+def test_a_library_session_on_its_own_database_is_left_alone():
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session as PlainSession
+
+    with PlainSession(create_engine("sqlite://")) as s:
+        assert s.execute(text("select 1")).scalar() == 1

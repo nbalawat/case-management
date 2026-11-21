@@ -203,3 +203,29 @@ def test_the_worker_loop_runs_relay_and_streams_together(world):
     t.join(20)
     assert not t.is_alive() and len(got) == 1 and json.loads(got[0].value)["data"]["scenario"] == "structuring"
     assert all(r.published_at is not None for r in outbox_rows(world))
+
+
+def test_the_lake_is_filled_from_kafka_exactly_once(world, tmp_path):
+    from app.lake.iceberg import IcebergStore
+    from app.lake.sink import LakeSink
+
+    store = IcebergStore({"type": "sql", "uri": f"sqlite:///{tmp_path / 'catalog.db'}", "warehouse": f"file://{tmp_path / 'warehouse'}"})
+    write_events(world, 30, case="case-a")
+    write_events(world, 5, OTHER, "case-k")
+    relay.drain(world.bus)
+
+    def run(sink, want):
+        got, end = 0, time.monotonic() + 30
+        while got < want and time.monotonic() < end:
+            got += sum(w.rows + w.repeats for w in sink.step(timeout=1.0).values())
+        return got
+
+    group = f"g-{uuid.uuid4().hex}"
+    first = LakeSink(world.bus, store, group=group)
+    first._sub = world.bus.subscribe(group, topics.pattern_any([topics.CASE_EVENTS]))
+    batch = read(first._sub, 35)
+    first._write(batch)  # in the tables, never committed on Kafka
+    first.close()
+    assert run(LakeSink(world.bus, store, group=group), 35) == 35  # the same 35 again, all recognised
+    assert len(store.scan(T, "case_events")) == 30 and len(store.scan(OTHER, "case_events")) == 5
+    assert len(store.marks(T, "case_events")) >= 1 and sum(store.marks(T, "case_events").values()) == 30

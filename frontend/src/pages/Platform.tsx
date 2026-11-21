@@ -9,6 +9,7 @@ type Stream = { stream: string; label: string; topic: string; received: number; 
 type Backbone = {
   bus: { kind: string; note: string; workers: boolean }; publisher: string
   outbox: { waiting: number | null; oldest_waiting: string | null; published: number | null; last_published: string | null; total: number; by_type: { type: string; count: number }[] }
+  lake: { connected: boolean; note: string; tables: { name: string; rows: number; commits: number; last_commit: string | null }[] }
   topics: { out: string[]; in: string[]; dead_letter: string }; streams: Stream[]
 }
 type Bench = { events: number; parties: number; map_seconds: number; detect_seconds: number; map_per_sec: number; end_to_end_per_sec: number; alerts: number }
@@ -17,7 +18,7 @@ const Status = ({ s }: { s: string }) => <Pill tone={s === 'live' ? 'good' : 'ne
 const TARGET = [
   ['Event backbone', 'Outbox in the database; Kafka when one is connected', 'Apache Kafka, with Debezium on the outbox'], ['Stream detection', 'Python consumers in micro-batches', 'Apache Flink'],
   ['Workflow', 'Synchronous service calls', 'Temporal durable workflows'], ['Case store', 'SQLite or Postgres', 'Postgres, partitioned per tenant'],
-  ['History and analytics', 'Operational tables', 'Apache Iceberg lakehouse'], ['Search', 'SQL filters', 'OpenSearch'],
+  ['History and analytics', 'Operational tables; Iceberg tables when a catalog is connected', 'Apache Iceberg lakehouse with a REST catalog'], ['Search', 'SQL filters', 'OpenSearch'],
   ['Agents', 'Offline rule-and-template provider', 'LLM gateway with hosted or self-hosted models'], ['Identity', 'Persona switch', 'OIDC via Keycloak'],
 ]
 
@@ -43,6 +44,12 @@ function BackboneCard() {
           <td className="num">{x.received.toLocaleString()}</td><td className="num">{x.loaded.toLocaleString()}</td><td className="num">{x.duplicates.toLocaleString()}</td>
           <td className="num" title={x.last_reject}>{x.rejected.toLocaleString()}</td><td className="num">{x.alerts.toLocaleString()}</td>
           <td>{x.last_at ? fmtDateTime(x.last_at) : <span className="muted">Nothing yet</span>}</td></tr>)}</tbody></table>
+      <h4>History on the lake <Pill tone={data.lake.connected ? 'good' : 'neutral'}>{data.lake.connected ? 'Connected' : 'Not connected'}</Pill></h4>
+      {data.lake.tables.length === 0 ? <p className="muted">{data.lake.connected ? 'Connected, and nothing has been written for this client yet.' : data.lake.note}</p> : (
+        <table><thead><tr><th>Table</th><th className="num">Rows</th><th className="num">Commits</th><th>Last written</th></tr></thead>
+          <tbody>{data.lake.tables.map(x => <tr key={x.name}><td><b>{x.name}</b></td><td className="num">{x.rows.toLocaleString()}</td><td className="num">{x.commits.toLocaleString()}</td>
+            <td>{x.last_commit ? fmtDateTime(x.last_commit) : '–'}</td></tr>)}</tbody></table>)}
+      {data.lake.connected && <p className="muted small">{data.lake.note}. Each message from the bus is written once, and a table can be read as it stood at any earlier commit.</p>}
       <p className="muted small">Out: {data.topics.out.join(', ')}. Records that cannot be loaded go to {data.topics.dead_letter} with the reason.</p>
     </Card>
   )

@@ -23,8 +23,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # optional: a model behind the Ask page
       EVENT_BUS_URL: ${EVENT_BUS_URL:-}          # empty: events wait in the outbox table
       OUTBOX_PUBLISHER: ${OUTBOX_PUBLISHER:-relay}
+      LAKE_CATALOG: ${LAKE_CATALOG:-}            # empty: no lake; make backbone sets an Iceberg catalog in Postgres
     ports: ["8000:8000"]
-    volumes: [evidence:/app/data/evidence]  # customer documents outlive the container, like the database
+    volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
     depends_on:
       db: {condition: service_healthy}
     healthcheck:
@@ -56,13 +57,14 @@ services:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 5s
       retries: 30
-  worker:  # the outbox relay and the inbound stream consumers, beside the API
+  worker:  # the outbox relay, the inbound stream consumers and the lake writer, beside the API
     profiles: [backbone]
     build: .
     command: ["uv", "run", "--no-dev", "python", "-m", "app.backbone.worker"]
     environment:
       <<: *app-env
       EVENT_BUS_URL: kafka://kafka:9092
+    volumes: [warehouse:/app/data/warehouse]  # the API reads the same lake tables to show their totals
     depends_on:
       app: {condition: service_healthy}  # the API creates the schema and the demo clients
       kafka: {condition: service_healthy}
@@ -97,4 +99,5 @@ services:
 volumes:
   pgdata:
   kafkadata:
+  warehouse:
   evidence:

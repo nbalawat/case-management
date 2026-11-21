@@ -24,6 +24,7 @@ def view(s: Session) -> dict:
     stats = {x.stream: x for x in s.scalars(select(StreamStat))}
     cdc = settings.outbox_publisher != "relay"
     return {
+        "lake": lake(tenant),
         "bus": {"kind": kind, "note": note, "workers": settings.backbone_workers},
         "publisher": "debezium" if cdc else "relay",
         # Under change data capture rows are never marked here, so "waiting" would mislead: report only the total.
@@ -38,3 +39,21 @@ def view(s: Session) -> dict:
                         if (st := stats.get(n)) else {"received": 0, "loaded": 0, "duplicates": 0, "rejected": 0, "alerts": 0, "last_at": None, "last_reject": ""})}
                     for n in topics.STREAMS],
     }
+
+
+def lake(tenant_id: str) -> dict:
+    """This client's tables on the lake. A lake that cannot be reached is reported, not raised: the page still loads."""
+    from ..lake.base import LakeError
+    from ..lake.iceberg import connect
+
+    if not settings.lake_catalog:
+        return {"connected": False, "note": "No lake is connected. History is kept in the operational database only.", "tables": []}
+    try:
+        store = connect()
+        tables = store.tables(tenant_id)
+    except LakeError as e:
+        return {"connected": False, "note": str(e), "tables": []}
+    except Exception:  # noqa: BLE001  catalogs fail in their own ways; none of it may break the page
+        return {"connected": False, "note": "The lake catalog did not answer.", "tables": []}
+    return {"connected": True, "note": f"Apache Iceberg ({store.url})",
+            "tables": [{"name": t.name, "rows": t.rows, "commits": t.commits, "last_commit": t.last_commit.isoformat() if t.last_commit else None} for t in tables]}

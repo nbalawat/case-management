@@ -3,6 +3,7 @@
     python -m app.backbone.worker            everything
     python -m app.backbone.worker relay      only the relay
     python -m app.backbone.worker streams    only the consumers
+    python -m app.backbone.worker lake       only the writer that keeps history on the lake (needs LAKE_CATALOG)
 
 Any number of these can run; the bus shares the work between consumers in a group and Postgres shares the outbox
 between relays. The API process can run the same loop itself with BACKBONE_WORKERS=1, which suits a laptop.
@@ -38,9 +39,19 @@ def reload_clients() -> None:
         hydrate(s)
 
 
-def run(bus: EventBus, stop: threading.Event, parts: tuple[str, ...] = ("relay", "streams"), refresh=None) -> None:
+PARTS = ("relay", "streams", "lake")
+
+
+def run(bus: EventBus, stop: threading.Event, parts: tuple[str, ...] = PARTS, refresh=None) -> None:
     """`refresh` reloads the list of clients; a process that is not the API passes it, the API has no need."""
     consumers = [StreamConsumer(bus, name, refresh=refresh) for name in topics.STREAMS] if "streams" in parts else []
+    sink = None
+    if "lake" in parts:
+        from ..lake.iceberg import connect as connect_lake
+        from ..lake.sink import LakeSink
+
+        store = connect_lake()
+        sink = LakeSink(bus, store) if store is not None else None
     pruned = topics_at = 0.0
     while not stop.is_set():
         busy = False
@@ -57,6 +68,8 @@ def run(bus: EventBus, stop: threading.Event, parts: tuple[str, ...] = ("relay",
                     pruned = time.monotonic()
             for c in consumers:
                 busy = bool(c.step(timeout=0.2)) or busy
+            if sink is not None:
+                busy = bool(sink.step(timeout=0.2)) or busy
         except BusError as e:
             log.warning("Event bus unavailable, retrying: %s", e)
             stop.wait(5)
@@ -65,7 +78,7 @@ def run(bus: EventBus, stop: threading.Event, parts: tuple[str, ...] = ("relay",
             stop.wait(5)
         if not busy:
             stop.wait(IDLE_SECONDS)
-    for c in consumers:
+    for c in consumers + ([sink] if sink is not None else []):
         c.close()
 
 
@@ -82,8 +95,8 @@ def start_in_process() -> tuple[threading.Thread, threading.Event] | None:
 
 def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    parts = tuple(argv) or ("relay", "streams")
-    if set(parts) - {"relay", "streams"}:
+    parts = tuple(argv) or PARTS
+    if set(parts) - set(PARTS):
         print(__doc__)
         return 2
     bus = connect()

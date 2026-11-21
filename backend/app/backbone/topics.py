@@ -23,6 +23,11 @@ def pattern(name: str) -> str:
     return rf"^{re.escape(settings.event_topic_prefix)}\.[^.]+\.{re.escape(name)}$"
 
 
+def pattern_any(names: list[str]) -> str:
+    """Every client's topics of several kinds."""
+    return rf"^{re.escape(settings.event_topic_prefix)}\.[^.]+\.({'|'.join(re.escape(n) for n in names)})$"
+
+
 def parse(full: str) -> tuple[str, str] | None:
     """(client, kind) from a topic name, or None when it is not one of ours."""
     prefix = settings.event_topic_prefix + "."
