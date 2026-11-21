@@ -128,6 +128,13 @@ policy says what they may do.
 | `METRICS_PORT` | empty | Serve Prometheus metrics on this port (the workers always need it to be scraped). Set: the API's own `/metrics` answers 404, so metrics never go out through the ingress. Helm sets `9100` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Send traces over OTLP/HTTP (Jaeger, Tempo, an OpenTelemetry Collector). The other standard `OTEL_*` variables apply |
 
+### Lineage
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LINEAGE_URL` | empty | Where OpenLineage events also go: `http(s)://host/api/v1/lineage` (Marquez, DataHub, OpenMetadata, a cloud catalog's OpenLineage endpoint) or `file:///path/events.jsonl`. Empty: events are kept in the app only |
+| `LINEAGE_API_KEY` | empty | Sent as a bearer token with each event, for endpoints that need one. Keep it in the Secret |
+
 ### Engines
 
 | Variable | Default | Meaning |

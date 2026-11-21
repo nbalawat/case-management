@@ -45,6 +45,9 @@ data:
   {{- with .Values.observability.otlpEndpoint }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ . | quote }}
   {{- end }}
+  {{- with .Values.observability.lineageUrl }}
+  LINEAGE_URL: {{ . | quote }}
+  {{- end }}
   AGENT_MODE: {{ .Values.llm.agentMode | quote }}
   ASK_PROVIDER: {{ .Values.llm.askProvider | quote }}
   {{- with .Values.llm.askModel }}

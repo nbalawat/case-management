@@ -144,6 +144,7 @@ observability:
   scrapeAnnotations: true  # prometheus.io/scrape, port and path on the pods, for Prometheus set to discover them
   logFormat: json       # one JSON object per line, with request id, client and trace id
   otlpEndpoint: ""      # an OpenTelemetry Collector, Jaeger or Tempo (http://collector:4318); empty: no traces
+  lineageUrl: ""        # an OpenLineage endpoint (Marquez, DataHub, OpenMetadata: https://host/api/v1/lineage); a bearer token goes in the Secret as LINEAGE_API_KEY
 
 podSecurityContext:
   runAsNonRoot: true
