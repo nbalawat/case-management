@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { shellContext } from './access'
 import { homeFor, menuFor } from './menu'
-import { MODULES, moduleFor } from './registry'
+import { MODULES, moduleFor, place, type Module } from './registry'
 
 // Permissions as the Meridian demo policy grants them (backend/access/full_service_bank.yaml).
 const analyst = shellContext(['work'], false, ['AML', 'Sanctions'])
@@ -62,5 +62,26 @@ describe('registry', () => {
     expect(moduleFor('/overview')?.id).toBe('overview')
     expect(moduleFor('/')?.id).toBe('my-work')
     expect(moduleFor('/nowhere')).toBeUndefined()
+  })
+})
+
+describe('one-file modules', () => {
+  it('never repeats an id or a path', () => {
+    const ids = MODULES.map(m => m.id)
+    const paths = MODULES.flatMap(m => [m.path, ...(m.children ?? []).map(c => c.path)])
+    expect(ids.filter((x, i) => ids.indexOf(x) !== i)).toEqual([])
+    expect(paths.filter((x, i) => paths.indexOf(x) !== i)).toEqual([])
+  })
+})
+
+describe('placing a module from src/modules/', () => {
+  const m = (id: string, group: Module['group'], after?: string) => ({ ...MODULES[0], id, group, after }) as Module
+  const core = [m('a', 'work'), m('b', 'work'), m('c', 'admin')]
+  it('goes after the module it names', () => {
+    expect(place(core, [m('x', 'work', 'a')]).map(x => x.id)).toEqual(['a', 'x', 'b', 'c'])
+  })
+  it('otherwise goes at the end of its group', () => {
+    expect(place(core, [m('x', 'work')]).map(x => x.id)).toEqual(['a', 'b', 'x', 'c'])
+    expect(place(core, [m('y', 'desks')]).map(x => x.id)).toEqual(['a', 'b', 'c', 'y'])
   })
 })

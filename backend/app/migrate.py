@@ -2,12 +2,14 @@
 
     python -m app.migrate                       upgrade to the newest schema
     python -m app.migrate current               print the revision the database holds
-    python -m app.migrate check                 exit 1 if the models differ from the newest migration
+    python -m app.migrate heads                 print the newest revision(s): a new migration's down_revision is this
+    python -m app.migrate check                 exit 1 if the migrations do not form one line, or the models differ from them
     python -m app.migrate revision "message"    write the next migration from the difference
 """
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 
 from alembic import command
 
@@ -43,7 +45,14 @@ def main(argv: list[str]) -> int:
         with engine.connect() as conn:
             print(migrations.current(conn) or "none (migrations have never run on this database)")
         return 0
+    if what == "heads":
+        print("\n".join(sorted(migrations.scripts().get_heads())))
+        return 0
     if what == "check":
+        if broken := migrations.problems():
+            for p in broken:
+                print(p)
+            return 1
         diffs = migrations.drift(_scratch())
         for d in diffs:
             print(d)
@@ -54,9 +63,13 @@ def main(argv: list[str]) -> int:
         if not migrations.drift(eng):
             print("The models match the newest migration. Nothing to write.")
             return 0
-        number = f"{int(migrations.head()[:4]) + 1:04d}"
+        if broken := migrations.problems():
+            print("\n".join(broken))
+            return 1
+        # Named by the time, not the next number, so branches written in parallel never claim the same id.
+        rev_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         with eng.begin() as conn:
-            command.revision(migrations.config(conn), message=argv[1].strip(), autogenerate=True, rev_id=number)
+            command.revision(migrations.config(conn), message=argv[1].strip(), autogenerate=True, rev_id=rev_id)
         return 0
     print(__doc__)
     return 2
