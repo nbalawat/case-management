@@ -109,6 +109,17 @@ policy says what they may do.
 | `OUTBOX_KEEP_DAYS` | `7` | How long published outbox rows are kept |
 | `STREAM_UNKNOWN_CUSTOMER` | `reject` | A streamed payment for an unknown customer or account: `reject` or `create` |
 | `LAKE_CATALOG` | empty | JSON of Iceberg catalog properties (SQL catalog on a laptop, REST catalog in a deployment). Empty: no lake |
+| `LAKE_FLUSH_ROWS`, `LAKE_FLUSH_SECONDS` | `20000`, `5` | The lake writer gathers this many messages, or waits this long, before writing: fewer, larger files |
+| `DETECTION_HISTORY` | `operational` | `lake`: backtests and lookbacks read history from the lake (falls back when there is none) |
+
+### Observability
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LOG_FORMAT` | `text` | `json`: one object per line with request id, client and trace id. Helm sets `json` |
+| `LOG_LEVEL` | `INFO` | Root log level |
+| `METRICS_PORT` | empty | Serve Prometheus metrics on this port (the workers always need it to be scraped). Set: the API's own `/metrics` answers 404, so metrics never go out through the ingress. Helm sets `9100` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Send traces over OTLP/HTTP (Jaeger, Tempo, an OpenTelemetry Collector). The other standard `OTEL_*` variables apply |
 
 ### Engines
 

@@ -25,6 +25,7 @@ from ..auth.identity import authenticate
 from ..auth.oidc import AuthError
 from ..config import settings
 from ..db import session_scope
+from ..observability import logs
 from ..domain.models import now
 from . import clients, credentials, ratelimit, scopes as catalogue
 from .conventions import problem
@@ -145,13 +146,14 @@ class PublicApiMiddleware:
             return await self.app(scope, receive, send)
         started = time.perf_counter()
         headers = Headers(scope=scope)
+        outer = logs.request_id.get()  # the platform's request middleware already named this request and sends the header
         rid = headers.get("x-request-id", "")
-        rid = rid if REQUEST_ID.match(rid) else uuid.uuid4().hex
+        rid = outer or (rid if REQUEST_ID.match(rid) else uuid.uuid4().hex)
         scope.setdefault("state", {})["request_id"] = rid
         request = Request(scope)
         path = scope["path"][len(scope.get("root_path", "")):] if scope["path"].startswith(scope.get("root_path", "") or "\0") else scope["path"]
         docs = path in ("/docs", "/openapi.json")
-        extra: list[tuple[bytes, bytes]] = [(b"x-request-id", rid.encode()), DOCS_CSP if docs else API_CSP]
+        extra: list[tuple[bytes, bytes]] = ([] if outer else [(b"x-request-id", rid.encode())]) + [DOCS_CSP if docs else API_CSP]
 
         async def send_with_headers(message):
             if message["type"] == "http.response.start":

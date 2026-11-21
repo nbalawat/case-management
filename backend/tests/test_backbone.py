@@ -657,3 +657,19 @@ def test_the_api_shows_each_client_its_own_backbone(client):
     assert len(seen) >= 2
     live = {c["id"]: c["status"] for c in client.get("/api/integrations", headers=h).json()["connectors"]}
     assert live["kafka"] == "live" and live["cdc"] == "planned"
+
+
+def test_consumers_side_by_side_never_lose_each_others_counts(world):
+    """Two consumers holding the same totals row: each adds in the database, so neither overwrites the other."""
+    with world.tenant(T) as a:
+        streams._count(a, topics.TRANSACTIONS, streams.Outcome(received=1, loaded=1))
+        a.commit()
+    with world.tenant(T) as a, world.tenant(T) as b:
+        b.scalars(select(m.StreamStat)).all()  # b has read the row before a changes it
+        streams._count(a, topics.TRANSACTIONS, streams.Outcome(received=5, loaded=4, duplicates=1))
+        a.commit()
+        streams._count(b, topics.TRANSACTIONS, streams.Outcome(received=7, loaded=7, alerts=2))
+        b.commit()
+    with world.tenant(T) as c:
+        st = c.scalars(select(m.StreamStat)).one()
+        assert (st.received, st.loaded, st.duplicates, st.alerts) == (13, 12, 1, 2)

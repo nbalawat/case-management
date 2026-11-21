@@ -24,7 +24,7 @@ states:
     queue: kyc
     sla_hours: 24
     tasks:
-      - {id: screening, label: Sanctions, PEP and adverse media screening}
+      - {id: screening, label: "Sanctions, PEP and adverse media screening"}
       - {id: expected_activity, label: Expected activity recorded}
   edd_approval:
     label: EDD approval

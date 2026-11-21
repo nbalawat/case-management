@@ -90,9 +90,17 @@ class NoteIn(BaseModel):
     note: str = ""
 
 
+def _run_lookback(s: Session, lookback_id: str, p: Persona):
+    """Running a project raises its alerts: a durable job on Temporal, retried if a worker dies halfway; at once otherwise."""
+    from ..workflow import engine
+
+    engine().run_job(s, "lookback.run", {"lookback_id": lookback_id}, p)
+    return lookbacks._get(s, lookback_id)
+
+
 @router.post("/lookbacks/{lookback_id}/{step}")
 def post_step(lookback_id: str, step: str, body: NoteIn, s: Session = Depends(get_session), p: Persona = Depends(actor)):
-    steps = {"count": lambda: lookbacks.refresh(s, lookback_id, p), "run": lambda: lookbacks.run(s, lookback_id, p),
+    steps = {"count": lambda: lookbacks.refresh(s, lookback_id, p), "run": lambda: _run_lookback(s, lookback_id, p),
              "close": lambda: lookbacks.close(s, lookback_id, body.note, p), "cancel": lambda: lookbacks.cancel(s, lookback_id, body.note, p)}
     if step not in steps:
         raise HTTPException(404, "Not found")

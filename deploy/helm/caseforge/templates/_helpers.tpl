@@ -75,3 +75,12 @@ volumeMounts:
 {{ $k }}: {{ $v | quote }}
 {{- end }}
 {{- end -}}
+
+{{/* Pod annotations that let a Prometheus set up for discovery find the metrics port. */}}
+{{- define "caseforge.scrape" -}}
+{{- if .Values.observability.scrapeAnnotations }}
+prometheus.io/scrape: "true"
+prometheus.io/port: {{ .Values.observability.metricsPort | quote }}
+prometheus.io/path: /metrics
+{{- end }}
+{{- end }}

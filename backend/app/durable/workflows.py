@@ -13,6 +13,7 @@ from temporalio.exceptions import ActivityError, ApplicationError
 # Activity names, registered by the worker (app.durable.temporal.activities)
 LOOK, PERFORM, STAGE_DUE, SWEEP, PIPELINES = "case_look", "case_perform", "stage_due", "sweep", "pipelines_due"
 FILING_LOOK, FILING_DUE = "filing_look", "filing_follow_up"
+RUN_JOB, JOB_REFUSED, JOB_RETRY = "run_job", "Refused", "Retry"  # the rules said no / it stumbled; details name the exception for the caller
 REFUSED = "TransitionError"  # the application error type of a step the case type does not allow
 RETRY = RetryPolicy(initial_interval=timedelta(seconds=2), backoff_coefficient=2.0, maximum_interval=timedelta(minutes=5))
 # A person is waiting on a step: retry quickly, a few times, and never retry a refusal
@@ -162,6 +163,24 @@ class FilingWorkflow:
         return {"tenant": self._tenant, "filing_id": self._filing, "view": self._view, "done": list(self._done)}
 
 
+@workflow.defn(name="JobWorkflow")
+class JobWorkflow:
+    """One run of a registered job (a lookback, a batch, sending a report, a briefing), retried until it succeeds or is refused."""
+
+    @workflow.run
+    async def run(self, tenant_id: str, name: str, params: dict, persona_id: str | None, attempts: int, timeout_seconds: int) -> dict:
+        try:
+            return await workflow.execute_activity(
+                RUN_JOB, args=[tenant_id, name, params, persona_id], start_to_close_timeout=timedelta(seconds=timeout_seconds), result_type=dict,
+                retry_policy=RetryPolicy(initial_interval=timedelta(seconds=1), backoff_coefficient=2.0, maximum_interval=timedelta(seconds=30),
+                                         maximum_attempts=attempts, non_retryable_error_types=[JOB_REFUSED]))
+        except ActivityError as e:
+            cause = e.cause
+            if isinstance(cause, ApplicationError) and cause.type in (JOB_REFUSED, JOB_RETRY):  # refused, or still stumbling on the last try
+                raise ApplicationError(cause.message, *cause.details, type=JOB_REFUSED, non_retryable=True) from None
+            raise
+
+
 @workflow.defn(name="Sweep")
 class Sweep:
     """The periodic sweep for one client (overdue requests, expiring alerts, KYC triggers, holds, dispute deadlines). Started by a schedule."""
@@ -212,4 +231,4 @@ class StageClock:
             self._entered, self._due = entered, due
 
 
-WORKFLOWS = [CaseWorkflow, FilingWorkflow, Sweep, PipelineRuns, StageClock]
+WORKFLOWS = [CaseWorkflow, FilingWorkflow, JobWorkflow, Sweep, PipelineRuns, StageClock]

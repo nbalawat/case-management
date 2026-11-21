@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -16,7 +17,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..agents.investigator import investigate
+from ..workflow import engine
 from ..alerts.hub import ingest_external_alert, route_alerts
 from ..config import settings
 from ..db import session_scope
@@ -25,6 +26,7 @@ from ..domain.models import Alert, StreamStat, now
 from ..ingest.datasets import load_transactions
 from ..ingest.mapping import CANONICAL_FIELDS
 from ..ingest.service import transform as canonical_transaction
+from ..observability import metrics, tracing
 from ..tenants import registry
 from ..visibility import system_work
 from . import topics
@@ -79,7 +81,7 @@ def load_transaction_batch(s: Session, messages: list[Message]) -> Outcome:
     if result.parties:
         alerts = run_detection(s, result.parties)
         for c in route_alerts(s, alerts):
-            investigate(s, c)
+            engine().brief(s, c)
         out.alerts = len(alerts)
     return out
 
@@ -109,7 +111,7 @@ def load_alert_batch(s: Session, messages: list[Message]) -> Outcome:
             s, source=str(a["source"]), external_id=str(a["external_id"]), scenario=str(a["scenario"]), party_id=str(a["party_id"]), score=score,
             explanation=str(a["explanation"]), party_name=a.get("party_name"), txn_ids=[str(x) for x in a.get("txn_ids") or []])
         if case is not None:
-            investigate(s, case)
+            engine().brief(s, case)
         out.loaded += 1
         out.alerts += 1
     return out
@@ -119,18 +121,31 @@ HANDLERS: dict[str, Callable[[Session, list[Message]], Outcome]] = {topics.TRANS
 
 
 def _count(s: Session, stream: str, out: Outcome) -> None:
-    stat = s.scalars(select(StreamStat).where(StreamStat.stream == stream)).first()
-    if stat is None:
-        stat = StreamStat(stream=stream, received=0, loaded=0, duplicates=0, rejected=0, alerts=0)
-        s.add(stat)
-    stat.received += out.received
-    stat.loaded += out.loaded
-    stat.duplicates += out.duplicates
-    stat.rejected += len(out.rejects)
-    stat.alerts += out.alerts
-    stat.last_at = now()
+    """Add this batch to the client's running totals, in the database, so consumers running side by side never
+    overwrite each other's counts (a read, add and write in Python would lose updates between them)."""
+    from sqlalchemy import update
+    from sqlalchemy.exc import IntegrityError
+
+    from ..tenancy import tenant_of
+
+    tenant = tenant_of(s)
+    values = {"received": StreamStat.received + out.received, "loaded": StreamStat.loaded + out.loaded,
+              "duplicates": StreamStat.duplicates + out.duplicates, "rejected": StreamStat.rejected + len(out.rejects),
+              "alerts": StreamStat.alerts + out.alerts, "last_at": now()}
     if out.rejects:
-        stat.last_reject = out.rejects[-1][1][:300]
+        values["last_reject"] = out.rejects[-1][1][:300]
+    where = (StreamStat.tenant_id == tenant) & (StreamStat.stream == stream)
+    for _ in range(2):
+        if s.execute(update(StreamStat).where(where).values(**values).execution_options(synchronize_session=False)).rowcount:
+            return
+        try:
+            with s.begin_nested():  # the first batch on this stream: another consumer may be creating the row too
+                s.add(StreamStat(stream=stream, received=out.received, loaded=out.loaded, duplicates=out.duplicates,
+                                 rejected=len(out.rejects), alerts=out.alerts, last_at=now(),
+                                 last_reject=out.rejects[-1][1][:300] if out.rejects else ""))
+            return
+        except IntegrityError:
+            continue  # it won; add to its row
 
 
 def dead_letter(m: Message, tenant_id: str, reason: str) -> Message:
@@ -182,9 +197,11 @@ class StreamConsumer:
                 self.bus.publish(dead_letter(m, tenant_id, "this client is not live") for m in batch)
                 done[tenant_id] = Outcome(received=len(batch), rejects=[(m, "this client is not live") for m in batch])
                 continue
-            with session_scope(tenant_id) as s:
+            t0 = time.perf_counter()
+            with tracing.span("stream.batch", stream=self.stream, tenant=tenant_id, messages=len(batch)), session_scope(tenant_id) as s:
                 out = HANDLERS[self.stream](s, batch)
                 _count(s, self.stream, out)
+            metrics.record_stream(self.stream, tenant_id, out.received, out.loaded, out.duplicates, len(out.rejects), out.alerts, time.perf_counter() - t0)
             if out.rejects:  # after the database commit, before the position moves: a crash here repeats them, never drops them
                 self.bus.publish(dead_letter(m, tenant_id, reason) for m, reason in out.rejects)
             done[tenant_id] = out
