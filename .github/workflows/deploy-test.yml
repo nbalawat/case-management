@@ -166,11 +166,16 @@ jobs:
           set -euo pipefail
           kubectl create namespace cf-ci
           kubectl label namespace cf-ci caseforge.io/stamp=ci pod-security.kubernetes.io/enforce=baseline
-          helm install data deploy/helm/caseforge-data -n cf-ci \
-            --set kafka.replicas=1 --set kafka.storageGi=5 --set kafka.resources.requests.memory=1Gi --set kafka.resources.limits.memory=1Gi \
-            --set search.replicas=1 --set search.diskSize=5Gi --set search.resources.requests.memory=1Gi \
-            --set search.resources.limits.memory=1536Mi --set search.jvm="-Xms512m -Xmx512m" \
-            --set kafka.resources.requests.cpu=250m --set search.resources.requests.cpu=250m
+          # The operators' webhooks can still refuse connections just after their charts report ready, so try a few times.
+          for attempt in 1 2 3 4 5 6; do
+            helm upgrade --install data deploy/helm/caseforge-data -n cf-ci \
+              --set kafka.replicas=1 --set kafka.storageGi=5 --set kafka.resources.requests.memory=1Gi --set kafka.resources.limits.memory=1Gi \
+              --set search.replicas=1 --set search.diskSize=5Gi --set search.resources.requests.memory=1Gi \
+              --set search.resources.limits.memory=1536Mi --set search.jvm="-Xms512m -Xmx512m" \
+              --set kafka.resources.requests.cpu=250m --set search.resources.requests.cpu=250m && break
+            [ "$attempt" = 6 ] && exit 1
+            echo "An operator webhook is not answering yet (attempt $attempt); retrying in 15s"; sleep 15
+          done
       - name: Kafka is ready and its user exists
         run: |
           set -euo pipefail
