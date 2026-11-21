@@ -1,0 +1,38 @@
+{{- if .Values.backup.enabled }}
+{{- $url := required "backup.url is required when backups are on: an object store URL such as s3://bucket/caseforge-backups" .Values.backup.url }}
+{{- if hasPrefix "file://" $url }}{{ fail "backup.url must be object storage (s3://, abfs://, gs://): pods keep nothing on local disk" }}{{ end }}
+# Backups written by the application to object storage, and a scheduled restore drill that proves they restore.
+{{- range $job := list (dict "name" "backup" "schedule" .Values.backup.schedule "args" (list "create")) (dict "name" "backup-drill" "schedule" .Values.backup.drillSchedule "args" (list "drill")) }}
+{{- if $job.schedule }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "caseforge.name" $ }}-{{ $job.name }}
+  labels: {{- include "caseforge.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $job.name }}
+spec:
+  schedule: {{ $job.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ $.Values.backup.timeoutSeconds }}
+      template:
+        metadata:
+          labels: {{- include "caseforge.podLabels" $ | nindent 12 }}
+            app.kubernetes.io/component: {{ $job.name }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "caseforge.serviceAccount" $ }}
+          {{- include "caseforge.pod" $ | nindent 10 }}
+          containers:
+            - name: {{ $job.name }}
+              {{- include "caseforge.container" $ | nindent 14 }}
+              command: ["uv", "run", "--no-dev", "python", "-m", "app.backup", {{ range $job.args }}{{ . | quote }}{{ end }}]
+              resources: {{- toYaml $.Values.backup.resources | nindent 16 }}
+{{- end }}
+{{- end }}
+{{- end }}
