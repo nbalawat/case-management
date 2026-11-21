@@ -265,10 +265,10 @@ def test_the_workflow_definitions_are_valid_and_named():
 def test_the_activities_carry_the_names_the_workflows_call():
     from temporalio import activity
 
-    from app.durable.workflows import FILING_DUE, FILING_LOOK, LOOK, PERFORM, PIPELINES, RUN_JOB, STAGE_DUE, SWEEP
+    from app.durable.workflows import ANSWERS, FILING_DUE, FILING_LOOK, LOOK, PERFORM, PIPELINES, RUN_JOB, STAGE_DUE, SWEEP
 
     assert {activity._Definition.must_from_callable(a).name for a in temporal.activities()} == {
-        LOOK, PERFORM, STAGE_DUE, SWEEP, PIPELINES, FILING_LOOK, FILING_DUE, RUN_JOB}
+        LOOK, PERFORM, STAGE_DUE, SWEEP, PIPELINES, ANSWERS, FILING_LOOK, FILING_DUE, RUN_JOB}
 
 
 def test_workflow_code_imports_nothing_from_the_application():
