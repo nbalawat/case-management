@@ -1,0 +1,58 @@
+/* The case workspace: header strip, tabbed evidence and the decision rail that stays in view. */
+
+.case-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-top: 12px; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: 13px; }
+.cs-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.cs-item svg { color: var(--muted); }
+.cs-actions { margin-left: auto; display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cs-actions button, .cs-actions select { min-height: 30px; padding: 3px 12px; display: inline-flex; align-items: center; gap: 6px; }
+
+.case-ws { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; margin-top: 6px; }
+.case-main > [role=tablist] { position: sticky; top: 0; z-index: 2; background: var(--bg); margin-bottom: 14px; }
+.case-rail { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.case-rail .card { margin: 0; }
+@media (max-width: 1180px) {
+  .case-ws { grid-template-columns: 1fr; }
+  .case-rail { position: static; max-height: none; }
+}
+
+.tab-count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--chip); color: var(--soft); font-size: 11.5px; line-height: 18px; }
+.tab-count.warn { background: var(--serious-bg); color: var(--serious); }
+.tabs-trigger[data-state=active] .tab-count { background: var(--brand-soft); color: var(--brand); }
+
+.ws-overview { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.ws-overview > .col, .ws-stack { display: flex; flex-direction: column; gap: 16px; }
+.ws-overview .card, .ws-stack .card { margin: 0; }
+@media (max-width: 1400px) { .ws-overview { grid-template-columns: 1fr; } }
+
+/* Decision rail */
+.task-progress { height: 5px; border-radius: 999px; background: var(--chip); overflow: hidden; margin: 2px 0 6px; }
+.task-progress > div { height: 100%; background: var(--good); transition: width .25s ease; }
+.tasks label.next { background: var(--brand-soft); margin: 0 -8px; padding: 5px 8px; border-radius: 8px; }
+.decision-rail .actions { display: flex; flex-direction: column; gap: 8px; }
+.decision-rail .actions button { width: 100%; text-align: left; justify-content: flex-start; }
+.act-label { display: inline-flex; align-items: center; gap: 7px; font-weight: 550; }
+.decision-rail .actions button:disabled .act-label svg { color: var(--muted); }
+.decision-rail .actions button:not(:disabled) .act-label svg { color: var(--good); }
+.decision-rail .actions button.primary:not(:disabled) .act-label svg { color: inherit; }
+
+/* Transaction explorer */
+.txn-hist svg { cursor: pointer; }
+.txn-hist .hitbox { fill: transparent; }
+.txn-hist .day:hover .hitbox { fill: var(--chip); }
+.txn-hist .bar.in { fill: var(--series-1); }
+.txn-hist .bar.out { fill: var(--series-2); }
+.txn-hist .day.dim .bar { opacity: .25; }
+.txn-hist .mark { fill: var(--crit); }
+.k.hit { border-radius: 50%; background: var(--crit); width: 8px !important; height: 8px !important; }
+.txn-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 10px 0; font-size: 13px; }
+.txn-bar .grow { flex: 1; }
+.txn-bar .seg { margin: 0; }
+.txn-sum .in { color: var(--series-1); } .txn-sum .out { color: var(--series-2); }
+.txn-groups tbody tr { cursor: pointer; }
+.txn-groups tbody tr:hover, .txn-groups tbody tr:focus-visible { background: var(--bg-2); outline: none; }
+.share { height: 8px; border-radius: 999px; background: var(--chip); min-width: 80px; overflow: hidden; }
+.share > div { height: 100%; background: var(--series-1); }
+
+textarea.narrative { width: 100%; font-size: 14px; line-height: 1.55; }
+.decision-rail .actions { margin-top: 12px; }

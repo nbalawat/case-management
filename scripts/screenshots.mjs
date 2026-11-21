@@ -186,7 +186,7 @@ for (const c of fresh.filter(c => c.case_type === 'tm_alert_investigation').slic
   if (score > best) { best = score; moving = c }
 }
 await as('maya')
-await go(`/cases/${moving.id}`); await page.locator('svg.flow').waitFor()
+await go(`/cases/${moving.id}?tab=transactions`); await page.locator('svg.flow').waitFor()
 await page.locator('section.card', { hasText: 'Flow of funds' }).screenshot({ path: `${out}47-flow-of-funds.png` })
 // Fraud and sanctions depth: the sanctions desk, a held payment waiting for a second person, and the fraud desk with a dispute on its clocks.
 const sanctionsDesk = await (await fetch(`${base}/api/sanctions`, { headers: H })).json()
