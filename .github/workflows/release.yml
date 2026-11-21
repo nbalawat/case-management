@@ -62,15 +62,23 @@ jobs:
           tags: caseforge:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Scan the image
+      - name: Scan the image (fixable HIGH or CRITICAL fails the release)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: caseforge:scan
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          format: table
+      - name: Image findings for code scanning
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: caseforge:scan
+          exit-code: "0"
           format: sarif
           output: trivy-image.sarif
+          skip-setup-trivy: true
       - if: always()
         uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with: {sarif_file: trivy-image.sarif, category: trivy-image}
