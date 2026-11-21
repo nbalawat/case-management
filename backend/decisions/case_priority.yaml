@@ -1,0 +1,26 @@
+id: case_priority
+title: Case priority
+version: "1.0"
+description: >-
+  The priority a monitoring case opens with. The shipped rules match the platform's built-in scoring and add two
+  customer-risk rules. Out of use until a client publishes a version with enabled set to true.
+context: case
+binding: case_priority
+enabled: false
+case_types: [tm_alert_investigation]
+hit_policy: FIRST
+inputs:
+  - {name: max_score, label: Highest alert score, kind: number}
+  - {name: pep, label: Politically exposed, kind: bool}
+  - {name: risk_rating, label: Customer risk, kind: text, values: [low, medium, high]}
+  - {name: alerted_amount, label: Alerted value, kind: number}
+outputs:
+  - {name: priority, label: Priority, kind: text, values: [critical, high, medium, low], default: low}
+rules:
+  - {id: r1, when: {max_score: ">= 0.9"}, then: {priority: critical}, note: Very strong alert}
+  - {id: r2, when: {pep: true, max_score: ">= 0.6"}, then: {priority: critical}, note: Public figures are never left to wait}
+  - {id: r3, when: {alerted_amount: ">= 250000"}, then: {priority: high}, note: Large value at stake}
+  - {id: r4, when: {max_score: "[0.75..0.9)"}, then: {priority: high}}
+  - {id: r5, when: {risk_rating: high, max_score: "[0.6..0.75)"}, then: {priority: high}, note: A high-risk customer moves up one}
+  - {id: r6, when: {max_score: "[0.6..0.75)"}, then: {priority: medium}}
+  - {id: r7, when: {max_score: "< 0.6"}, then: {priority: low}}

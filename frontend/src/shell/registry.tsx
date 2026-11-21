@@ -6,7 +6,7 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import {
   BarChart3, Bot, Boxes, CreditCard, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
-  Radar, ScrollText, ShieldAlert, ShieldCheck, Siren, Sparkles, Users, Workflow, type LucideIcon,
+  Radar, ScrollText, ShieldAlert, ShieldCheck, Siren, Sparkles, TableProperties, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { anyOf, can, desk, everyone, readOnly, type Rule } from './access'
 
@@ -89,6 +89,8 @@ export const MODULES: Module[] = [
   // Administration
   { id: 'workflows', path: '/workflows', label: 'Workflows', description: 'Case types as diagrams; edit, check and publish', icon: Workflow, group: 'admin',
     page: page(() => import('../pages/Workflows')), visible: anyOf(can('publish_workflow'), manager) },
+  { id: 'decisions', path: '/decisions', label: 'Decision tables', description: 'Routing, priority and risk rules as DMN tables; check, replay and publish', icon: TableProperties, group: 'admin',
+    page: page(() => import('../pages/Decisions')), visible: anyOf(can('publish_workflow'), manager), keywords: ['dmn', 'rules', 'routing', 'priority', 'risk band'] },
   { id: 'detection', path: '/detection', label: 'Detection tuning', description: 'Scenario settings, backtests and lookback projects', icon: Radar, group: 'admin',
     page: page(() => import('../pages/Detection')), visible: can('tune_detection', 'approve_tuning'), keywords: ['scenario', 'threshold', 'backtest', 'lookback'] },
   { id: 'screening-lists', path: '/screening-lists', label: 'Screening lists', description: 'Load sanctions list versions and edit the client\'s own list', icon: ListFilter, group: 'admin',
