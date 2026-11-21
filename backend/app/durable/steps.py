@@ -118,3 +118,22 @@ def sent_filings(tenant_id: str) -> list[str]:
 
     with session_scope(tenant_id) as s:
         return [fid for fid in _sent_ids(s) if followups.view(_filing(s, fid))["next"]]
+
+
+# ---- registered jobs ---------------------------------------------------------------------------------------------------
+
+def run_job(tenant_id: str, name: str, params: dict, persona_id: str | None) -> dict:
+    """Run one registered job in its own transaction, as the person who asked (or as the platform, for none)."""
+    from ..db import session_scope
+    from ..tenants.registry import runtime
+    from ..workflow import jobs
+
+    persona = None
+    if persona_id:
+        persona = runtime(tenant_id).policy.people.get(persona_id)
+        if persona is None:
+            raise jobs.UnknownPerson(f"'{persona_id}' is not a user of this client")
+    with session_scope(tenant_id) as s:
+        if persona is not None:
+            bind_viewer(s, persona)
+        return jobs.run_inline(s, name, params, persona)

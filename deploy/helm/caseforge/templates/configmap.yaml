@@ -34,6 +34,11 @@ data:
   {{- with .Values.storage.quarantineUrl }}
   QUARANTINE_URL: {{ . | quote }}
   {{- end }}
+  METRICS_PORT: {{ .Values.observability.metricsPort | quote }}
+  LOG_FORMAT: {{ .Values.observability.logFormat | quote }}
+  {{- with .Values.observability.otlpEndpoint }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ . | quote }}
+  {{- end }}
   AGENT_MODE: {{ .Values.llm.agentMode | quote }}
   ASK_PROVIDER: {{ .Values.llm.askProvider | quote }}
   {{- with .Values.llm.askModel }}

@@ -1,4 +1,4 @@
-.PHONY: lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
+.PHONY: observability load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -16,6 +16,9 @@ backbone-cdc:    ## Docker: the same, with Debezium publishing the outbox instea
 full:            ## Docker: the demo with Kafka, the Iceberg lake, OpenSearch, the graph engine (Apache AGE) and Temporal
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 docker compose --profile backbone --profile search --profile graph --profile durable up --build
 
+observability:   ## Docker: everything in `full`, plus Prometheus (http://localhost:9090), Grafana (http://localhost:3000) and Jaeger (http://localhost:16686)
+	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 LOG_FORMAT=json docker compose --profile backbone --profile search --profile graph --profile durable --profile observability up --build
+
 streaming:       ## Docker: everything in `full`, plus an Apache Flink cluster for stream detection (console on http://localhost:8081)
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 FLINK_URL=http://flink-jobmanager:8081 FLINK_GATEWAY_URL=http://flink-sql-gateway:8083 docker compose --profile backbone --profile search --profile graph --profile durable --profile streaming up --build
 
@@ -28,6 +31,10 @@ flink-job:       ## Docker, with `make streaming` running: render and submit one
 
 lake-backfill:   ## Docker, with `make full` running: copy a client's file-loaded transactions into the lake. make lake-backfill CLIENT=meridian
 	docker compose exec -T app uv run --no-dev python -m app.lake.backfill $(CLIENT)
+
+load-test:       ## Docker, with `make backbone` or `make full` running: transactions through Kafka, the stream consumers and the lake, timed. make load-test N=200000
+	docker compose exec -T app uv run --no-dev python -m app.loadtest run --transactions $(or $(N),20000) --api http://localhost:8000
+	mkdir -p data/loadtest && docker compose cp app:/app/data/loadtest/. data/loadtest/
 
 build:           ## Build the UI so the API can serve it
 	cd frontend && npm install && npm run build

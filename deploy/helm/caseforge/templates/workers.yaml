@@ -16,6 +16,7 @@ spec:
         app.kubernetes.io/component: worker
       annotations:
         checksum/env: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- include "caseforge.scrape" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "caseforge.serviceAccount" . }}
       {{- include "caseforge.pod" . | nindent 6 }}
@@ -23,6 +24,12 @@ spec:
         - name: worker
           {{- include "caseforge.container" . | nindent 10 }}
           command: ["uv", "run", "--no-dev", "python", "-m", "app.backbone.worker"]
+          ports:
+            - {name: metrics, containerPort: {{ .Values.observability.metricsPort }}}
+          livenessProbe:  # the metrics server runs in the worker's own process, so an answer means the process is alive
+            httpGet: {path: /metrics, port: metrics}
+            periodSeconds: 30
+            failureThreshold: 3
           resources: {{- toYaml .Values.eventBus.worker.resources | nindent 12 }}
 {{- end }}
 {{- if .Values.temporal.url }}

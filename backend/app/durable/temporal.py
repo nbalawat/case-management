@@ -47,6 +47,10 @@ def filing_id(tenant_id: str, filing: str) -> str:
     return f"{_prefix(tenant_id)}.filing.{filing}"
 
 
+def job_id(tenant_id: str, name: str, key: str) -> str:
+    return f"{_prefix(tenant_id)}.job.{name}.{key}"
+
+
 def sweep_id(tenant_id: str) -> str:
     return f"{_prefix(tenant_id)}.sweep"
 
@@ -181,7 +185,8 @@ def activities() -> list:
 
     from ..cases.service import TransitionError
     from ..ingest import scheduler
-    from .workflows import FILING_DUE, FILING_LOOK, LOOK, PERFORM, PIPELINES, REFUSED, STAGE_DUE, SWEEP
+    from ..workflow import jobs
+    from .workflows import FILING_DUE, FILING_LOOK, JOB_REFUSED, JOB_RETRY, LOOK, PERFORM, PIPELINES, REFUSED, RUN_JOB, STAGE_DUE, SWEEP
 
     @activity.defn(name=LOOK)
     def case_look(tenant_id: str, case: str) -> dict:
@@ -214,7 +219,18 @@ def activities() -> list:
     def filing_follow_up(tenant_id: str, filing: str) -> list:
         return steps.filing_follow_up(tenant_id, filing)
 
-    return [case_look, case_perform, stage_due, sweep, pipelines_due, filing_look, filing_follow_up]
+    @activity.defn(name=RUN_JOB)
+    def run_job(tenant_id: str, name: str, params: dict, persona_id: str | None) -> dict:
+        job = jobs.get(name)
+        refusals, retry = (*job.refusal_types(), jobs.UnknownPerson), job.retry_types()
+        try:
+            return steps.run_job(tenant_id, name, params, persona_id)
+        except refusals as e:  # the rules said no: never retried, and raised again for the caller as what it was
+            if retry and isinstance(e, retry):  # a stumble, not a no: let Temporal try again
+                raise ApplicationError(str(e), f"{type(e).__module__}:{type(e).__name__}", type=JOB_RETRY) from None
+            raise ApplicationError(str(e), f"{type(e).__module__}:{type(e).__name__}", type=JOB_REFUSED, non_retryable=True) from None
+
+    return [case_look, case_perform, stage_due, sweep, pipelines_due, filing_look, filing_follow_up, run_job]
 
 
 async def running(client, tenant_id: str, limit: int = 5000) -> int:

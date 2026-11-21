@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..agents import batch, copilot, evals, ledger, oversight, policy as policies, triage
 from ..agents.catalog import LEVEL_HELP, LEVEL_LABELS, catalog
-from ..agents.investigator import investigate
+from ..workflow import engine
 from ..domain.models import Case
 from ..domain.personas import Persona, policy_of
 from ..tenants.registry import TenantRuntime
@@ -30,6 +30,15 @@ def _guard(fn, *args, **kw):
         return fn(*args, **kw)
     except (policies.PolicyError, batch.BatchError, triage.TriageError) as e:
         raise HTTPException(422, str(e)) from None
+
+
+def _batch(s: Session, name: str, params: dict, p: Persona):
+    """An agent batch as a durable job (retried on Temporal), and the job record it wrote."""
+    from ..domain.models import AgentJob
+    from ..workflow import engine
+
+    out = _guard(engine().run_job, s, name, params, p)
+    return s.get(AgentJob, out["job_id"])
 
 
 def _job(j) -> dict:
@@ -101,12 +110,12 @@ class LookbackIn(BaseModel):
 
 @router.post("/agents/lookback")
 def run_lookback(body: LookbackIn, s: Session = Depends(get_session), p: Persona = Depends(require(MANAGE))):
-    return _job(_guard(batch.lookback, s, p.id, body.days, body.case_type))
+    return _job(_batch(s, "agents.lookback", {"days": body.days, "case_type": body.case_type}, p))
 
 
 @router.post("/agents/tuning")
 def run_tuning(s: Session = Depends(get_session), p: Persona = Depends(require(MANAGE))):
-    return _job(_guard(batch.tuning, s, p.id))
+    return _job(_batch(s, "agents.tuning", {}, p))
 
 
 class ReviewIn(BaseModel):
@@ -122,7 +131,7 @@ def review_closed(alert_id: str, body: ReviewIn, s: Session = Depends(get_sessio
     if a.case_id and not body.confirm:
         case = s.get(Case, a.case_id)
         if case is not None:
-            investigate(s, case)
+            engine().brief(s, case)
     return {"ok": True, "result": a.qa_result, "case_id": a.case_id}
 
 

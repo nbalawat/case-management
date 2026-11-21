@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..domain.models import Case, Filing
 
 KEY, FILINGS = "workflow_changed", "workflow_filings"
+JOBS = "workflow_jobs"  # background jobs to start once this transaction commits: (tenant, name, params, persona id)
 WATCHED = ("state", "state_entered", "closed")
 OWNED = "workflow_case"  # app.durable.steps marks the case workflow's own transactions with the case they are for
 
@@ -56,10 +57,13 @@ def _by_tenant(pairs: set[tuple[str, str]]) -> dict[str, list[str]]:
 
 @event.listens_for(Session, "after_commit")
 def _tell(session: Session) -> None:
-    cases, filings = session.info.pop(KEY, None), session.info.pop(FILINGS, None)
-    if not cases and not filings:
+    cases, filings, jobs = session.info.pop(KEY, None), session.info.pop(FILINGS, None), session.info.pop(JOBS, None)
+    if not cases and not filings and not jobs:
         return
     from .engine import engine
+
+    if jobs:
+        engine().start_jobs(jobs)
 
     for tenant_id, ids in _by_tenant(cases or set()).items():
         engine().observe(tenant_id, ids)
@@ -71,3 +75,4 @@ def _tell(session: Session) -> None:
 def _forget(session: Session) -> None:
     session.info.pop(KEY, None)
     session.info.pop(FILINGS, None)
+    session.info.pop(JOBS, None)

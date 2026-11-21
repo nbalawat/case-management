@@ -54,4 +54,11 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }}}
       ports:
         - {port: 8000, protocol: TCP}
+    {{- with .Values.networkPolicy.monitoringNamespace }}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ . }}}
+      ports:
+        - {port: {{ $.Values.observability.metricsPort }}, protocol: TCP}
+    {{- end }}
 {{- end }}
