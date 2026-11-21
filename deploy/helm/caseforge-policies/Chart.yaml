@@ -1,0 +1,6 @@
+apiVersion: v2
+name: caseforge-policies
+description: Cluster policies for caseforge platforms - pod security for stamp namespaces, signed images, and the ingress certificate issuer.
+type: application
+version: 0.1.0
+kubeVersion: ">=1.30.0-0"

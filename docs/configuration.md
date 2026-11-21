@@ -1,0 +1,140 @@
+# Configuration reference
+
+CaseForge has two kinds of configuration. **Deployment settings** are environment variables, the same for every
+client a deployment serves, read in `backend/app/config.py`. **Client configuration** is data each client owns,
+versions and changes from the UI. Nothing in either names a cloud: storage, brokers and engines are URLs, and cloud
+specifics such as TLS or SASL properties are passed through as JSON.
+
+## Client configuration
+
+| Area | Starts from | Changed on | Versioning and controls |
+|---|---|---|---|
+| Case types and workflows | `backend/case_types/*.yaml`, chosen by the client's template | Workflows | Draft, check, diff, publish; open cases finish on the version they started on; a draft with an unknown role, dead-end stage or bad condition is refused |
+| Access policy: permissions, roles, queues, people, case visibility | `backend/access/*.yaml` | Access | Versioned; refused if it would leave a workflow step with nobody who can take it or lock everyone out |
+| Agent autonomy, limits, kill switches | `backend/agents/catalog.yaml` | Agents | Versioned; level L3 only after passing evaluation on the client's closed cases |
+| Scenario settings | each scenario's declared defaults and ranges | Detection tuning | Numbered revisions, backtest attached, second-person approval |
+| Code lists: closing reasons, QA criteria and weights, root causes, hibernation rules, risk factors and bands, ownership rules, document types, review triggers | `backend/reference/` | Lists | Retired rather than deleted; risk downgrades need a second person |
+| Screening lists | loaded files | Screening lists | Each load a version; rescreening on change; exemptions need two people |
+| Data sources, mappings, quality rules, schedules | proposed from a sample file | Data pipelines | Storage locations are set by platform operators only; mappings versioned |
+| Regulatory regime and sending channel | template | Platform (operators) | FinCEN or goAML; checks per format before sending |
+| Identity provider | none | `PUT /api/platform/tenants/{id}/identity` | Issuer, audience and claim per client |
+
+### Case type anatomy
+
+```yaml
+case_type: tm_alert_investigation
+title: Transaction monitoring investigation
+version: 4.0.0
+initial_state: triage
+states:
+  triage:
+    label: Triage
+    queue: aml-l1            # where unassigned work waits
+    sla_hours: 48            # the stage clock
+    tasks:
+      - {id: review_briefing, label: Review the alert and agent briefing}
+  awaiting_information: {label: Awaiting information, kind: wait, queue: aml-l2, sla_hours: 240}
+  filed: {label: SAR filed, kind: closed, disposition: sar_filed}
+transitions:
+  - {from: triage, to: investigation, label: Escalate, roles: [analyst, investigator], requires: [tasks]}
+  - from: mlro_review
+    to: filed
+    roles: [mlro]
+    requires: [narrative]           # also: tasks, note, reason, open_request, requests_answered
+    four_eyes: true                 # nobody approves work they drafted or moved
+    when: ["alerted_amount < 100000", "pep == false"]
+sla: {clock: SAR filing deadline, due_days: 30}
+escalation: {raise_priority: true, notify: team_lead}
+```
+
+### Access policy anatomy
+
+```yaml
+permissions:
+  submit_filings: Send regulatory reports
+queues:
+  aml-l2: AML investigations (L2)
+roles:
+  investigator: {title: L2 investigator, permissions: [work], sees: {scope: all, case_types: [tm_alert_investigation]}}
+  auditor:      {title: Internal auditor, permissions: [view_team, view_restricted], read_only: true}
+people:
+  - {id: ivan, name: Ivan Petrov, role: investigator, queues: [aml-l2]}
+```
+
+`sees.scope` is `all`, `queues` or `own`; people always keep sight of cases they own or have acted on, and
+restricted cases also need `view_restricted`. In sign-in mode the identity provider proves who someone is and the
+policy says what they may do.
+
+## Deployment settings
+
+### Core
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DATABASE_URL` | SQLite under `data/` | The operational store; Postgres 16 in any real deployment |
+| `SCHEMA_ON_MISMATCH` | `rebuild` | A database at another schema version: `rebuild` drops every table (demos only), `refuse` stops with an explanation. Helm sets `refuse` |
+| `MIGRATE_ON_START` | `1` | Migrate at start. Off where a separate step migrates (the Helm hook job) |
+| `DEMO_TENANTS` | `1` | Seed the three demo clients |
+| `DEFAULT_TENANT` | `meridian` | Demo mode only: the client when a request names none |
+| `CASE_TYPES_DIR`, `ACCESS_DIR`, `TEMPLATES_DIR`, `SAMPLES_DIR` | `backend/...` | Where the libraries are read from |
+
+### Identity
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AUTH_MODE` | `demo` | `demo`: client and person from headers and the pickers. `oidc`: only from a signed token |
+| `PUBLIC_URL` | `http://localhost:8000` | The address users reach, for redirects |
+| `OIDC_OPERATOR_ISSUER`, `OIDC_OPERATOR_AUDIENCE`, `OIDC_OPERATOR_CLAIM` | empty | The separate provider platform staff sign in through |
+| `DEV_IDP` | `0` | A built-in identity provider for laptops and tests; never in a real deployment |
+
+### Storage
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `EVIDENCE_URL` | local `data/evidence` | Customer documents and sent filings, per client under `<url>/<client>/`; `s3://`, `abfss://`, `gs://` |
+| `QUARANTINE_URL` | local `data/quarantine` | Rejected rows and held files |
+| `LAKE_DIR` | local `data/lake` | Demo landing zone for the seeded clients |
+| `PIPELINE_SCHEDULER` | `0` | In-process schedule timer; one process only |
+| `ALLOW_MEMORY_STORAGE` | `0` | Tests only |
+
+### Event backbone and lake
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `EVENT_BUS_URL` | empty | `kafka://host:9092[,host:9092]`. Empty: events wait in the outbox |
+| `KAFKA_CONFIG` | empty | JSON of extra client properties (TLS, SASL, cloud settings) |
+| `EVENT_TOPIC_PREFIX` | `caseforge` | Topics are `<prefix>.<client>.<stream>` |
+| `OUTBOX_PUBLISHER` | `relay` | `relay` (built in) or `debezium` (change data capture; the relay stays off) |
+| `BACKBONE_WORKERS` | `0` | Run the relay and consumers inside the API process (one process only); otherwise `python -m app.backbone.worker` |
+| `OUTBOX_KEEP_DAYS` | `7` | How long published outbox rows are kept |
+| `STREAM_UNKNOWN_CUSTOMER` | `reject` | A streamed payment for an unknown customer or account: `reject` or `create` |
+| `LAKE_CATALOG` | empty | JSON of Iceberg catalog properties (SQL catalog on a laptop, REST catalog in a deployment). Empty: no lake |
+
+### Engines
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SEARCH_URL`, `SEARCH_CONFIG` | empty | `opensearch://` or `opensearchs://` nodes and extra client options. Empty: search in the database |
+| `GRAPH_URL` | empty | `age://user:password@host:5432/db`. Empty: routes found in the database |
+| `TEMPORAL_URL`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE` | empty, `default`, `caseforge` | Durable stage clocks; run `python -m app.durable.worker` |
+| `TEMPORAL_SYNC_SECONDS`, `TEMPORAL_SWEEP_SECONDS` | `15`, `300` | How often clocks are brought into step, and the sweep schedule |
+| `FLINK_URL` | empty | Flink REST address; the Integrations page shows each client's jobs |
+| `FLINK_GATEWAY_URL` | empty | Flink SQL Gateway; lets people who approve detection changes start, stop and restart jobs |
+| `FLINK_KAFKA_BOOTSTRAP` | empty | Brokers as Flink reaches them, when different |
+
+### Models
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | empty | Turns on the hosted model |
+| `ASK_PROVIDER` | `auto` | `auto` uses the model when a key is set; `offline` forces the planner |
+| `ASK_MODEL`, `ASK_EFFORT` | `claude-opus-5-5`, `medium` | Model and effort for Ask |
+| `AGENT_MODE` | `rules` | `model` runs specialist agents as tool loops on the model, rules as fallback |
+| `LLM_PROVIDER` | `mock` | The provider behind agent drafting |
+
+## Helm values
+
+The chart maps these onto values (`eventBus.url`, `search.url`, `temporal.url`, `flink.url`, `storage.evidenceUrl`,
+`llm.agentMode`, `auth.operatorIssuer` and so on); secrets such as `DATABASE_URL`, `ANTHROPIC_API_KEY`,
+`KAFKA_CONFIG`, `SEARCH_CONFIG`, `GRAPH_URL` and `LAKE_CATALOG` come from the Secret named in `existingSecret`. See
+[the chart's README](../deploy/helm/caseforge/README.md).

@@ -1,185 +1,378 @@
 # CaseForge
 
-A laptop-sized, working slice of an AI-first financial-crime case management platform. It ingests a bank feed,
-maps it to a canonical model, runs monitoring scenarios, groups alerts into cases, has an agent prepare each
-investigation, and routes the work through configurable workflows to the right people, under role, four-eyes
-and stage-clock controls, with a complete audit trail. It runs many clients on one platform: each has its own
-people, access policy, workflows and data, and a new client is onboarded from a template in about a minute.
-Anyone can ask a question about the caseload in plain language and get an answer that names the cases behind it.
+**A configurable, multi-tenant, AI-first case management platform for financial crime: AML transaction monitoring,
+KYC and customer due diligence, sanctions, fraud, regulatory reporting and remediation, on one canonical model.**
 
-This is a demo build. It is meant to be shown, not deployed. All data is synthetic.
+CaseForge takes a bank's data from object storage or a stream, maps it to one canonical model, detects suspicious
+activity, turns alerts into cases, has governed AI agents prepare each investigation, and routes the work through
+the client's own workflows to the right people, under four-eyes, stage-clock and audit controls, ending in a
+regulator-ready filing. Many clients run on one platform, each with its own people, access policy, workflows,
+detection settings, data and identity provider, and a new client goes live from a template in about a minute.
+Anyone can ask a plain-language question about the whole caseload and get an answer that names the cases behind it.
 
-![My work](docs/screenshots/01-my-work.png)
-![Ask anything](docs/screenshots/15-ask.png)
-![Data pipelines](docs/screenshots/18-data-pipeline-run.png)
-![Agents](docs/screenshots/20-agents-acting.png)
-![Customer profile and network](docs/screenshots/28-customer-360.png)
-![Workflow designer](docs/screenshots/08-workflows.png)
-![Operator console](docs/screenshots/14-operator-console.png)
+It is built to be deployed two ways by the same team: as a **dedicated stamp** inside a large bank's own AWS, Azure
+or GCP account (or an air-gapped site), and as a **pooled managed service** for smaller institutions. Every
+engine it uses is open source, every engine sits behind an interface, and nothing in the code names a cloud.
 
-## Run it on a Mac
+> **Status.** The full application tier is built and tested end to end, and every infrastructure engine has been run
+> for real against its open-source server. It has not yet been installed on a cloud cluster or run under
+> production load, and all data is synthetic. [What is real and what is not](#what-is-real-and-what-is-not) says
+> exactly what has and has not been proven, component by component.
+
+| | |
+|---|---|
+| ![My work](docs/screenshots/01-my-work.png) | ![Case investigation](docs/screenshots/04-case-investigation.png) |
+| ![Ask anything](docs/screenshots/15-ask.png) | ![Agents](docs/screenshots/20-agents-acting.png) |
+| ![Workflow designer](docs/screenshots/08-workflows.png) | ![Customer profile and network](docs/screenshots/28-customer-360.png) |
+| ![Data pipelines](docs/screenshots/18-data-pipeline-run.png) | ![Operator console](docs/screenshots/14-operator-console.png) |
+
+**Contents:** [Why CaseForge](#why-caseforge) ·
+[Capabilities](#capabilities) · [Configured per client, not coded](#configured-per-client-not-coded) ·
+[Architecture](#architecture) · [Multi-tenancy and security](#multi-tenancy-and-security) ·
+[AI agents](#ai-agents-and-ask-anything) · [Technology](#technology) · [Quick start](#quick-start) ·
+[Deploying to AWS, Azure and GCP](#deploying-to-aws-azure-and-gcp) · [Code layout](#how-the-code-is-laid-out) ·
+[Documentation](#documentation) · [Status](#what-is-real-and-what-is-not) · [Milestones](#milestones)
+
+## Why CaseForge
+
+| | |
+|---|---|
+| **One platform, every financial-crime workload** | Monitoring, KYC, sanctions, fraud and filing share one model of customers, accounts, payments, alerts and cases, so an investigator sees one customer across every desk and a KYC review can be opened by a SAR. |
+| **Configured, not coded** | Workflows, roles, permissions, case visibility, agent autonomy, detection thresholds, risk models, screening lists, code lists, data mappings and regulatory regime are each client's own versioned configuration, changed from the UI with checks and a second person where it matters. |
+| **Multi-tenant by design** | Client isolation lives in the data layer under every query; each client brings its own identity provider; an operator console onboards, suspends and monitors clients without seeing their data. |
+| **AI that prepares, people who decide** | Thirteen agents assemble evidence, research, draft and check, each within an autonomy level the client sets and only after evaluation on the client's own history. Filing, closing and approving are never agent actions. Every agent step is on a hash-chained ledger. |
+| **Overlay or full platform** | Sit on top of an incumbent monitoring engine (alerts in by API or topic) or run detection, cases and filing end to end. |
+| **Open source and cloud-neutral** | Postgres, Kafka, Debezium, Iceberg, OpenSearch, Flink, Apache AGE and Temporal, each switched on by one URL and each behind an interface; one Helm chart with four deployment modes; workload identity instead of stored cloud credentials. |
+| **Evidence a regulator can follow** | Append-only case history, transactional outbox to CloudEvents, fingerprinted documents with chain of custody, locked narratives after filing, change register and access recertification. |
+
+## Capabilities
+
+| Area | What it does |
+|---|---|
+| **Detection and alert intake** | Four versioned scenarios (structuring, rapid movement, high-risk geography, watchlist name match) after every file load and stream batch; three also as Apache Flink jobs per client, started and stopped from the product. Third-party alerts by `POST /api/alerts` or a Kafka topic, deduplicated and grouped per customer. Hibernation rules for weak alerts. |
+| **Detection tuning and lookbacks** | Per-client scenario settings as numbered revisions, backtested on a year of history (alerts lost, filings that would have been missed, alerts gained) and approved by a second person. Lookback projects re-run a past period and are signed off with frozen figures. |
+| **Case management** | Six case types as versioned YAML workflows: stages, queues, checklists, conditional routing, waiting stages, four-eyes, stage clocks with escalation, regulatory deadlines, QA sampling with reopen. Bulk claim, reassign, move and close; case merge; restricted cases; information requests. |
+| **Case workspace** | Priority, deadlines, stage clock, agent view and owner at a glance; evidence in tabs (overview, transactions, customer, narrative, requests, timeline); a decision rail that explains why each step is or is not available; a transaction explorer that drills from any cited finding. |
+| **KYC and due diligence** | Risk ratings from the client's own factors and bands, with governed downgrades; beneficial ownership worked out through every chain, with flags for trusts, nominees and loops; a document store with SHA-256 fingerprints and custody log; flow of funds; event-driven and periodic reviews. |
+| **Sanctions** | Versioned watchlists with rescreening on every change, the client's own do-not-deal list, two-person false-match exemptions, holds on payments, accounts and cards with two-person release, blocked and rejected payment reports, confidential law-enforcement searches. |
+| **Fraud** | A fraud workflow on a two-hour clock, customer contact as a waiting stage, refunds above a limit to a lead, disputes with credit, recovery and resolution clocks, loss and recovery by cause. |
+| **Regulatory reporting** | One neutral report rendered as FinCEN SAR/CTR (BSA XML) or goAML STR/CTR per client; pre-send checks; a register from prepared to accepted or rejected; amendments that keep the original; narrative lock after filing; CTRs from cash days in one step. |
+| **Entities, network and search** | Entity resolution of counterparties with a human desk for uncertain matches; customer 360 with a two-hop payment network; shortest path between customers; one typo-tolerant search box over everything a person may see. |
+| **Ask anything** | Plain-language questions over the whole caseload, answered through governed read-only lookups (never SQL), limited to what the asker may see, with every cited case verified. |
+| **Oversight and governance** | Dashboards where every figure drills to its cases; team workload and breached clocks; a monthly management report with exports; a change register across every configuration area; access recertification; audit search. |
+| **Data onboarding** | Pipelines from S3, Azure Data Lake, Google Cloud Storage or local folders: CSV, JSON lines, Parquet; saved, versioned mappings with a proposer; quality gates, quarantine, reconciliation, load-once and lineage. Streams of transactions and alerts on Kafka. |
+| **Platform operations** | Client templates and one-step onboarding, an operator console in counts only, per-client identity providers, versioned schema migrations, a Helm chart with four deployment modes, CI across every engine. |
+
+## Configured per client, not coded
+
+Almost everything that differs between two banks is configuration that each client owns, versions and publishes
+from the UI. Work in flight keeps the version it started on; risky changes need a second person; a change that
+would break something is refused before it is published.
+
+| What a client configures | Where | Guard rails |
+|---|---|---|
+| Case types and workflows: stages, queues, tasks, transitions, conditions, four-eyes, clocks, escalation, QA sampling | Workflows page; `backend/case_types/*.yaml` is the library | Checked draft with a diff; unknown roles, dead ends and bad conditions refused; versions per client |
+| Roles, permissions, queues and people | Access page; `backend/access/*.yaml` are the starting policies | Refused if it would strand a workflow step or lock everyone out; versioned; recertified periodically |
+| Case visibility per role (`all`, `queues`, `own`, by case type) and restricted matters | Access page | Enforced in the data layer under lists, dashboards, agents and Ask |
+| Agent autonomy per agent and case type (off, assist, prepare, act within policy), limits, kill switch | Agents page; `backend/agents/catalog.yaml` declares the roster | L3 only after passing evaluation on the client's history; sampled human checks; challenger in shadow |
+| Scenario thresholds and on/off | Detection tuning | Backtest attached, second-person approval, written reason when alerts that mattered would be lost |
+| Risk factors, points and bands; ownership thresholds; document types; review triggers | Lists | Downgrades need a second person |
+| Closing reasons, QA criteria and weights, root causes, hibernation rules | Lists | Retired, never deleted |
+| Screening lists and the client's own list | Screening lists | Versioned loads, rescreening on change |
+| Data sources, storage locations, file mappings, quality rules, schedules | Data pipelines | Locations set by platform operators only; mappings versioned |
+| Regulatory regime (FinCEN or goAML) and sending channel | Platform settings | Pre-send checks per format |
+| Identity provider | `PUT /api/platform/tenants/{id}/identity` | Client is decided by which provider signed the token |
+| Template at onboarding (full-service bank, payments fintech, private bank) | Operator console; `backend/templates/` | Each client gets its own copy |
+
+A workflow step is a few lines of YAML. This is the approval step of the monitoring investigation: above $100,000
+or on a politically exposed customer, the MLRO cannot file alone and the case goes to the Head of FIU.
+
+```yaml
+- from: mlro_review
+  to: senior_approval
+  label: Approve and send to Head of FIU
+  roles: [mlro]
+  requires: [narrative]
+  four_eyes: true
+  when: [{any: ["alerted_amount >= 100000", "pep == true"]}]
+```
+
+And a role is one line of the client's access policy, including what it may see:
+
+```yaml
+investigator: {title: L2 investigator, permissions: [work, resolve_entities], sees: {scope: all, case_types: [tm_alert_investigation]}}
+```
+
+## Architecture
+
+CaseForge is a modular monolith in Python with a React front end, surrounded by open-source engines that each switch
+on with one URL. With no URLs it runs as one process on SQLite; with all of them it runs the full reference
+architecture. The application code is the same either way: every engine sits behind an interface with an
+in-database or in-process fallback, and engines answer with ids that are re-read through the caller's session, so
+the client boundary never depends on an external index.
+
+```mermaid
+flowchart TB
+  subgraph people[People]
+    UI["React UI<br/>role-shaped menu, data grid, case workspace,<br/>dashboards, command palette, Ask"]
+  end
+  IDP["Identity provider per client<br/>(OIDC)"]
+  subgraph api["CaseForge API (FastAPI)"]
+    TEN["Tenancy and visibility filter under every query"]
+    CASE["Case core and workflows"]
+    AGENTS["Agents, ledger and Ask"]
+    DESKS["KYC, sanctions, fraud, filing"]
+    DET["Detection, tuning, alert hub"]
+    ENT["Entities, network, search"]
+    OVR["Dashboards, MI, governance"]
+    PIPE["Data pipelines"]
+    OUTBOX["Outbox: CloudEvents in the same transaction"]
+  end
+  subgraph engines["Optional engines (one URL each)"]
+    OS["OpenSearch"]
+    AGE["Apache AGE"]
+    TMP["Temporal"]
+    FLINK["Apache Flink"]
+    LLM["Model provider"]
+  end
+  subgraph data["Data services"]
+    PG[("Postgres 16<br/>cases, audit, outbox")]
+    OBJ[("Object storage<br/>S3, ADLS, GCS")]
+    KAFKA[("Apache Kafka<br/>relay or Debezium")]
+    ICE[("Apache Iceberg<br/>history per client")]
+  end
+  CLIENT["Client systems: core banking files, transaction streams, incumbent alert engines"]
+
+  UI --> api
+  UI <--> IDP
+  api <--> engines
+  api <--> PG
+  PIPE --> OBJ
+  OUTBOX --> KAFKA
+  KAFKA --> ICE
+  KAFKA <--> FLINK
+  CLIENT --> OBJ
+  CLIENT --> KAFKA
+```
+
+| Layer | In the application (`backend/app/`) | Engine | Switched on by |
+|---|---|---|---|
+| Experience | React SPA (`frontend/src`) served by the API | | always |
+| Identity | `auth/`: OIDC per client, separate platform-staff issuer, dev provider | Keycloak, Entra ID, Okta | `AUTH_MODE=oidc` |
+| Tenancy and visibility | `tenancy.py`, `visibility.py` | Postgres | always |
+| Case core | `cases/`, `durable/` | Temporal | `TEMPORAL_URL` |
+| Agents and Ask | `agents/`, `ask/` | Anthropic API or any `ChatModel` | `ANTHROPIC_API_KEY`, `AGENT_MODE=model` |
+| Desks | `kyc/`, `sanctions/`, `fraud/`, `holds.py`, `filing/`, `entities/` | OpenSearch, Apache AGE | `SEARCH_URL`, `GRAPH_URL` |
+| Detection | `detection/`, `alerts/`, `streamjobs/` | Apache Flink and its SQL Gateway | `FLINK_URL`, `FLINK_GATEWAY_URL` |
+| Data fabric | `ingest/`, `storage/`, `backbone/`, `lake/` | S3, ADLS, GCS; Kafka; Debezium; Iceberg | storage locations, `EVENT_BUS_URL`, `OUTBOX_PUBLISHER`, `LAKE_CATALOG` |
+| Persistence | SQLAlchemy models, Alembic migrations | SQLite or Postgres 16 | `DATABASE_URL` |
+
+Every replaceable part sits behind a small interface: `ObjectStore`, `SearchIndex`, the graph store, the event bus,
+the lake store, filing `Format` and `Channel`, `Connector`, `MappingProposer`, `LLMProvider`, `ChatModel` and the
+scenario registry. The data model is described in [docs/data-model.md](docs/data-model.md).
+
+## Multi-tenancy and security
+
+- **Client boundary in the data layer.** One schema with every row keyed by client. Sessions are bound to a client;
+  queries are filtered and writes stamped automatically, and a statement that cannot be filtered is refused. Tested
+  with ten clients side by side.
+- **Case visibility per person.** Roles can be limited to their queues, their own cases or some case types; people keep
+  sight of what they own or touched; restricted cases are hidden from everyone not cleared, including administrators.
+  The same filter sits under lists, case pages, dashboards, the event feed, the agent ledger and Ask; a hidden case
+  answers "not found". The suite signs in as every person at every client and checks every case.
+- **Single sign-on per client.** OpenID Connect with each client's own provider; the client is decided by which
+  provider signed the token. Asymmetric signatures only; PKCE in the browser. Platform staff use a separate provider
+  and see counts, not client data.
+- **Controls the engine enforces.** Four-eyes on approvals, two-person release of sanctions holds, two-person risk
+  downgrades and detection changes, the narrative lock after filing, and no agent tool that files, closes or approves.
+- **Evidence.** Append-only case history, hash-chained agent ledger, fingerprinted documents and filings with custody
+  logs, every configuration change in one register.
+- **No stored cloud credentials.** Storage drivers use the workload's own identity; Kubernetes pods run as non-root
+  with secrets only from a Secret you name.
+
+## AI agents and Ask anything
+
+Thirteen agents are declared in [`backend/agents/catalog.yaml`](backend/agents/catalog.yaml): triage, data assembly,
+entity research, adverse media, typology analyst, fraud analyst, sanctions adjudicator, KYC refresh, narrative
+writer, QA critic, investigator copilot, lookback batch and tuning advisor. Each declares its goal, the tools it may
+call, its highest autonomy and the one thing it may do alone. Each client sets every agent per case type to off,
+assist (L1), prepare (L2) or act within policy (L3); an L3 setting cannot be published until it has passed an
+evaluation on the client's own closed cases, and a sample of what agents do alone goes to a person. A challenger
+profile runs in shadow; findings without a cited record are dropped; outside content reaches agents only as typed
+fields from a tool-less extractor.
+
+Ask anything answers plain-language questions through five read-only lookups over a fixed vocabulary of 31 fields
+and 9 measures. The model never sees the database or writes SQL; lookups run as the person asking, so two people can
+rightly get different answers; cited case ids are checked before they become links. With no API key both features
+run offline (a planner and rule-based agents), which is also how the air-gapped mode runs. Other model providers
+(Bedrock, Azure AI Foundry, Vertex AI, a self-hosted open-weight model) plug in behind the same gateway in
+`backend/app/ask/gateway.py`.
+
+## Technology
+
+| Concern | Choice |
+|---|---|
+| API and domain | Python, FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, uv |
+| Database | Postgres 16 (SQLite for the laptop demo) |
+| Object storage | fsspec with s3fs, adlfs, gcsfs; PyArrow |
+| Events | Apache Kafka, Debezium, CloudEvents 1.0 |
+| Lake | Apache Iceberg (pyiceberg; SQL or REST catalog) |
+| Search | OpenSearch |
+| Stream processing | Apache Flink SQL, SQL Gateway |
+| Graph | Apache AGE on Postgres |
+| Durable execution | Temporal |
+| Identity | OpenID Connect (PyJWT), PKCE |
+| Models | Anthropic API behind a provider-neutral gateway; offline fallbacks |
+| Front end | React 19, TypeScript, Vite, Tailwind, Radix, cmdk, TanStack Table, Apache ECharts |
+| Delivery | Docker, Docker Compose profiles, Helm 3, GitHub Actions |
+
+Every engine dependency is an optional group in `backend/pyproject.toml`, so an image carries only the drivers its
+deployment uses.
+
+## Quick start
 
 Pick one. Both end at <http://localhost:8000>.
 
-**Option A, Docker Desktop (Postgres):**
-
 ```bash
-docker compose up --build
+docker compose up --build      # Docker Desktop, on Postgres
+make run                        # no Docker, on SQLite; needs uv and Node 20+ (brew install uv node)
 ```
 
-**Option B, no Docker (SQLite).** Needs [uv](https://docs.astral.sh/uv/) and Node 20+ (`brew install uv node`):
+The first start (about ten seconds) seeds three clients of different kinds: Meridian Retail Bank (every workload,
+twelve people), Kestrel Payments (fraud first, a lean team where people hold two roles) and Alder Private Bank (due
+diligence first, reporting to goAML). Together they hold about 540 customers, 61,000 transactions and 120 cases,
+already worked to different stages by each client's own people. The account menu at the top right picks the client
+and the person; press `/` or `⌘K` anywhere for the command palette. Then follow the
+**[demo guide](docs/demo-guide.md)**: 22 steps, one persona at a time, from an analyst's queue to an MLRO's filing to
+an operator onboarding a new client.
+
+| Command | What runs |
+|---|---|
+| `make run` / `make demo` | The application on SQLite / Postgres |
+| `make backbone` | + Kafka, the outbox relay, stream consumers and the Iceberg lake |
+| `make backbone-cdc` | The same, with Debezium publishing the outbox |
+| `make full` | + OpenSearch, Apache AGE and Temporal |
+| `make streaming` | + an Apache Flink cluster; `make flink-job CLIENT=meridian JOB=structuring` submits a job |
+| `make dev-api` and `make dev-ui` | Hot-reload development on <http://localhost:5173> |
+| `make seed` / `make reset` | Restore the demo data (SQLite / Docker) |
+| `make test` | The backend test suite |
+| `make migration m="what changed"` | Write the next schema migration after a model change |
+
+**Single sign-on.** Start the API with `AUTH_MODE=oidc DEV_IDP=1` to sign in through a built-in identity provider
+instead of the pickers. For a real provider (Keycloak, Entra ID, Okta), leave `DEV_IDP` off and register each
+client's issuer with `PUT /api/platform/tenants/{id}/identity`.
+
+**A model.** `export ANTHROPIC_API_KEY=...` before starting turns on free-form questions in Ask and, with
+`AGENT_MODE=model`, model-backed agents.
+
+**The event backbone without Docker.** `EVENT_BUS_URL=kafka://localhost:9092 BACKBONE_WORKERS=1 make run`. From the
+Mac the Compose broker is `localhost:29092`; publish a canonical transaction to `caseforge.meridian.transactions`
+and watch the Integrations page. Gated tests run against real engines when `TEST_POSTGRES_URL`, `TEST_KAFKA_URL`,
+`TEST_OPENSEARCH_URL` or `TEST_FLINK_URL` is set.
+
+The API reference is at <http://localhost:8000/docs>. Every setting is listed in
+[docs/configuration.md](docs/configuration.md).
+
+## Deploying to AWS, Azure and GCP
+
+One image and one Helm chart ([`deploy/helm/caseforge`](deploy/helm/caseforge/README.md)) deploy the application
+tier of a stamp: the API and UI, the backbone worker, the durable worker and a migration job that runs before every
+install and upgrade. Stateful services are addressed by URL and run as managed cloud services or through their
+open-source operators. A release that would be unsafe (no Secret, demo sign-in behind an ingress, no evidence
+storage, a schema rebuild outside a demo) fails at install with the reason.
+
+| Deployment mode | Values file | Shape |
+|---|---|---|
+| Pooled SaaS | `modes/saas.yaml` | One stamp in the firm's cloud, many clients separated by row, autoscaling API |
+| Dedicated stamp | `modes/dedicated.yaml` | One release per client with its own namespace, database, topics and bucket |
+| Client cloud | `modes/client-cloud.yaml` | The stamp in the client's own AWS, Azure or GCP account, with its registry and workload identity |
+| Air-gapped | `modes/air-gapped.yaml` | The site's registry, rule-based agents, offline Ask, nothing reaches out |
+
+| Capability | Portable default | AWS | Azure | GCP |
+|---|---|---|---|---|
+| Kubernetes | Upstream Kubernetes | EKS | AKS | GKE |
+| Case database (`DATABASE_URL`) | Postgres 16 (CloudNativePG) | Aurora or RDS for PostgreSQL | Database for PostgreSQL Flexible Server | Cloud SQL or AlloyDB |
+| Landing, evidence, quarantine | MinIO | S3 (`s3://`) | ADLS Gen2 (`abfss://`) | Cloud Storage (`gs://`) |
+| Event backbone (`EVENT_BUS_URL`) | Kafka (Strimzi) | MSK | Event Hubs Kafka API or Confluent Cloud | Managed Service for Apache Kafka |
+| Lake (`LAKE_CATALOG`) | Iceberg + REST catalog | S3 Tables or Glue | ADLS + OneLake or Unity | GCS + BigLake |
+| Stream detection (`FLINK_URL`) | Flink operator | Managed Service for Apache Flink | Flink operator on AKS | Flink operator on GKE |
+| Durable workflows (`TEMPORAL_URL`) | Temporal | Temporal on EKS or Temporal Cloud | Temporal on AKS or Temporal Cloud | Temporal on GKE or Temporal Cloud |
+| Search (`SEARCH_URL`) | OpenSearch | OpenSearch Service | OpenSearch on AKS | OpenSearch on GKE |
+| Graph (`GRAPH_URL`) | Apache AGE | AGE on self-managed Postgres | AGE on self-managed Postgres | AGE on self-managed Postgres |
+| Identity | Keycloak | the bank's IdP or IAM Identity Center | Entra ID | the bank's IdP or Cloud Identity |
+| Workload identity | service account | `eks.amazonaws.com/role-arn` | `azure.workload.identity/client-id` | `iam.gke.io/gcp-service-account` |
+| Models | vLLM, open-weight models | Bedrock | Azure AI Foundry | Vertex AI |
 
 ```bash
-make run
+kubectl -n acme create secret generic caseforge-secrets --from-literal=DATABASE_URL='postgresql+psycopg://...'
+helm install acme deploy/helm/caseforge -n acme -f deploy/helm/caseforge/modes/client-cloud.yaml \
+  --set existingSecret=caseforge-secrets \
+  --set image.repository=<registry>/caseforge \
+  --set publicUrl=https://cases.acme.example --set ingress.host=cases.acme.example \
+  --set auth.operatorIssuer=https://idp.example.com/realms/ops \
+  --set storage.evidenceUrl=s3://acme-caseforge/evidence \
+  --set eventBus.url=kafka://broker:9092 --set temporal.url=temporal://temporal-frontend:7233 \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::123456789012:role/caseforge
 ```
 
-The first start (about ten seconds) seeds three clients of different kinds: Meridian Retail Bank (every
-workload, twelve people), Kestrel Payments (fraud first, a lean team where people hold two roles) and Alder
-Private Bank (due diligence first, with a workflow version of its own). Together they hold about 540 customers,
-61,000 transactions and 120 cases, already worked to different stages by each client's own people. `make seed` (or `make reset` for
-Docker) restores that starting point before each demo. `make test` runs the backend tests. They run on SQLite
-with foreign keys enforced; to run the Postgres start-up test as well, point `TEST_POSTGRES_URL` at a disposable
-database (everything in it is dropped).
+On Azure the storage URL becomes `abfss://evidence@<account>.dfs.core.windows.net/caseforge` and the annotation
+`azure.workload.identity/client-id`; on GCP, `gs://acme-caseforge/evidence` and `iam.gke.io/gcp-service-account`.
+Today only Anthropic's API is implemented as a hosted model provider; the others in the table are slots behind the
+gateway. The chart renders and lints in every mode in CI and the image starts as the pods' non-root user, but the
+chart has not yet been installed on a cluster: treat the first cloud install as a test.
 
-**The event backbone.** Without it, events wait in the outbox table and nothing else changes. `make backbone`
-starts the demo with Kafka, the outbox relay, the stream consumers and the Iceberg lake; `make backbone-cdc` has Debezium publish the
-outbox instead of the relay, `make full` adds OpenSearch and the graph engine, and `make streaming` adds an Apache Flink cluster for stream detection (`deploy/flink/README.md`). `make streaming` has run once on a MacBook, before the graph engine was added to it; `make backbone-cdc` has not been started anywhere yet, so treat its first run as a test. Without
-Docker, point the API at any broker: `EVENT_BUS_URL=kafka://localhost:9092 BACKBONE_WORKERS=1 make run`. From the Mac,
-the Compose broker is `localhost:29092`; publish a canonical transaction as JSON to `caseforge.meridian.transactions`
-and watch the Integrations page. To run the broker tests, set `TEST_KAFKA_URL=kafka://localhost:29092`.
+## How the code is laid out
 
-For development, run `make dev-api` and `make dev-ui` in two terminals and open <http://localhost:5173>.
-
-**Sign-in.** By default there is no login: the account menu at the top right chooses the client and the person. To see
-single sign-on instead, start the API with `AUTH_MODE=oidc DEV_IDP=1` (for example
-`cd backend && AUTH_MODE=oidc DEV_IDP=1 uv run uvicorn app.main:app --port 8000`). The switchers disappear, every
-request needs a signed token, and "signing in" sends you through a small built-in identity provider that stands
-in for each client's own. To use a real provider (Keycloak, Entra ID, Okta), leave `DEV_IDP` off and register
-each client's issuer: `PUT /api/platform/tenants/{id}/identity`.
-
-## A fifteen-minute demo
-
-The account menu at the top right is the whole login: "View as" picks the person, "Client" the client (or type
-a name into the command palette). Steps 1 to 9 are at Meridian Retail Bank; each says who to be. Steps 10 to 12
-show the platform running several clients.
-
-**Finding your way.** The menu on the left is built for the person signed in: their work, the desks they work
-(KYC, Sanctions, Fraud), investigation tools, oversight pages if they manage, and an Administration area only if
-they configure something. An analyst sees six items; the MLRO about twenty; the auditor lands on the dashboard.
-Press `/` or `Ctrl K` (`⌘K` on a Mac) anywhere for the command palette: find any case, customer, counterparty or
-transaction, jump to any page you have, or type a question and ask it. Light, dark or system theme is in the
-account menu. Every page still opens by its address for anyone, and the server still decides what each person
-may see and do; the menu only decides what is in front of them.
-
-**Lists.** Cases, Alert intake and Regulatory reports share one grid. Cases are paged, sorted and filtered in the
-database (`GET /api/case-list`), so the list stays quick however many cases there are; each filter shows how many
-cases every choice would leave. Filters, sort and page live in the address, so a view can be bookmarked or sent.
-Pick or save named views, choose columns and row density, export everything that matches to CSV, and move with the
-keyboard: `J`/`K` or the arrows, `Enter` to open, `Space` for a quick view beside the list, `X` to select for bulk
-steps. Saved views and column choices are kept in the browser, per client and person; storing them on the server
-so they follow a person between devices and can be shared with a team is still to do.
-
-**A case.** The strip under the name shows priority, the regulatory deadline, the stage clock, the agent's view and
-who owns the case, with claim, release, reassign and restrict beside them. The evidence sits in tabs (Overview,
-Transactions, Customer, Narrative, Requests, Timeline), and the tab is in the address, so `?tab=transactions` opens
-straight on the money. The decision stays on the right whichever tab is open: the stage's tasks with progress and
-the next one marked, the note, the closing reason, and each step with a short reason when it is not available yet.
-Every source chip in the agent briefing, the copilot or an alert opens Transactions with just those records. There,
-a daily chart of money in and out marks days with alerted activity; click a day (shift-click for a range) to
-filter, or group by counterparty, channel or country to see where the value went.
-
-**Dashboards.** Every figure opens the cases behind it. On the overview, a headline tile, a day's bar of cases
-opened or closed, a stage, or an alert scenario opens the case list filtered to exactly those cases (the counts
-match: `due=week`, `opened=2026-11-21`, `closed=2026-11`, `scenario=structuring` and the usual filters are list
-filters the API understands). The filters a dashboard set show as chips on the list, each removable. The
-management report does the same for months. Charts are drawn with Apache ECharts, coloured from the page's own
-tokens so they follow light and dark, and each has its figures as a table underneath.
-
-**Desks.** KYC, Sanctions, Fraud, Entities and Detection tuning are split into tabs, each with a count and a red
-mark when something there is overdue or waiting on a second person; the tab is in the address (`/kyc?tab=approvals`)
-and the headline tiles open the matching tab. Loading sanctions list versions and editing the client's own list
-moved from the Sanctions desk to Administration, under Screening lists; the desk keeps a read-only view of the
-lists in force.
-
-1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
-   his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
-2. **An investigation, still as Ivan.** Open a case in *Investigation*. The agent briefing is on the left with
-   its recommendation and cited findings; click a "sources" chip and the transactions filter to the rows
-   behind it. On the right, the steps are blocked until the stage tasks are ticked. Raise an information
-   request to the customer and park the case: it moves to a waiting stage with its own clock.
-3. **Approval, as Maya Chen (MLRO).** Open a case in *MLRO review*. An ordinary filing shows "Approve and file
-   SAR". A case over $100,000 or on a politically exposed customer shows "Approve and send to Head of FIU"
-   instead: the workflow itself routes it to a second approver (Hugo Laurent). Four-eyes rules stop anyone
-   approving work they drafted or sent.
-4. **Fraud, as Fran Dubois.** A different workflow on the same engine: a two-hour triage clock, customer
-   contact as a waiting stage, and refunds above $5,000 routed to a lead (Tara Singh) for approval.
-5. **Team, as Tara Singh (team lead).** Workload by person, queue backlogs, every case past its stage clock,
-   and reassignment in one click. QA results sit alongside: one sampled closure failed QA and was reopened.
-6. **Workflows, as Omar Haddad (admin).** Pick a case type and read it as a diagram with live case counts.
-   Edit the definition (say, change the triage clock from 48 to 12 hours and raise the version), check the
-   draft to see exactly what would change, and publish. New cases use the new version; open cases finish
-   on the one they started with. A broken draft (unknown role, dead-end stage, bad condition) is refused
-   with the reason.
-7. **Access, as anyone.** The role and permission matrix, every workflow step against every role, people and
-   queues. All of it is the client's own policy; nothing about roles is in code.
-8. **Read-only, as Audra Klein (auditor).** Every case and audit trail opens; nothing can be changed.
-9. **Data pipelines, as Omar.** Open Data. Three sources read Meridian's core-banking files from its
-   landing zone: customers, accounts and daily transaction partitions in CSV, JSON lines and Parquet. Press
-   "Run all sources". They run in dependency order; counts and amounts reconcile; one customer record is
-   rejected and one transaction file is held whole because too many of its rows are unusable, with the
-   rejected rows written to quarantine. Open the run's details to see each file. Run again: nothing loads
-   twice. "Add a source" looks at a location, samples the newest file and proposes the mapping. The sample
-   file loader and the throughput check are still on their own pages.
-
-10. **A second client.** Switch the client to Kestrel Payments. Different people, different roles and queue
-    names, three case types instead of six, no QA. Joy Tanaka holds two roles (MLRO and operations lead) and
-    still cannot approve her own work. Customer `P10005` exists here too and is a different person.
-11. **Changing access, as Pat Novak at Kestrel.** On Access, add a person or move a permission in the policy,
-    raise the version and check the draft: the page lists exactly what would change. Try removing the only
-    chief risk officer: refused, because a workflow Kestrel runs would have nobody for a step. Publish, and the
-    change applies from the next click. Meridian's policy is untouched.
-12. **Operator console.** Pick "All clients" in the client picker. Every client with its volumes, backlog and
-    configuration, in counts only. Onboard a new client: choose a template, name it, and it is live with its
-    own copy of the policy and a small set of sample data. Suspend it and its sign-ins stop at once.
-
-13. **Ask anything, as Tara Singh at Meridian.** Open Ask and click "Which scenario produces the most SARs?".
-    The answer leads with the figure, charts the breakdown, and links the cases behind it; "How this was
-    answered" shows each lookup and its filters. Ask "Who has the most open work?", then switch to Ana Ruiz
-    (an analyst) and ask it again: her role does not hold the team view, so the answer says so, and "What
-    should I work on first?" lists only her own cases. Switch client and the same question gets that
-    client's answer. Every question lands in the question record.
-
-### Connecting a model to Ask
-
-With no key the Ask page uses an offline planner: a phrase matcher that understands common questions (the
-suggested ones and their variations), answers one question at a time, and says so when it cannot place a
-question. To answer free-form and follow-up questions with a model:
-
-```bash
-export ANTHROPIC_API_KEY=...        # then start the app as usual
-export ASK_MODEL=claude-opus-5-5    # optional; this is the default
+```
+backend/app/
+  domain/        canonical model and access policy
+  tenancy.py     client isolation: session binding, automatic filtering and stamping
+  visibility.py  which cases a person may see, under every query
+  auth/          OIDC verification, each client's identity provider, a development provider
+  tenants/       client registry, templates, onboarding, access policy administration
+  cases/         case type registry, guards, conditions, tasks, assignment, requests, clocks, QA, bulk, merge
+  durable/       Temporal workflows and worker for stage clocks
+  alerts/        alert hub: dedupe, group into cases, prioritise
+  detection/     scenarios, engine, per-client settings with backtests and approval, lookbacks
+  streamjobs/    Flink SQL jobs rendered per client and rule, run from the product
+  agents/        catalog, policy, runtime, toolbox, extractor, ledger, triage, evaluation, copilot, oversight
+  ask/           query vocabulary, read-only tools, model gateway and providers, answer loop, question record
+  kyc/           risk rating, ownership, document store, flow of funds, review triggers
+  sanctions/     watchlists, rescreening, exemptions, blocked and rejected reports, law-enforcement searches
+  fraud/         disputes, recovery and loss
+  holds.py       holds with two-person release; workdays.py business-day deadlines
+  filing/        the neutral report, FinCEN and goAML renderers, checks, channels, register
+  entities/      name matching, entity resolution and its desk, network, profiles, search, graph store
+  reporting/     dashboard metrics and the monthly management report
+  governance/    change register, access recertification, audit search
+  ingest/        formats, datasets, mapping proposer, pipelines, storage locations, scheduler
+  storage/       ObjectStore: S3, Azure Data Lake, Google Cloud Storage, local
+  backbone/      outbox and CloudEvents, event bus (in-process, Kafka), relay, stream consumers, worker
+  lake/          Iceberg tables and the bus consumer that fills them
+  migrations/    Alembic baseline and versions; migrate.py runs and checks them
+  api/           HTTP routes (the UI uses only these)
+backend/case_types/  the workflow library, one YAML file per case type
+backend/agents/      the agent catalog
+backend/access/      starting access policies
+backend/templates/   client templates: a starting policy plus a set of case types
+backend/reference/   starting code lists, risk factors, ownership rules, document types, review triggers
+frontend/src/
+  shell/         module registry (one entry per page), role-shaped sidebar, command palette, account menu
+  components/    kit (Radix, cmdk, Tailwind), data grid, case workspace, charts, layout
+  pages/         one file per page
+deploy/          Helm chart, Debezium connector, Flink image and notes
 ```
 
-The model never sees the database. It is handed five read-only lookups (breakdown, case list, case detail,
-customer, team workload) that run as the person asking, inside their client, and it gets only the lookups that
-person's role may use. Case ids in an answer are checked against what the lookups returned before they become
-links. `ASK_PROVIDER=offline` forces the planner even when a key is set. Other providers (a model in the
-client's own cloud, a local model) plug in behind the same interface in `backend/app/ask/gateway.py`.
+## Documentation
 
-To show overlay mode (sitting on top of an incumbent monitoring engine), push an alert from a terminal and
-watch a case appear:
-
-```bash
-curl -X POST localhost:8000/api/alerts -H 'content-type: application/json' -d '{
-  "source": "legacy-tm", "external_id": "LT-88213", "scenario": "rapid_movement",
-  "party_id": "P10005", "score": 0.82, "explanation": "Vendor rule 12: funds in and out within 24h"}'
-```
-
-API calls are for one client. In demo mode it is read from an `X-Tenant` header (Meridian if absent) and the
-person from `X-Persona`. With `AUTH_MODE=oidc` both come from the sign-in token and those headers are ignored.
-`POST /api/alerts` is a system calling in, so it has no person's view: it sees every case of the client.
-
-The full API reference is at <http://localhost:8000/docs>.
+| Document | For |
+|---|---|
+| [Demo guide](docs/demo-guide.md) | A 22-step tour by persona, plus connecting a model and overlay mode |
+| [Configuration reference](docs/configuration.md) | Every setting, and what each client configures where |
+| [Data model](docs/data-model.md) | The tables, how tenancy keys them, and the event topics |
+| [Helm chart](deploy/helm/caseforge/README.md) | Installing a stamp on Kubernetes, the four modes, what the chart refuses |
+| [Stream detection on Flink](deploy/flink/README.md) | Running the Flink jobs and their limits |
+| API reference | <http://localhost:8000/docs> on a running app |
 
 ## What is real and what is not
 
@@ -208,124 +401,11 @@ The full API reference is at <http://localhost:8000/docs>.
 | Payment network on a graph engine | With `GRAPH_URL=age://user:password@host:5432/database`, the route between two customers is found by Apache AGE (the graph extension for Postgres) behind a three-method interface (`backend/app/entities/graphstore.py`, `age.py`). One graph per client, loaded whole after each entity resolution inside one transaction, holding ids only: no names, no amounts. The engine answers with entity ids and the rows are read again through the caller's session, so the client boundary does not depend on it. If the engine is down, not yet built for a client, slower than three seconds, or behind the database, the route is found in the database instead. Every value reaches the engine as a parameter. **Run for real here:** against Apache AGE 1.5.0 on Postgres 16, 10 tests (`tests/test_age.py`) including a random network on which the engine and the database agree on every distance, two clients side by side, and the whole entities suite with the engine switched on. | Only route-finding uses the engine. The network picture, related customers and everything else are still read from the database, so this is the seam and one use of it, not a graph analytics layer: no community detection, no rings, no centrality. The graph is rebuilt whole per client, not updated as payments arrive. A route is searched one length at a time, which is quick when there is one and can run to the time limit on a dense network when there is none. A connection is opened per question, with no pool. Never run against JanusGraph (the architecture's choice for the largest clients), Neptune or a managed Postgres, most of which do not offer AGE. The Compose service is `apache/age:release_PG16_1.5.0`. |
 | Durable stage clocks on Temporal | With `TEMPORAL_URL=temporal://host:7233` and the durable worker running (`python -m app.durable.worker`), every open case with a stage deadline has a Temporal workflow holding a timer for it, so the escalation is applied when the deadline passes whether or not anyone opens a page. The worker keeps Temporal in step with the database every few seconds by start-with-signal, which is safe to repeat; a case that changes stage has its timer replaced. The breach itself is one function shared with the sweep and applied once per visit to a stage, so the two can never double up. The periodic sweep runs from a Temporal schedule. Workflow code imports nothing from the application. Without Temporal nothing is lost: the sweep still checks clocks. | Run on a Temporal development server in the CI workflow on GitHub, never on a Temporal cluster or Temporal Cloud: 9 tests (`tests/test_temporal.py`) covering a deadline acted on with nobody looking, a stage change, a closed case, the sweep getting there first, a deadline that passes while no worker is running, two clients, the schedule, and the worker keeping clocks in step. 33 more cover the application's side without a server (`tests/test_durable.py`). **Never started:** the Compose services (`--profile durable`). Only stage clocks and the sweep are on Temporal: cases, agent runs and pipelines are not workflows. One namespace and one task queue with the client in the workflow id, where the architecture calls for a namespace per client. A closed case's clock notices when its old deadline passes, not at once. The Compose service is Temporal's single-process development server. |
 | Schema migrations | Versioned migrations with Alembic, run through the application (`python -m app.migrate`, `backend/app/migrations`). The baseline is the schema as it stood at version 16, written out table by table, and every later change is a file after it. An empty database is built by running them; a current one is left alone; one that is behind is migrated at start, or refused when a separate step migrates (`MIGRATE_ON_START=0`, as the Helm chart sets); a database from just before migrations is adopted with its data. On Postgres an advisory lock makes pods that start together migrate one at a time. A test fails, and so does a CI step, if a model changes without a migration (`make migration m="what changed"` writes it from the difference). Tables another tool keeps in the same database, such as an Iceberg catalog, are left alone. **Run for real here:** on SQLite and on Postgres 16, including four starts at once against an empty database (`tests/test_schema.py`, `tests/test_postgres.py`). | There is one migration, the baseline, so no upgrade between two real versions has been done yet, and that first real migration is where this gets proven. Downgrades are generated and never tested. A database older than version 16 cannot be adopted: it is refused, or with `SCHEMA_ON_MISMATCH=rebuild`, the demo default, every table is dropped. No data migrations yet, no zero-downtime pattern (expand, migrate, contract), no check that a migration is safe on a large table. Per-client databases for dedicated stamps are migrated one release at a time; nothing orchestrates many. |
-| Kubernetes | A Helm chart for the application tier of one stamp (`deploy/helm/caseforge`): the API and UI, the backbone worker and the durable worker, with a values file for each of the four deployment modes (pooled SaaS, dedicated stamp, client cloud, air-gapped). Data services are addressed by URL. Secrets come from a Secret you name, never from values. A release that would be unsafe fails at install with the reason: no Secret, a schema rebuild outside a demo, demo sign-in behind an ingress, no evidence storage, a wrong address. Pods are set to run as a non-root user and write only to `/tmp` and `/app/data`, both scratch volumes. Schema changes run as a hook job before each install and upgrade, and a pod that finds the database behind stops and says so. **Run for real:** `helm lint`, a render of every mode, and every refusal, in the CI workflow on GitHub. The image is built there and started as the pods' user (10001) on every change, after its first such run on a MacBook failed because the data directory belonged to root. | **Never installed on a cluster.** Rendering proves the YAML, not that pods start: the image starts as the pods' user under Docker, with SQLite and no other services, but probes, resources and the network policy are untested. The migration hook job has never run on a cluster. The chart deploys no Postgres, Kafka, OpenSearch, Temporal, Flink, graph engine, object storage, identity provider or ingress controller. No OpenTofu, Argo CD or Crossplane, no control plane over stamps, no metering, no signed offline bundle for air-gapped sites: the four modes are four values files over one chart, not four proven deployments. Scheduled pipelines have nothing to trigger them on Kubernetes. |
+| Kubernetes | A Helm chart for the application tier of one stamp (`deploy/helm/caseforge`): the API and UI, the backbone worker and the durable worker, with a values file for each of the four deployment modes (pooled SaaS, dedicated stamp, client cloud, air-gapped). Data services are addressed by URL. Secrets come from a Secret you name, never from values. A release that would be unsafe fails at install with the reason: no Secret, a schema rebuild outside a demo, demo sign-in behind an ingress, no evidence storage, a wrong address. Pods are set to run as a non-root user and write only to `/tmp` and `/app/data`, both scratch volumes. Schema changes run as a hook job before each install and upgrade, and a pod that finds the database behind stops and says so. **Run for real:** `helm lint`, a render of every mode, and every refusal, in the CI workflow on GitHub. The image is built there and started as the pods' user (10001) on every change, after its first such run on a MacBook failed because the data directory belonged to root. | **Never installed on a cluster.** Rendering proves the YAML, not that pods start: the image starts as the pods' user under Docker, with SQLite and no other services, but probes, resources and the network policy are untested. The migration hook job has never run on a cluster. The chart deploys no Postgres, Kafka, OpenSearch, Temporal, Flink, graph engine, object storage, identity provider or ingress controller. OpenTofu and Argo CD now exist (see the next row); still no control plane over stamps, no metering, no signed offline bundle for air-gapped sites: the four modes are four values files over one chart, not four proven deployments. Scheduled pipelines have nothing to trigger them on Kubernetes. |
+| Infrastructure as code and delivery | OpenTofu for AWS, Azure and GCP behind one stamp contract (`infra/`, see `infra/README.md`): per cloud a network, a private Kubernetes cluster (EKS, AKS, GKE), registry, keys, and per stamp a Postgres, buckets (optionally WORM), its own key and workload identity, and optionally managed Kafka and search. A cloud-neutral Kubernetes layer installs the operators (cert-manager, External Secrets, Traefik, Argo CD, Kyverno, Strimzi, OpenSearch, Flink, Prometheus), the caseforge policies, and each stamp's namespace, secrets and Argo CD applications. In-cluster Kafka and OpenSearch per stamp come from `deploy/helm/caseforge-data`. State and plans are encrypted by OpenTofu; CI signs in to each cloud by OIDC with a read-only plan identity and per-environment apply identities behind protected environments, and applies exactly the reviewed plan. Releases are scanned, signed with cosign, carry an SBOM and provenance, and are promoted by pull request. **Run for real here:** fmt, validate on 44 roots, `tofu test` with mocked providers on 11 modules, the contract check, Checkov, TFLint, strict kubeconform against the operators' CRDs, Trivy on the rendered charts, actionlint (`.github/workflows/infra.yml`). The chart install on kind is `deploy-test.yml`. | **Never applied to any cloud account**, and never planned against one. The apply, release and promote workflows have never run. Temporal and the graph engine are not provisioned. Provider lock files are not committed yet. The full list is in `infra/README.md`. |
 | Regulatory reports | Each client reports in its own regime, set by platform staff: FinCEN (SAR and CTR as BSA XML) or goAML (STR and CTR). Filing a case builds one neutral report and renders it in that format; a renderer per format sits behind one small interface. Every report is checked before it can be sent (institution details, narrative length, amounts, categories) and held with its problems listed until they are fixed. A register tracks each report from prepared to sent, accepted with the regulator's reference, or rejected; amendments name the original and keep it unchanged. Once sent, the document is stored with its hash and the case narrative is locked. Cash over $10,000 in a day with no CTR is listed, and a CTR is prepared from it in one step. Reports leave through a channel per client: an outbox in the client's object storage, or by hand. Only those who send reports or oversee the team can read the register. | The XML follows the published layouts but has never been validated against FinCEN's schema files, a country's goAML schema, or either test system; the activity code tables are placeholders to confirm against the current lists. No direct connection to BSA E-Filing or a goAML site, so the regulator's answer is typed in by a person. Customer address, date of birth and identification are not held, so those fields are empty or marked unknown. No joint filings, multiple subjects, CTR aggregation across related customers or exemptions, no continuing-activity automation beyond the review date, no batch files of many reports, no other regimes (UK SAR Online, FINTRAC, AUSTRAC). |
 | Identity | Two modes. Demo (default): client and person pickers, no login, anyone can pick anything. `AUTH_MODE=oidc`: OpenID Connect. Each client registers its own identity provider, the client is decided by which provider signed the token, the person by a claim in it, and request headers are ignored. Only asymmetric signatures are accepted; issuer, audience, expiry and key are checked; someone signed in but absent from the client's policy gets nothing. Platform staff sign in through a separate provider and cannot reach client data. The browser uses the authorization-code flow with PKCE. A built-in development provider (`DEV_IDP=1`) makes this demonstrable without Docker. | Never run against Keycloak, Entra ID or Okta: the verifier is tested against a stand-in provider with real keys and tokens, and the browser flow against the built-in one. No UI for registering a provider (API only). SAML, SCIM, group-to-role mapping from claims, refresh tokens and silent renewal (a session lasts as long as the token), sign-out at the provider, service accounts for machine callers (in sign-in mode `POST /api/alerts` accepts any valid token from the client's provider), MFA policy. The token is kept in the browser's session storage, not an HTTP-only cookie behind a backend-for-frontend. |
 | Scale | Measured single-process throughput on your machine | Any measured distributed figure. The event backbone above is the first distributed part, and no load test has been run through it. Do not quote the laptop figure as a production figure. |
-
-14. **Agents, as Omar Haddad at Meridian.** Open Agents. Every agent prepares and recommends; none acts alone. Set the
-    sanctions adjudicator to L3 on screening hits and try to publish: refused until those settings are evaluated.
-    Set the discount limit to 0.95 and evaluate the draft: it fails, because it would have discounted a true match.
-    At 0.9 it passes; publish. Run the lookback and the tuning review. Switch an agent off with a reason and re-run
-    a briefing: the step is gone and says why. Download the documentation pack. Then open a case as Ivan and ask
-    the copilot why the recommendation is what it is, and to draft a request to the customer.
-
-## How the code is laid out
-
-```
-backend/app/
-  domain/      canonical model, access policy
-  storage/     object storage behind one interface: S3, Azure Data Lake, Google Cloud Storage, local
-  ingest/      file formats, datasets, mapping proposer, pipelines (discover, validate, load, reconcile,
-               detect), storage locations per client, the sample file loader
-  detection/   scenarios, the engine, each client's settings with backtests and two-person approval, lookback projects
-  alerts/      alert hub: dedupe, group into cases, prioritise
-  cases/       case type registry, transition guards, conditions, tasks, assignment,
-               information requests, timers, QA sampling and scorecards, bulk steps, merging, publishing
-  reference.py the code lists each client's people choose from, with the library every client starts with
-  agents/      catalog, per-client policy, runtime, toolbox and extractor, ledger, alert triage, evaluation,
-               copilot, lookback and tuning, oversight, model-backed mode
-  ask/         ask anything: query vocabulary, read-only tools, model gateway and providers,
-               answer loop with citation checks and the question record
-  kyc/         risk rating and governed overrides, ownership analysis, the document store, flow of funds,
-               review triggers and the KYC desk
-  sanctions/   watchlists as versions, rescreening, false-match exemptions, reports on blocked and rejected payments,
-               confidential searches for law enforcement
-  fraud/       disputes: credit, recovery and resolution clocks, loss and recovery
-  holds.py     holds on payments, accounts, cards and online access; two-person release; step-up checks
-  workdays.py  business-day deadlines
-  filing/      the neutral report, one renderer per regulator's format, checks, sending channels, the life of a report
-  entities/    name comparison, entity resolution and its human desk, the payment network, profiles, search
-  reporting/   dashboard metrics and the monthly management report with its exports
-  governance/  the change register, access recertification, audit search
-  backbone/    the outbox and its CloudEvents, the event bus interface with in-process and Kafka adapters, the relay,
-               the inbound stream consumers, the worker that runs them
-  lake/        history in Apache Iceberg: the store interface, the tables, the bus consumer that fills them
-  tenancy.py   client isolation: session binding, automatic filtering and stamping
-  visibility.py  which cases a person may see: the same kind of filter, per person, with an escape for platform work
-  auth/        sign-in: OIDC token verification, each client's identity provider, a development provider
-  tenants/     client registry, templates, onboarding, access policy administration
-  api/         HTTP routes (the UI uses only these)
-backend/case_types/   the workflow library: one YAML file per case type
-backend/agents/       the agent catalog: one declaration per agent
-backend/reference/     the starting code lists: closing reasons, QA criteria and root causes, hibernation rules,
-                       risk factors and bands, ownership rules, document types, review triggers
-backend/access/       starting access policies: permissions, roles, queues, people
-backend/templates/    client templates: a starting policy plus a set of case types
-frontend/src/         React + TypeScript UI
-  shell/       the app frame: module registry (one entry per page), role-shaped sidebar, command palette,
-               account menu, theme. A new page is one entry in shell/registry.tsx
-  components/kit/  accessible primitives (Radix, cmdk) styled with Tailwind on the product's tokens
-  pages/       one file per page
-```
-
-Each replaceable part sits behind a small interface (`ObjectStore`, `SearchIndex`, filing `Format` and `Channel`, `Connector`, `MappingProposer`, `LLMProvider`, the scenario
-registry, and `ChatModel` for the model that answers questions), so later milestones swap implementations without touching callers. The database is chosen by
-`DATABASE_URL`; nothing in the code is tied to a cloud.
-
-15. **Who sees what, at Meridian.** As Ana Ruiz, open Cases: only her two queues. As Ivan Petrov: every monitoring
-    case and nothing else. Ask "how many cases are there in total" as each and the answers differ, because the
-    filter sits under everything. As Maya Chen, open one of Ivan's investigations and press Restrict with a
-    reason. Switch to Ivan: the case is gone from his lists, his numbers and his answers, and its address says
-    "not found". Lena Fischer, who is cleared for restricted matters, can claim it and carry on. Open Access as
-    Omar to see what each role sees, then change a role's `sees` rule and check the draft.
-
-16. **Who is who, as Ivan at Meridian.** Press `/` and type "volkof": the misspelling still finds
-    Volkov Maritime Trading, which payments spell two ways. Open Entities: spellings merged without a person,
-    look-alikes waiting for one, and "is this payee one of our own customers?" questions. Press Same on one and it
-    moves to the record. Open a customer from a case ("Customer profile and network"): money in and out, every
-    counterparty under one name, the customers connected through the uncommon ones, and the network drawn two
-    hops out. Click a flagged firm to see every customer who deals with it and why its spellings were matched.
-
-17. **Reporting to the regulator, as Maya Chen at Meridian.** Open Reports. One cash day over $10,000 has no CTR:
-    press Prepare CTR, read the document, send it. Open an accepted SAR: the FinCEN XML exactly as sent, its
-    fingerprint, the regulator's reference and the date to look again. Open the report still with the regulator and
-    record a rejection, then amend it with a corrected narrative; the original stays as it was. Try to edit the
-    narrative on a case whose SAR was sent: it is locked. Switch to Alder Private Bank: the same work produces goAML
-    STRs, because that client reports to a different regulator.
-
-18. **Casework at volume, at Meridian.** As Ana Ruiz, open Cases, tick several and press Claim: each case answers for
-    itself, and the ones outside her queues say why. Pick cases at the same stage and close them together with one
-    reason. Open the unassigned case for a customer who has two: Related cases offers the merge, and the alerts
-    move across. Follow "weak alerts are waiting" to Alert intake to see what a hibernation rule is holding, and
-    open a case for one. As Quinn Adeyemi, open the QA review, score it, and try to pass it below 80%. As Tara
-    Singh, read Quality assurance findings on Team. As Omar Haddad, open Lists and retire a closing reason.
-19. **Knowing the customer, at Meridian.** As Maya Chen, open KYC: a lower rating for Halcyon Imports waits for
-    her, because Kai Nakamura proposed it and cannot approve it himself. Open Northwind Holdings: the second
-    version of its ownership put a Jersey trust on top, so no beneficial owner is identified and a review opened.
-    Press "Record a change", add a person behind the trust and press "Work it out" to see the answer before
-    saving. On Sable and Finch, the passport has expired: open the document to see its fingerprint and everyone
-    who touched it. On any monitoring case, Flow of funds shows only the payments behind its alerts.
-20. **Sanctions and fraud, at Meridian.** As Maya Chen, open Sanctions: a $48,200 payment is held on a 90% name
-    match, and Sofia Marin's proposal to release it waits for a second person. Approve it, or open the case to
-    see the two names side by side. Prepare the report owed for the rejected payment and follow it to Reports.
-    Under Lists screened against, add a name to the internal list and watch everyone get screened again. Open
-    the law enforcement request and decide a possible match; switch to Ivan Petrov and the section is gone. As
-    Fran Dubois, open Fraud: a wire dispute is in recovery, and the closed ones show what came back and what was
-    lost. Open its case to record money coming back and resolve it on the figures.
-21. **Tuning detection, at Meridian.** Open Detection tuning (under Administration). As Maya Chen, a change to cash structuring
-    waits for her: Omar Haddad proposed four deposits instead of three, and the backtest shows which alerts
-    would go and that none of them mattered. As Omar, press "Try different settings" on Rapid movement of
-    funds, set the hours to 24 and run it: three alerts that led to filings would be lost, so approving it
-    would take a written reason. As Hugo Laurent, run the lookback "Cash deposits from $5,000": its alerts land
-    in cases for people, and it can be signed off by someone else once those cases are decided.
-22. **Reporting and governance, at Meridian.** As Tara Singh, open Management reports (or Dashboard, then "Month by month"): the
-    month as a committee reads it, with last month one click away and two downloads. As Maya Chen, open
-    Governance. The change register lists every change to the setup with its second person. Start an
-    access review: Maya and Hugo are flagged for holding both sides of the detection control, nobody can
-    certify their own access, and last month's review still shows one change that was asked for and not made.
-    In Audit search, look for the word "jurisdiction", then switch to Tara and see that events on the
-    restricted case are not there.
 
 ## Milestones
 
