@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..domain.models import Account, Party, Transaction
+from ..domain import identity
+from ..domain.models import Account, Party, PartyIdentifier, Transaction, new_id
 from .mapping import CANONICAL_FIELDS, VALUE_MAPS
 from .service import _parse_ts
 from .service import transform as transform_transaction
@@ -25,6 +26,27 @@ CUSTOMER_FIELDS: dict[str, dict] = {
     "risk_rating": {"required": False, "desc": "low, medium or high", "synonyms": ["risk_cd", "risk", "risk_level", "cra_rating"]},
     "pep": {"required": False, "desc": "Politically exposed: yes or no", "synonyms": ["pep_flag", "pep_ind", "is_pep"]},
     "onboarded": {"required": False, "desc": "Date the relationship started", "synonyms": ["open_dt", "onboard_date", "since", "relationship_start"]},
+    "born": {"required": False, "desc": "Date of birth, or a company's date of incorporation", "synonyms": ["dob", "birth_dt", "date_of_birth", "incorp_dt", "inc_date"]},
+    "nationality": {"required": False, "desc": "Nationality, or country of incorporation, ISO 3166 alpha-2", "synonyms": ["natl_cd", "citizenship", "incorp_cntry", "nat"]},
+    "address_line1": {"required": False, "desc": "Street address", "synonyms": ["addr1", "addr_line_1", "street", "address"]},
+    "address_line2": {"required": False, "desc": "Second address line", "synonyms": ["addr2", "addr_line_2", "apt", "suite"]},
+    "city": {"required": False, "desc": "City or town", "synonyms": ["city_nm", "town", "locality"]},
+    "region": {"required": False, "desc": "State, province or county code", "synonyms": ["state", "state_cd", "province", "county"]},
+    "postal_code": {"required": False, "desc": "ZIP or postal code", "synonyms": ["zip", "zip_cd", "postcode", "post_code"]},
+    "phone": {"required": False, "desc": "Telephone number", "synonyms": ["phone_no", "tel", "mobile", "contact_phone"]},
+    "email": {"required": False, "desc": "Email address", "synonyms": ["email_addr", "e_mail", "mail"]},
+    "segment": {"required": False, "desc": "Customer segment: retail, business, private or correspondent", "synonyms": ["seg_cd", "lob", "customer_segment", "line_of_business"]},
+    "booking_jurisdiction": {"required": False, "desc": "Where the relationship is booked, ISO 3166 alpha-2", "synonyms": ["booking_cntry", "booking_entity", "book_ctry"]},
+    "relationship_manager": {"required": False, "desc": "Relationship manager's person id", "synonyms": ["rm_id", "rm", "officer_id", "banker"]},
+}
+IDENTIFIER_FIELDS: dict[str, dict] = {
+    "party_id": {"required": True, "desc": "Customer the number belongs to", "synonyms": ["cust_no", "customer_id", "cif", "client_id"]},
+    "kind": {"required": True, "desc": "ssn, tin, ein, passport, national_id, drivers_license, alien_registration, company_registration or lei",
+             "synonyms": ["id_type", "id_typ_cd", "doc_type", "identifier_type"]},
+    "value": {"required": True, "desc": "The number as written on the document", "synonyms": ["id_number", "id_no", "doc_no", "identifier"]},
+    "issuer_country": {"required": False, "desc": "Issuing country, ISO 3166 alpha-2", "synonyms": ["issuing_cntry", "issuer", "id_country"]},
+    "issued": {"required": False, "desc": "Date issued", "synonyms": ["issue_dt", "issued_on"]},
+    "expires": {"required": False, "desc": "Expiry date", "synonyms": ["expiry_dt", "exp_date", "valid_until"]},
 }
 ACCOUNT_FIELDS: dict[str, dict] = {
     "account_id": {"required": True, "desc": "Account identifier", "synonyms": ["acct_nbr", "acct_no", "account_number", "acct"]},
@@ -36,8 +58,14 @@ CUSTOMER_CODES = {
     "kind": {"P": "person", "I": "person", "IND": "person", "PERSON": "person", "C": "company", "ORG": "company", "COMPANY": "company", "B": "company"},
     "risk_rating": {"L": "low", "LOW": "low", "1": "low", "M": "medium", "MED": "medium", "MEDIUM": "medium", "2": "medium",
                     "H": "high", "HIGH": "high", "3": "high"},
+    "segment": {"R": "retail", "RTL": "retail", "RETAIL": "retail", "B": "business", "BUS": "business", "SME": "business", "CORP": "business",
+                "BUSINESS": "business", "P": "private", "PB": "private", "PRIVATE": "private", "WM": "private", "COR": "correspondent",
+                "FI": "correspondent", "CORRESPONDENT": "correspondent"},
     "pep": {"Y": "yes", "YES": "yes", "TRUE": "yes", "1": "yes", "N": "no", "NO": "no", "FALSE": "no", "0": "no"},
 }
+IDENTIFIER_CODES = {"kind": {"SSN": "ssn", "ITIN": "ssn", "TIN": "tin", "EIN": "ein", "FEIN": "ein", "PP": "passport", "PASSPORT": "passport",
+                             "NID": "national_id", "ID": "national_id", "DL": "drivers_license", "ARN": "alien_registration",
+                             "CRN": "company_registration", "REG": "company_registration", "LEI": "lei"}}
 ACCOUNT_CODES = {"status": {"O": "open", "A": "open", "OPEN": "open", "ACTIVE": "open", "C": "closed", "CLOSED": "closed", "X": "closed"}}
 
 
@@ -69,6 +97,35 @@ def transform_customer(row: dict, mapping: dict) -> dict:
         out["pep"] = out["pep"] == "yes"
     if "onboarded" in out:
         out["onboarded"] = _parse_ts(out["onboarded"])
+    for k in ("nationality", "booking_jurisdiction"):
+        if k in out:
+            out[k] = _country(out[k], k)
+    if "born" in out:
+        out["born"] = _parse_ts(out["born"]).date()
+    if "email" in out and "@" not in out["email"]:
+        raise ValueError(f"email {out['email']!r} is not an address")
+    if "region" in out:
+        out["region"] = out["region"].upper()[:40]
+    return out
+
+
+def _country(value: str, field: str) -> str:
+    if len(value) != 2 or not value.isalpha():
+        raise ValueError(f"{field} {value!r} is not a two-letter code")
+    return value.upper()
+
+
+def transform_identifier(row: dict, mapping: dict) -> dict:
+    out = _mapped(row, mapping, IDENTIFIER_FIELDS, IDENTIFIER_CODES)
+    try:
+        out["normalized"] = identity.check(out["kind"], out["value"])
+    except identity.IdentifierError as e:
+        raise ValueError(str(e)) from None
+    if "issuer_country" in out:
+        out["issuer_country"] = _country(out["issuer_country"], "issuer_country")
+    for k in ("issued", "expires"):
+        if k in out:
+            out[k] = _parse_ts(out[k]).date()
     return out
 
 
@@ -113,6 +170,34 @@ def load_customers(s: Session, rows: list[tuple[int, dict]], *, origin: str, rul
         else:
             out.unchanged += 1
     out.unchanged += len(rows) - len(latest)  # earlier duplicates of the same id within the file
+    s.flush()
+    return out
+
+
+def load_identifiers(s: Session, rows: list[tuple[int, dict]], *, origin: str, rules: dict) -> LoadResult:
+    """Add identifying numbers to known customers. A number already held for that customer is updated, never duplicated."""
+    out = LoadResult()
+    known_parties = _ids(s, Party.id, {r["party_id"] for _, r in rows})
+    held = {(i.party_id, i.kind, i.normalized): i for i in s.scalars(select(PartyIdentifier).where(PartyIdentifier.party_id.in_(sorted(known_parties))))} \
+        if known_parties else {}
+    for n, r in rows:
+        if r["party_id"] not in known_parties:
+            out.rejects.append((n, f"customer {r['party_id']} is not known"))
+            continue
+        key = (r["party_id"], r["kind"], r["normalized"])
+        values = {k: r.get(k) for k in ("value", "issuer_country", "issued", "expires") if r.get(k) is not None}
+        found = held.get(key)
+        if found is None:
+            held[key] = PartyIdentifier(id=new_id("pid"), party_id=r["party_id"], kind=r["kind"], normalized=r["normalized"], source=origin[:40], **values)
+            s.add(held[key])
+            out.inserted += 1
+        elif any(getattr(found, k) != v for k, v in values.items()):
+            for k, v in values.items():
+                setattr(found, k, v)
+            out.updated += 1
+        else:
+            out.unchanged += 1
+        out.parties.add(r["party_id"])
     s.flush()
     return out
 
@@ -180,7 +265,8 @@ def load_transactions(s: Session, rows: list[tuple[int, dict]], *, origin: str, 
             continue
         s.add(Transaction(id=r["txn_id"], account_id=r["account_id"], party_id=r["party_id"], ts=r["ts"], amount=r["amount"],
                           currency=r["currency"], direction=r["direction"], channel=r["channel"], counterparty=r["counterparty"],
-                          counterparty_country=r["counterparty_country"], feed_id=origin))
+                          counterparty_country=r["counterparty_country"], counterparty_account=r["counterparty_account"],
+                          counterparty_institution=r["counterparty_institution"], purpose=r["purpose"], feed_id=origin))
         known_txns.add(r["txn_id"])
         out.inserted += 1
         out.amount += r["amount"]
@@ -204,6 +290,8 @@ class Dataset:
 
 DATASETS: dict[str, Dataset] = {d.id: d for d in [
     Dataset("customers", "Customers", CUSTOMER_FIELDS, CUSTOMER_CODES, transform_customer, load_customers),
+    Dataset("identifiers", "Customer identifiers", IDENTIFIER_FIELDS, IDENTIFIER_CODES, transform_identifier, load_identifiers,
+            depends_on=("customers",)),
     Dataset("accounts", "Accounts", ACCOUNT_FIELDS, ACCOUNT_CODES, transform_account, load_accounts, depends_on=("customers",)),
     Dataset("transactions", "Transactions", CANONICAL_FIELDS, VALUE_MAPS, transform_transaction, load_transactions,
             depends_on=("customers", "accounts"), amount_field="amount", triggers_detection=True),
