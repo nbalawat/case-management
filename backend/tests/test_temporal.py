@@ -7,6 +7,8 @@ uses its own id prefix, task queue and namespaces, so runs never see each other'
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -14,8 +16,12 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import pytest
+from conftest import Db
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
+from support import PERSONAS as PERSONAS_
+from support import T
+from test_durable import breaches, case_due_in
 
 import app.db as appdb
 from app.cases.service import TransitionError
@@ -27,16 +33,13 @@ from app.durable import namespaces, steps, temporal
 from app.durable.engine import TemporalEngine
 from app.tenants import registry
 from app.workflow import Action, use
-from conftest import Db
-from support import PERSONAS as PERSONAS_
-from support import T
-from test_durable import breaches, case_due_in
 
 URL = os.getenv("TEST_TEMPORAL_URL", "")
 pytestmark = pytest.mark.skipif(not URL.startswith("temporal://"), reason="set TEST_TEMPORAL_URL to a disposable Temporal server to run")
 OTHER = "kestrel"
 KEYS = ("temporal_url", "workflow_engine", "temporal_id_prefix", "temporal_task_queue", "temporal_sync_seconds", "temporal_namespace_mode",
-        "temporal_namespace_prefix", "temporal_step_seconds")
+        "temporal_namespace_prefix", "temporal_step_seconds", "temporal_encryption", "temporal_encryption_key", "temporal_key_version")
+MASTER = "Y2FzZWZvcmdlLXRlbXBvcmFsLXRlc3QtbWFzdGVyLWtleS0zMmJ5dGVz"  # every test here runs with payloads encrypted
 
 
 @pytest.fixture(params=["shared", "per_client"])
@@ -53,7 +56,8 @@ def world(request, tmp_path):
     run = uuid.uuid4().hex[:10]
     for k, v in {"temporal_url": URL, "workflow_engine": "temporal", "temporal_id_prefix": f"cft{run}", "temporal_task_queue": f"q-{run}",
                  "temporal_sync_seconds": 0.5, "temporal_namespace_mode": request.param, "temporal_namespace_prefix": f"cft{run}-",
-                 "temporal_step_seconds": 30.0}.items():
+                 "temporal_step_seconds": 30.0, "temporal_encryption": "required", "temporal_encryption_key": MASTER,
+                 "temporal_key_version": 1}.items():
         object.__setattr__(settings, k, v)
     db.onboard(T), db.onboard(OTHER)
     db.mode = request.param
@@ -147,6 +151,64 @@ def step(world, cid, action, tenant=T, persona="ana"):
 
 def escalate(cid):
     return Action("transition", "ana", to="investigation", tick_tasks=True)
+
+
+# ---- payload encryption
+
+def _payloads(node):
+    """Every payload in a history, wherever the event keeps it (inputs, results, update arguments, failure details)."""
+    if isinstance(node, dict):
+        if "metadata" in node and "encoding" in node.get("metadata", {}):
+            yield node
+            return
+        for v in node.values():
+            yield from _payloads(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _payloads(v)
+
+
+def test_what_temporal_stores_is_sealed_and_only_the_clients_own_key_opens_it(world):
+    """Temporal's history holds ciphertext; the application reads it through the codec; another scope's codec cannot."""
+    from temporalio.client import Client
+    from temporalio.converter import DataConverter
+
+    from app.durable import encryption
+
+    cid = new_case(world, "A", 600)
+
+    async def go():
+        base, (client,) = await clients(T)
+        async with working(base, T):
+            await asyncio.to_thread(step, world, cid, Action("transition", "ana", to="investigation", tick_tasks=True, note="spoke to the customer"))
+            with pytest.raises(TransitionError, match="No transition from investigation to nowhere"):  # a refusal's words survive the sealing
+                await asyncio.to_thread(step, world, cid, Action("transition", "ana", to="nowhere"))
+            assert (await handle(client, T, cid).query("state"))["view"]["state"] == "investigation"  # read through the codec
+            raw = Client(base.service_client, namespace=client.namespace, data_converter=DataConverter.default)
+            history = await raw.get_workflow_handle(temporal.case_id(T, cid)).fetch_history()
+            every = list(_payloads(json.loads(history.to_json())))
+            assert len(every) > 5  # the start, the step, its activity's input and result, the refusal's failure details
+            marker = base64.b64encode(encryption.ENCODING).decode()
+            assert all(p["metadata"]["encoding"] == marker for p in every), [base64.b64decode(p["metadata"]["encoding"]) for p in every]
+            assert "No transition" not in history.to_json()  # failure messages are sealed too, not left as plain text
+            assert not any(b"spoke to the customer" in base64.b64decode(p.get("data", "")) for p in every)
+            sealed = [p for e in history.events if e.HasField("workflow_execution_started_event_attributes")
+                      for p in e.workflow_execution_started_event_attributes.input.payloads]
+            assert sealed and all(p.metadata["encoding"] == encryption.ENCODING for p in sealed)
+            kid = sealed[0].metadata[encryption.KEY_ID].decode()
+            assert kid == encryption.key_id(client.namespace, 1)
+            if world.mode == "per_client":  # a key per client: the other client's codec refuses before decrypting
+                other = encryption.converter_for(namespaces.namespace_for(OTHER)).payload_codec
+                with pytest.raises(encryption.EncryptionError, match="sealed for"):
+                    await other.decode(sealed)
+            object.__setattr__(settings, "temporal_key_version", 2)  # rotate: new payloads use v2, v1 history stays readable
+            try:
+                rotated = await temporal.client_for(base, T)
+                assert (await rotated.get_workflow_handle(temporal.case_id(T, cid)).query("state"))["view"]["state"] == "investigation"
+            finally:
+                object.__setattr__(settings, "temporal_key_version", 1)
+            await handle(client, T, cid).terminate("test over")
+    asyncio.run(go())
 
 
 # ---- people's steps
@@ -318,9 +380,10 @@ def test_two_clients_case_workflows_are_separate(world):
 # ---- reports to a regulator
 
 def test_a_sent_report_is_chased_when_the_regulator_is_late_and_then_waits_for_its_review(world):
+    from test_filing import _filed, _profile
+
     from app.filing import followups
     from app.filing import service as filing
-    from test_filing import _filed, _profile
 
     _profile()
     with world.tenant(T) as s:

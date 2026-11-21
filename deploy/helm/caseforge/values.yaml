@@ -9,7 +9,7 @@ image:
 imagePullSecrets: []
 
 # Secrets are never written into values. Name an existing Secret; every key in it becomes an environment variable.
-# It must hold DATABASE_URL, and may hold ANTHROPIC_API_KEY, KAFKA_CONFIG, SEARCH_CONFIG, GRAPH_URL, LAKE_CATALOG.
+# It must hold DATABASE_URL, and may hold TEMPORAL_ENCRYPTION_KEY, ANTHROPIC_API_KEY, KAFKA_CONFIG, SEARCH_CONFIG, GRAPH_URL, LAKE_CATALOG.
 existingSecret: ""
 
 publicUrl: http://localhost:8000
@@ -69,6 +69,11 @@ temporal:
   namespace: default    # the shared namespace (namespaceMode: shared)
   retentionDays: 30     # how long Temporal keeps a finished workflow's history (the case's own audit trail is in the database, for good)
   taskQueue: caseforge
+  # Payload encryption: everything a workflow carries is sealed with AES-GCM before Temporal sees it, with a key per namespace
+  # (so a key per client in per_client mode) derived from TEMPORAL_ENCRYPTION_KEY in existingSecret. auto: encrypt when the
+  # Secret holds the key. required: refuse to run without it. off: never. Raise keyVersion to rotate; older history stays readable.
+  encryption: auto
+  keyVersion: 1
   worker:
     replicas: 2
     resources:

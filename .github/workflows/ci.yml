@@ -158,6 +158,8 @@ jobs:
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set auth.mode=demo --set ingress.enabled=true --set ingress.host=h
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.encryption=sometimes
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.keyVersion=0
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true
           # Migrations: a hook job by default and pods that wait for it; without the job, pods migrate themselves
           helm template stamp . $ARGS | grep -q 'helm.sh/hook: pre-install,pre-upgrade'
