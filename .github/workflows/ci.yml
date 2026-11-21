@@ -187,3 +187,19 @@ jobs:
           curl -sf http://localhost:8000/api/tenants > /dev/null
           test "$(docker exec app id -u)" = "10001"
           docker logs app | tail -5
+
+  flink-image:
+    name: Flink image builds with the name-matching function
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t caseforge-flink:ci deploy/flink
+      - name: The function is where Flink loads it from, and answers
+        run: |
+          set -euo pipefail
+          docker run --rm caseforge-flink:ci bash -c 'ls -l /opt/flink/lib/caseforge-udf.jar /opt/flink/lib/flink-sql-connector-kafka-*.jar'
+          answer=$(printf 'ratio\tDarya Shiping Lines\tDarya Shipping Lines\n' | docker run --rm -i caseforge-flink:ci java -cp '/opt/flink/lib/*' caseforge.Check)
+          echo "$answer"
+          test "$answer" = "0.9743589743589743"
+

@@ -15,7 +15,7 @@ That is deliberate: those are stateful systems with their own upgrade and backup
       --from-literal=DATABASE_URL='postgresql+psycopg://user:password@host:5432/caseforge'
     helm install acme deploy/helm/caseforge -n acme -f deploy/helm/caseforge/modes/dedicated.yaml \
       --set existingSecret=caseforge-secrets \
-      --set image.repository=registry.example.com/caseforge --set image.tag=0.25.0 \
+      --set image.repository=registry.example.com/caseforge --set image.tag=0.26.0 \
       --set publicUrl=https://cases.acme.example --set ingress.host=cases.acme.example \
       --set auth.operatorIssuer=https://idp.example.com/realms/ops \
       --set storage.evidenceUrl=s3://acme-caseforge/evidence --set storage.quarantineUrl=s3://acme-caseforge/quarantine
