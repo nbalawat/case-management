@@ -13,11 +13,11 @@ backbone:        ## Docker: the demo plus Kafka, the outbox relay, the stream co
 backbone-cdc:    ## Docker: the same, with Debezium publishing the outbox instead of the relay
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' OUTBOX_PUBLISHER=debezium docker compose --profile backbone --profile cdc up --build
 
-full:            ## Docker: the demo with Kafka, the Iceberg lake, OpenSearch and the graph engine (Apache AGE)
-	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) docker compose --profile backbone --profile search --profile graph up --build
+full:            ## Docker: the demo with Kafka, the Iceberg lake, OpenSearch, the graph engine (Apache AGE) and Temporal
+	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 docker compose --profile backbone --profile search --profile graph --profile durable up --build
 
 streaming:       ## Docker: everything in `full`, plus an Apache Flink cluster for stream detection (console on http://localhost:8081)
-	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) FLINK_URL=http://flink-jobmanager:8081 docker compose --profile backbone --profile search --profile graph --profile streaming up --build
+	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 FLINK_URL=http://flink-jobmanager:8081 docker compose --profile backbone --profile search --profile graph --profile durable --profile streaming up --build
 
 CLIENT ?= meridian
 flink-job:       ## Docker, with `make streaming` running: render and submit one client's structuring job. make flink-job CLIENT=meridian

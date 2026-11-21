@@ -3,7 +3,7 @@
 #
 # With the event backbone (Kafka, the outbox relay and the stream consumers):  make backbone
 # With Debezium publishing the outbox instead of the relay:                    make backbone-cdc
-# Everything: Kafka, the lake, OpenSearch and the graph engine:                make full
+# Everything: Kafka, the lake, OpenSearch, the graph engine and Temporal:      make full
 # Everything plus stream detection on Apache Flink:                            make streaming
 services:
   db:
@@ -28,6 +28,7 @@ services:
       SEARCH_URL: ${SEARCH_URL:-}                # empty: names are searched in the database
       LAKE_CATALOG: ${LAKE_CATALOG:-}            # empty: no lake; make backbone sets an Iceberg catalog in Postgres
       GRAPH_URL: ${GRAPH_URL:-}                  # empty: routes between customers are found in the database
+      TEMPORAL_URL: ${TEMPORAL_URL:-}            # empty: stage clocks are checked by the sweep only
       FLINK_URL: ${FLINK_URL:-}                  # empty: no stream processor; scenarios run in the stream consumer
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
@@ -88,6 +89,26 @@ services:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health > /dev/null"]
       interval: 5s
       retries: 40
+
+  # ---- durable stage clocks on Temporal: docker compose --profile durable, with TEMPORAL_URL=temporal://temporal:7233
+  temporal:  # the development server: one process, its state in a file on a volume. A deployment runs a Temporal cluster.
+    profiles: [durable]
+    image: temporalio/temporal:1.10.1
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/data/temporal.db"]
+    user: root  # the volume is created owned by root
+    ports: ["8233:8233"]  # Temporal's own console
+    volumes: [temporaldata:/data]
+  durable-worker:  # runs the clock workflows and keeps them in step with the database
+    profiles: [durable]
+    build: .
+    command: ["uv", "run", "--no-dev", "python", "-m", "app.durable.worker"]
+    environment:
+      <<: *app-env
+      TEMPORAL_URL: temporal://temporal:7233
+    restart: on-failure  # Temporal may still be starting
+    depends_on:
+      app: {condition: service_healthy}  # the API creates the schema and the demo clients
+      temporal: {condition: service_started}
 
   # ---- the payment network on Apache AGE: docker compose --profile graph, with GRAPH_URL=age://caseforge:caseforge-local-only@graph:5432/graph
   graph:
@@ -158,4 +179,5 @@ volumes:
   warehouse:
   searchdata:
   graphdata:
+  temporaldata:
   evidence:

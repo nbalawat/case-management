@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "httpx>=0.27", "moto[server]>=5", {include-group = "llm"}, {include-group = "s3"}, {include-group = "kafka"}, {include-group = "lake"}, {include-group = "search"}]
+dev = ["pytest>=8", "httpx>=0.27", "moto[server]>=5", {include-group = "llm"}, {include-group = "s3"}, {include-group = "kafka"}, {include-group = "lake"}, {include-group = "search"}, {include-group = "durable"}]
 # The hosted model behind "ask anything". Without it the app uses the offline planner.
 llm = ["anthropic>=1.0"]
 # The event bus on Kafka or anything that speaks its protocol. Without it, events wait in the outbox table.
@@ -27,6 +27,8 @@ kafka = ["confluent-kafka>=2.6"]
 lake = ["pyiceberg[sql-sqlite,pyiceberg-core]>=0.9"]
 # Name search on OpenSearch. Without it, names are searched in the database.
 search = ["opensearch-py>=2.6"]
+# Durable stage clocks on Temporal (TEMPORAL_URL).
+durable = ["temporalio>=1.9"]
 # One driver per cloud for data pipelines. Install only the ones a deployment reads from; local directories need none.
 s3 = ["s3fs>=2024.6"]
 adls = ["adlfs>=2024.4"]

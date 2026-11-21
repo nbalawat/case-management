@@ -64,6 +64,14 @@ class Settings:
     # The payment network on a graph engine: age://user:password@host:5432/database (Apache AGE in Postgres). Empty:
     # routes between customers are found in the operational database.
     graph_url: str = os.getenv("GRAPH_URL", "")
+    # Durable stage clocks on Temporal: temporal://host:7233. Empty: clocks are checked by the sweep only. The worker
+    # (python -m app.durable.worker) brings clocks into step every TEMPORAL_SYNC_SECONDS and Temporal runs the
+    # periodic sweep every TEMPORAL_SWEEP_SECONDS.
+    temporal_url: str = os.getenv("TEMPORAL_URL", "")
+    temporal_namespace: str = os.getenv("TEMPORAL_NAMESPACE", "default")
+    temporal_task_queue: str = os.getenv("TEMPORAL_TASK_QUEUE", "caseforge")
+    temporal_sync_seconds: float = float(os.getenv("TEMPORAL_SYNC_SECONDS", "15"))
+    temporal_sweep_seconds: float = float(os.getenv("TEMPORAL_SWEEP_SECONDS", "300"))
     # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. Read-only here;
     # the platform page shows whether each client's jobs are running.
     flink_url: str = os.getenv("FLINK_URL", "")

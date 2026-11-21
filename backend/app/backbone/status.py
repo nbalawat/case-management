@@ -27,6 +27,7 @@ def view(s: Session) -> dict:
         "lake": lake(tenant),
         "search": search_engine(tenant),
         "graph": graph_engine(tenant),
+        "clocks": stage_clocks(tenant),
         "stream_jobs": stream_jobs(s, tenant),
         "bus": {"kind": kind, "note": note, "workers": settings.backbone_workers},
         "publisher": "debezium" if cdc else "relay",
@@ -97,3 +98,10 @@ def graph_engine(tenant_id: str) -> dict:
     if size is None:
         return {"engine": "age", "entities": None, "links": None, "note": "Apache AGE is connected. This client's graph is built at its next entity resolution; until then routes are found in the database."}
     return {"engine": "age", "entities": size[0], "links": size[1], "note": "Apache AGE, one graph per client, rebuilt after each entity resolution."}
+
+
+def stage_clocks(tenant_id: str) -> dict:
+    """Where this client's stage clocks run: the sweep, or durable timers on Temporal."""
+    from ..durable import temporal
+
+    return temporal.status(tenant_id)
