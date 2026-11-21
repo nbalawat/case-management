@@ -1,15 +1,24 @@
-// Thin API client. The active persona travels in a header; a real deployment uses SSO tokens.
-export type Persona = { id: string; name: string; role: string; title: string; about: string }
+// Thin API client. In this demo the active client and person travel in headers; a real deployment takes both
+// from the sign-in token, so a user can never name a client they do not belong to.
+export type Persona = { id: string; name: string; role: string; title: string; about: string; read_only: boolean; permissions: string[] }
 
-let personaId = localStorage.getItem('persona') || 'ivan'
-export const getPersonaId = () => personaId
-export const setPersonaId = (id: string) => { personaId = id; localStorage.setItem('persona', id) }
+export const OPERATOR = '@operator' // the provider's own staff, who work across clients
+let tenantId = localStorage.getItem('tenant') || 'meridian'
+const personaKey = () => `persona:${tenantId}`
+export const getTenantId = () => tenantId
+export const isOperator = () => tenantId === OPERATOR
+export const setTenantId = (id: string) => { tenantId = id; localStorage.setItem('tenant', id) }
+export const getPersonaId = () => localStorage.getItem(personaKey()) || ''
+export const setPersonaId = (id: string) => localStorage.setItem(personaKey(), id)
+
+function identity(): Record<string, string> {
+  if (isOperator()) return { 'X-Operator': 'olivia' }
+  const who = getPersonaId()
+  return { 'X-Tenant': tenantId, ...(who ? { 'X-Persona': who } : {}) }
+}
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`/api${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', 'X-Persona': personaId, ...(init?.headers || {}) },
-  })
+  const r = await fetch(`/api${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...identity(), ...(init?.headers || {}) } })
   if (!r.ok) {
     const body = await r.json().catch(() => ({}))
     throw new Error(body.detail || `Request failed (${r.status})`)

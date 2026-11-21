@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDateTime, fmtMoney } from '../api'
-import { usePersona } from '../App'
+import { usePeople } from '../App'
 import { useApi } from '../useApi'
 import { Card, Loading, Pill } from '../components/ui'
 
@@ -12,7 +12,8 @@ type Result = { feed: { id: string; name: string; status: string; stats: Stats }
 type Feeds = { feeds: { id: string; name: string; status: string; created: string; stats: Stats }[]; samples: string[] }
 
 export default function Onboarding() {
-  const canLoad = usePersona()?.role === 'admin'
+  const { can, holder } = usePeople()
+  const canLoad = can('load_data')
   const feeds = useApi<Feeds>('/feeds')
   const [sample, setSample] = useState('legacy_core_transactions.csv')
   const [upload, setUpload] = useState<{ name: string; text: string } | null>(null)
@@ -74,7 +75,7 @@ export default function Onboarding() {
         </table></div>
         <div className="toolbar">
           <button className="primary" onClick={doRun} disabled={busy || missing.length > 0 || !canLoad} title={canLoad ? '' : 'Loading data needs the platform admin'}>Load and run detection</button>
-          {!canLoad && <span className="msg">Sign in as Omar Haddad (platform admin) to load data.</span>}
+          {!canLoad && <span className="msg">Sign in as {holder('load_data')} to load data.</span>}
           {missing.length > 0 ? <span className="msg">Map required fields: {missing.join(', ')}</span>
             : <span className="muted small">Unmapped source columns are kept in the raw zone and not loaded.</span>}
         </div>

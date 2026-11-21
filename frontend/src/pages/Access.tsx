@@ -1,30 +1,79 @@
-import { useState } from 'react'
-import { words } from '../api'
+import { useEffect, useState } from 'react'
+import { api, fmtDateTime, words } from '../api'
+import { usePeople } from '../App'
 import { useApi } from '../useApi'
 import { Card, Loading, Pill } from '../components/ui'
 
-type AccessData = {
+type Policy = {
   policy: { name: string; version: string }
   permissions: { id: string; label: string }[]
   roles: { id: string; title: string; permissions: string[]; read_only: boolean; people: string[] }[]
   queues: { id: string; label: string; members: string[] }[]
+  people: { id: string; name: string; title: string; roles: string[]; queues: string[]; read_only: boolean }[]
+}
+type AccessData = Policy & {
+  tenant: { id: string; name: string }; yaml: string; can_edit: boolean
+  history: { version: string; published_by: string; published: string; note: string; active: boolean }[]
   steps: { case_type: string; title: string; from: string; label: string; roles: string[]; four_eyes: boolean; when: string }[]
 }
+type Check = { ok: boolean; error?: string; changes?: string[]; warnings?: string[]; preview?: Policy }
 const Yes = () => <span className="yes" aria-label="allowed">●</span>
 const No = () => <span className="no" aria-label="not allowed">·</span>
 
+function Editor({ data, onPublished }: { data: AccessData; onPublished: () => void }) {
+  const { holder, nameOf } = usePeople()
+  const [src, setSrc] = useState(data.yaml)
+  const [note, setNote] = useState('')
+  const [check, setCheck] = useState<Check | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  useEffect(() => { setSrc(data.yaml); setCheck(null) }, [data.policy.version]) // eslint-disable-line react-hooks/exhaustive-deps
+  const run = () => api.post<Check>('/access/check', { source: src }).then(r => { setCheck(r); setMsg(null) }).catch(e => setMsg(e.message))
+  const publish = () => api.post<{ version: string }>('/access/publish', { source: src, note })
+    .then(r => { setMsg(`Published v${r.version}. It applies from the next action anyone takes.`); setNote(''); onPublished() }).catch(e => setMsg(e.message))
+  return (
+    <Card title="Change the policy" action={<span className="muted small">Raise the version number, check, then publish</span>}>
+      <div className="editor">
+        <div>
+          <textarea className="code" rows={22} spellCheck={false} value={src} onChange={e => { setSrc(e.target.value); setCheck(null) }} aria-label="Access policy" />
+          <div className="toolbar">
+            <button onClick={run}>Check draft</button>
+            <input type="search" placeholder="What changed and why" value={note} onChange={e => setNote(e.target.value)} aria-label="Change note" />
+            <button className="primary" disabled={!data.can_edit || !check?.ok} onClick={publish}
+              title={!data.can_edit ? 'Publishing needs the manage access permission' : !check?.ok ? 'Check the draft first' : ''}>Publish new version</button>
+            {!data.can_edit && <span className="muted small">Sign in as {holder('manage_access')} to publish.</span>}
+          </div>
+          {msg && <p className="msg" role="status">{msg}</p>}
+        </div>
+        <div>
+          {!check && <p className="empty">Check the draft to see its effect. A policy is refused if it would leave any workflow {data.tenant.name} runs without someone able to take a step, break a four-eyes control for lack of a second person's role, or leave nobody able to change the policy again.</p>}
+          {check && !check.ok && <div className="verdict bad"><b>Not valid</b><p>{check.error}</p></div>}
+          {check?.ok && <div className="verdict good"><b>Valid. Publishing would:</b><ul>{check.changes!.map(c => <li key={c}>{c}</li>)}</ul>
+            {check.warnings!.map(w => <p key={w}><Pill tone="warning">note</Pill>{w}</p>)}</div>}
+          <h3>Versions</h3>
+          <table><thead><tr><th>Version</th><th>Published</th><th>Note</th></tr></thead>
+            <tbody>{data.history.map(v => (
+              <tr key={v.version}><td><b>v{v.version}</b> {v.active && <Pill tone="good">in force</Pill>}</td>
+                <td className="small">{fmtDateTime(v.published)} by {nameOf(v.published_by)}</td><td className="small">{v.note}</td></tr>))}</tbody></table>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 export default function Access() {
-  const { data, error } = useApi<AccessData>('/access')
+  const { data, error, reload } = useApi<AccessData>('/access')
   const [type, setType] = useState<string | null>(null)
   if (!data) return <Loading error={error} />
   const types = [...new Map(data.steps.map(s => [s.case_type, s.title])).entries()]
-  const current = type ?? types[0][0]
+  const current = types.some(([id]) => id === type) ? type : types[0][0]
   const steps = data.steps.filter(s => s.case_type === current)
   const used = data.roles.filter(r => steps.some(s => s.roles.includes(r.id)))
+  const roleTitle = (id: string) => data.roles.find(r => r.id === id)?.title ?? id
+  const queueLabel = (id: string) => data.queues.find(q => q.id === id)?.label ?? id
   return (
     <>
       <div className="page-h"><h1>Access</h1>
-        <p>Who can do what. Everything on this page is read from one policy file (<code>{data.policy.name}</code>, v{data.policy.version}) and from the case types. No role is written into code.</p></div>
+        <p>Who can do what at <b>{data.tenant.name}</b>. This is the client's own policy (v{data.policy.version}): its roles, queues and people. Other clients have their own, and no role is written into code.</p></div>
       <Card title="Roles and permissions">
         <div className="scroll"><table className="matrix">
           <thead><tr><th>Role</th><th>Held by</th>{data.permissions.map(p => <th key={p.id} title={p.label}>{words(p.id)}</th>)}</tr></thead>
@@ -45,12 +94,22 @@ export default function Access() {
               {used.map(r => <td key={r.id} className="dot">{s.roles.includes(r.id) ? <Yes /> : <No />}</td>)}
               <td className="small">{s.four_eyes && <Pill tone="serious">four-eyes</Pill>}{s.when && <Pill tone="warning">only if {s.when}</Pill>}</td></tr>))}</tbody>
         </table></div>
-        <p className="muted small">An automated test walks every person through every step in this table and checks that the platform allows exactly what is shown.</p>
+        <p className="muted small">An automated test walks every person at every kind of client through every step in this table and checks that the platform allows exactly what is shown.</p>
       </Card>
-      <Card title="Queues and their members">
-        <table><thead><tr><th>Queue</th><th>Members</th></tr></thead>
-          <tbody>{data.queues.map(q => <tr key={q.id}><td><b>{q.label}</b><div className="muted small">{q.id}</div></td><td>{q.members.join(', ') || <span className="muted">Nobody</span>}</td></tr>)}</tbody></table>
-      </Card>
+      <div className="cols-2">
+        <Card title="People">
+          <table><thead><tr><th>Person</th><th>Roles</th><th>Queues</th></tr></thead>
+            <tbody>{data.people.map(p => (
+              <tr key={p.id}><td><b>{p.name}</b><div className="muted small">{p.title}</div></td>
+                <td>{p.roles.map(r => <Pill key={r} tone={p.read_only ? 'warning' : 'human'}>{roleTitle(r)}</Pill>)}</td>
+                <td className="small">{p.queues.map(queueLabel).join(', ') || <span className="muted">None</span>}</td></tr>))}</tbody></table>
+        </Card>
+        <Card title="Queues and their members">
+          <table><thead><tr><th>Queue</th><th>Members</th></tr></thead>
+            <tbody>{data.queues.map(q => <tr key={q.id}><td><b>{q.label}</b><div className="muted small">{q.id}</div></td><td>{q.members.join(', ') || <span className="muted">Nobody</span>}</td></tr>)}</tbody></table>
+        </Card>
+      </div>
+      <Editor data={data} onPublished={reload} />
     </>
   )
 }

@@ -523,7 +523,7 @@ def seed_demo() -> dict:
     out = {}
     with session_scope(platform=True) as s:
         for client in DEMO_CLIENTS:
-            onboard(s, **{k: v for k, v in client.items() if k != "profile"}, by="demo-seed")
+            onboard(s, **{k: v for k, v in client.items() if k != "profile"}, by="platform onboarding")
     for client in DEMO_CLIENTS:
         with session_scope(client["tenant_id"]) as s:
             out[client["tenant_id"]] = seed_tenant(s, PROFILES[client["profile"]])

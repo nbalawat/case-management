@@ -41,7 +41,8 @@ def list_tenants():
 @router.get("/meta")
 def meta(rt: TenantRuntime = Depends(tenant)):
     return {"tenant": {"id": rt.id, "name": rt.name},
-            "personas": [{"id": p.id, "name": p.name, "role": p.role, "title": p.title, "about": p.about} for p in rt.policy.people.values()],
+            "personas": [{"id": p.id, "name": p.name, "role": p.role, "title": p.title, "about": p.about, "read_only": p.read_only,
+                          "permissions": sorted(x for x in p.permissions if p.can(x))} for p in rt.policy.people.values()],
             "default_person": rt.policy.default_person, "sample_data": True, "llm_provider": settings.llm_provider}
 
 
@@ -218,7 +219,9 @@ def integrations():
         "interfaces": [
             {"name": "REST API (OpenAPI)", "status": "live", "note": "Interactive docs at /docs"},
             {"name": "Audit event stream", "status": "live", "note": "GET /api/events; Kafka CloudEvents next"},
-            {"name": "Workflow configuration API", "status": "live", "note": "Check and publish case type versions"},
+            {"name": "Workflow configuration API", "status": "live", "note": "Check and publish case type versions, per client"},
+            {"name": "Access policy API", "status": "live", "note": "Check and publish each client's roles, queues and people"},
+            {"name": "Client onboarding API", "status": "live", "note": "Operator console: create a client from a template in one call"},
             {"name": "MCP tool server for agents", "status": "planned", "note": "With the model gateway"},
             {"name": "SSO via OIDC (Keycloak)", "status": "planned", "note": "Milestone 3; demo uses a persona switch"},
             {"name": "SAR e-filing (FinCEN BSA XML, goAML)", "status": "planned", "note": "Milestone 3; demo files a hashed JSON record"},

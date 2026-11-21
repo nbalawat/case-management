@@ -10,7 +10,7 @@ permissions:
   run_timers: Run the stage-clock sweep on demand
   publish_workflow: Publish new versions of case types
   load_data: Load data feeds onto the platform
-  manage_access: Change this access policy - roles, queues and people
+  manage_access: Manage access - change the roles, queues and people in this policy
 
 queues:
   kyc: Client due diligence

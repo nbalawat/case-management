@@ -105,7 +105,7 @@ def create_tenant(body: OnboardIn, op: dict = Depends(operator)):
     try:
         with session_scope(platform=True) as s:
             onboarding.onboard(s, tenant_id=body.id, name=body.name, template=body.template, region=body.region,
-                               deployment=body.deployment, case_types=body.case_types, by=op["id"])
+                               deployment=body.deployment, case_types=body.case_types, by=op["name"])
     except OnboardingError as e:
         raise HTTPException(422, str(e)) from e
     seeded = None
