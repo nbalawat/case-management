@@ -30,4 +30,18 @@ FILENAME_FORMAT='{kind}_{version}' python3 "$work/openapi2jsonschema.py" \
   "$work"/cert-manager/deploy/crds/cert-manager.io_*.yaml \
   "$work"/kyverno/config/crds/kyverno/kyverno.io_clusterpolicies.yaml \
   "$work"/argo-cd/manifests/crds/application-crd.yaml "$work"/argo-cd/manifests/crds/appproject-crd.yaml >/dev/null
+# kubeconform matches schema files case-insensitively, so it cannot catch a kind with the wrong case
+# (OpenSearchRole for OpensearchRole). Record each CRD's exact group and kind for check-charts.sh.
+python3 - "$work" > "$out/kinds.txt" <<'PY'
+import glob, sys, yaml
+work = sys.argv[1]
+for f in sorted(glob.glob(f"{work}/**/*.yaml", recursive=True)):
+    try:
+        docs = list(yaml.safe_load_all(open(f)))
+    except yaml.YAMLError:
+        continue
+    for doc in docs:
+        if isinstance(doc, dict) and doc.get("kind") == "CustomResourceDefinition":
+            print(doc["spec"]["group"], doc["spec"]["names"]["kind"])
+PY
 find "$out" -name "*.json" | wc -l

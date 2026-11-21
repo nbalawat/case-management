@@ -122,7 +122,7 @@ spec:
           name: {{ $s.name }}-user-password
 ---
 apiVersion: opensearch.org/v1
-kind: OpenSearchRole
+kind: OpensearchRole
 metadata:
   name: caseforge
   labels: {{- include "data.labels" . | nindent 4 }}
@@ -134,7 +134,7 @@ spec:
       allowedActions: [crud, create_index, manage]
 ---
 apiVersion: opensearch.org/v1
-kind: OpenSearchUser
+kind: OpensearchUser
 metadata:
   name: caseforge
   labels: {{- include "data.labels" . | nindent 4 }}
@@ -145,7 +145,7 @@ spec:
     key: password
 ---
 apiVersion: opensearch.org/v1
-kind: OpenSearchUserRoleBinding
+kind: OpensearchUserRoleBinding
 metadata:
   name: caseforge
   labels: {{- include "data.labels" . | nindent 4 }}

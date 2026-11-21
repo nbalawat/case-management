@@ -57,4 +57,22 @@ if bad:
     sys.exit("not restricted: " + ", ".join(bad))
 PY
 done
-echo "charts: lint, render, schema and pod security checks passed"
+# Custom resources must use the exact kind their CRD declares, case included.
+python3 - "$schemas/kinds.txt" "$render"/*.yaml <<'PY'
+import sys, yaml
+known = {}
+for line in open(sys.argv[1]):
+    group, kind = line.split()
+    known.setdefault(group, set()).add(kind)
+bad = []
+for f in sys.argv[2:]:
+    for doc in yaml.safe_load_all(open(f)):
+        if not doc:
+            continue
+        group = doc["apiVersion"].split("/")[0] if "/" in doc["apiVersion"] else ""
+        if group in known and doc["kind"] not in known[group]:
+            bad.append(f'{doc["apiVersion"]} {doc["kind"]} ({doc["metadata"]["name"]})')
+if bad:
+    sys.exit("kinds not declared by their CRDs: " + ", ".join(bad))
+PY
+echo "charts: lint, render, schema, kind and pod security checks passed"
