@@ -45,7 +45,8 @@ def provider(realm: str) -> Provider:
 
 def mint(realm: str, user: str, *, ttl: int = TOKEN_TTL, **claims) -> str:
     at = int(time.time())
-    body = {"iss": issuer(realm), "aud": CLIENT_ID, "sub": f"{realm}:{user}", "preferred_username": user, "iat": at, "exp": at + ttl} | claims
+    body = {"iss": issuer(realm), "aud": CLIENT_ID, "sub": f"{realm}:{user}", "preferred_username": user, "iat": at, "exp": at + ttl,
+            "amr": ["pwd", "otp"]} | claims  # as if everyone signed in with a second factor
     return jwt.encode(body, _private, algorithm="RS256", headers={"kid": KID})
 
 

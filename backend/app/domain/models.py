@@ -1028,3 +1028,4 @@ from ..ai import usage as _ai_usage  # noqa: E402,F401  registers the model usag
 from ..views import store as _views  # noqa: E402,F401  registers the grid settings and saved view tables
 from ..notifications import store as _notifications  # noqa: E402,F401  registers the notification table and the hook that fills it
 from ..public import models as _public  # noqa: E402,F401  the public API's tables
+from ..directory import models as _directory  # noqa: E402,F401  people and groups from each client's identity provider

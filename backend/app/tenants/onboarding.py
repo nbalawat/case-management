@@ -202,8 +202,18 @@ def hydrate(s: Session) -> list[TenantRuntime]:
             registry.register_published(row.id, registry.parse(wv.source, f"{wv.case_type} {wv.version}"))
         provider.expire(s, row.id)
         provider.refresh(s, rt)
+        _directory(s, rt)
         out.append(rt)
     return out
+
+
+def _directory(s: Session, rt: TenantRuntime) -> None:
+    """Add the people the client's identity provider provisioned, read under that client's own session."""
+    from ..db import session_scope
+    from ..directory import service as directory
+
+    with session_scope(rt.id) as ts:
+        directory.refresh(ts, rt)
 
 
 def set_status(s: Session, tenant_id: str, status: str) -> TenantRuntime:

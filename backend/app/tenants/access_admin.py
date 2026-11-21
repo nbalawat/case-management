@@ -84,6 +84,13 @@ def _check_views(policy: AccessPolicy, case_types: dict[str, dict]) -> list[str]
 
 def diff(old: AccessPolicy, new: AccessPolicy) -> list[str]:
     out = []
+    for g in sorted(set(old.groups) | set(new.groups)):
+        a, b = old.groups.get(g), new.groups.get(g)
+        if a != b:
+            out.append(f"Group '{g}' no longer gives a role here" if b is None else f"Group '{g}' gives {', '.join(b.roles)}"
+                       + (f" and queues {', '.join(b.queues)}" if b and b.queues else ""))
+    if old.sign_in != new.sign_in:
+        out.append(f"Sign-in: {new.sign_in.describe()}")
     if old.managed_service != new.managed_service:
         if new.managed_service is None:
             out.append("Stops the provider's staff working here; every engagement ends")
@@ -131,7 +138,9 @@ def check(s: Session, source: str) -> dict:
         raw = yaml.safe_load(source)
     except yaml.YAMLError as e:
         raise AccessPolicyError(f"draft: not valid YAML ({str(e).splitlines()[0]})") from e
-    policy = parse_policy(raw, "draft")
+    from ..directory import service as directory
+
+    policy = directory.apply(s, parse_policy(raw, "draft"))  # people from the identity provider's groups count as members
     if registry.version_key(policy.version) <= registry.version_key(rt.policy.version):
         raise AccessPolicyError(f"draft: version must be higher than the active {rt.policy.version}")
     if not any(p.can("manage_access") for p in policy.people.values()):

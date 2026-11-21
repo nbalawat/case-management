@@ -5,7 +5,7 @@ identity provider, and a token signed by that provider can only ever be a user o
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..config import settings
 from ..tenants.registry import TenantRuntime, all_runtimes
@@ -60,6 +60,16 @@ class Identity:
     subject: str
     tenant: TenantRuntime | None = None
     operator: bool = False
+    # What the token says about the sign-in itself: the person's groups at the identity provider, how they
+    # authenticated (RFC 8176 'amr') and the authentication context class ('acr').
+    groups: tuple[str, ...] = ()
+    amr: tuple[str, ...] = ()
+    acr: str = ""
+    name: str = field(default="", compare=False)
+
+    def second_factor(self, methods, acr_values) -> bool:
+        """Whether the token says a second factor was used: an 'amr' among these methods, or an 'acr' among these values."""
+        return bool(set(self.amr) & set(methods)) or (bool(self.acr) and self.acr in acr_values)
 
 
 def authenticate(authorization: str | None) -> Identity:
@@ -71,10 +81,10 @@ def authenticate(authorization: str | None) -> Identity:
     for rt in all_runtimes():
         p = provider_of(rt)
         if p is not None and p.issuer == issuer:
-            return Identity(_subject(verifier.verify(token, p), p), tenant=rt)
+            return _identity(verifier.verify(token, p), p, tenant=rt)
     op = operator_provider()
     if op is not None and op.issuer == issuer:
-        return Identity(_subject(verifier.verify(token, op), op), operator=True)
+        return _identity(verifier.verify(token, op), op, operator=True)
     raise AuthError("Token is from an identity provider no client has registered")
 
 
@@ -83,3 +93,17 @@ def _subject(claims: dict, p: Provider) -> str:
     if not isinstance(who, str) or not who:
         raise AuthError(f"Token does not say who the user is ('{p.person_claim}' is missing)")
     return who
+
+
+def _strings(v) -> tuple[str, ...]:
+    if isinstance(v, str):
+        return (v,)
+    return tuple(x for x in v if isinstance(x, str) and x) if isinstance(v, list) else ()
+
+
+def _identity(claims: dict, p: Provider, **where) -> Identity:
+    # Keycloak's group mapper sends full paths ("/aml/investigators") unless told not to; either form matches the policy.
+    groups = _strings(claims.get("groups"))
+    groups = tuple(dict.fromkeys(groups + tuple(g.lstrip("/") for g in groups if g.startswith("/"))))
+    return Identity(_subject(claims, p), groups=groups, amr=_strings(claims.get("amr")),
+                    acr=claims.get("acr") if isinstance(claims.get("acr"), str) else "", name=str(claims.get("name") or ""), **where)

@@ -4,7 +4,7 @@ The policy file is the single source of truth. Code asks the policy; it never na
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import yaml
@@ -111,6 +111,45 @@ BREAK_GLASS = "break_glass"
 
 
 @dataclass(frozen=True)
+class GroupGrant:
+    """What membership of one group at the client's identity provider gives: roles, and queues to work.
+
+    People provisioned from the identity provider (SCIM), or signing in with a token that lists their groups, hold
+    the roles of every group they are in. Nobody has to be named in the policy one by one.
+    """
+    group: str
+    roles: tuple[str, ...]
+    queues: tuple[str, ...] = ()
+
+
+# Authentication methods (RFC 8176 'amr' values) that count as a second factor.
+MFA_METHODS = frozenset({"mfa", "otp", "hwk", "swk", "sms", "tel", "pop", "fpt", "face", "iris", "retina", "vbm"})
+
+
+@dataclass(frozen=True)
+class SignIn:
+    """How strongly people must have signed in. `mfa`: everyone, nobody, or only holders of these roles.
+
+    The identity provider does the authenticating; the platform checks the token says a second factor was used
+    (its 'amr' lists one of `methods`, or its 'acr' is one of `acr`) and refuses it otherwise.
+    """
+    mfa: str = "none"  # none | all | roles
+    roles: frozenset[str] = frozenset()
+    methods: frozenset[str] = MFA_METHODS
+    acr: frozenset[str] = frozenset()
+
+    def requires_mfa(self, person: "Persona") -> bool:
+        return self.mfa == "all" or (self.mfa == "roles" and person.holds(self.roles))
+
+    def describe(self) -> str:
+        if self.mfa == "all":
+            return "Everyone signs in with a second factor"
+        if self.mfa == "roles":
+            return f"A second factor for: {', '.join(sorted(self.roles))}"
+        return "A second factor is up to the identity provider"
+
+
+@dataclass(frozen=True)
 class Role:
     id: str
     title: str
@@ -159,6 +198,7 @@ class Persona:
     # Which customers this person reaches, one entry per role, already narrowed by their own attributes. None: all.
     customers: tuple[Customers, ...] | None = None
     customer_facing: bool = False
+    source: str = "policy"  # policy: named in the access policy. directory: from the identity provider's groups
 
     @property
     def external(self) -> bool:
@@ -184,6 +224,10 @@ class AccessPolicy:
     managed_service: ManagedService | None = None
     tipping_off: TippingOff = TippingOff()
     break_glass: BreakGlass | None = None
+    groups: dict[str, GroupGrant] = field(default_factory=dict)  # identity provider group -> what it gives
+    sign_in: SignIn = SignIn()
+    # People the policy names whom the client's identity provider has deactivated: out until it reactivates them.
+    switched_off: dict[str, "Persona"] = field(default_factory=dict)
 
     @property
     def own_people(self) -> dict[str, Persona]:
@@ -276,13 +320,15 @@ def parse_policy(raw: dict, origin: str = "access policy") -> AccessPolicy:
     for rid in holders:
         if roles[rid].customer_facing:
             fail(f"role '{rid}' is customer-facing and cannot break glass")
+    groups = _groups(raw.get("groups"), roles, queues, fail)
+    sign_in = _sign_in(raw.get("sign_in"), roles, fail)
     return AccessPolicy(str(raw.get("policy", "default")), str(raw.get("version", "1")), permissions, queues, roles, people, default, ms,
-                        tipping, glass)
+                        tipping, glass, groups, sign_in)
 
 
 def make_persona(roles: dict[str, Role], queues: dict[str, str], pid: str, name: str, names: list[str], in_queues: list[str],
                  title: str | None = None, about: str = "", org: str = CLIENT, engagement: str | None = None,
-                 jurisdictions: frozenset[str] | None = None, segments: frozenset[str] | None = None) -> Persona:
+                 jurisdictions: frozenset[str] | None = None, segments: frozenset[str] | None = None, source: str = "policy") -> Persona:
     """One person holding these roles and queues, with what the roles together allow and show. Raises on a bad combination."""
     missing = [n for n in names if n not in roles]
     if missing:
@@ -304,7 +350,7 @@ def make_persona(roles: dict[str, Role], queues: dict[str, str], pid: str, name:
     reach = tuple(dict.fromkeys((r.customers or ALL_CUSTOMERS).narrowed(jurisdictions, segments) for r in held))
     customers = None if any(c.everyone for c in reach) else reach
     return Persona(pid, name, role.id, title or role.title, tuple(in_queues), about, granted, role.read_only, tuple(names), views,
-                   org, engagement, customers, any(facing))
+                   org, engagement, customers, any(facing), source)
 
 
 ROLE_KEYS = {"title", "permissions", "read_only", "sees", "customers", "customer_facing"}
@@ -386,6 +432,56 @@ def _managed_service(raw, roles: dict[str, Role], people: dict[str, Persona], fa
         fail("managed_service: reports need sending by the client's own people, but none of them can send them")
     provider = str(raw.get("provider") or "Platform provider").strip()[:80]
     return ManagedService(provider, frozenset(names), approval, days, frozenset(signoff))
+
+
+def _groups(raw, roles: dict[str, Role], queues: dict[str, str], fail) -> dict[str, GroupGrant]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        fail("groups maps each identity provider group to {roles: [...], queues: [...]}")
+    out = {}
+    for name, g in raw.items():
+        where = f"group '{name}'"
+        if not isinstance(name, str) or not name.strip() or len(name) > 200:
+            fail("a group is named by its name (or id) at the identity provider")
+        if not isinstance(g, dict) or set(g) - {"roles", "queues"}:
+            fail(f"{where} takes roles and queues")
+        names, qs = g.get("roles"), g.get("queues") or []
+        if not isinstance(names, list) or not names or not all(isinstance(x, str) for x in names):
+            fail(f"{where} must give at least one role")
+        unknown = [r for r in names if r not in roles]
+        if unknown:
+            fail(f"{where} gives unknown role '{unknown[0]}'")
+        if not isinstance(qs, list) or [q for q in qs if q not in queues]:
+            fail(f"{where} names an unknown queue")
+        if qs and not any("work" in roles[r].permissions for r in names):
+            fail(f"{where} puts people in queues but gives no role that can work cases")
+        out[name] = GroupGrant(name, tuple(names), tuple(qs))
+    return out
+
+
+def _sign_in(raw, roles: dict[str, Role], fail) -> SignIn:
+    if raw is None:
+        return SignIn()
+    if not isinstance(raw, dict) or set(raw) - {"mfa", "methods", "acr"}:
+        fail("sign_in takes mfa (none, all, or a list of roles), methods and acr")
+    mfa = raw.get("mfa", "none")
+    if isinstance(mfa, list):
+        unknown = [r for r in mfa if r not in roles]
+        if not mfa or unknown:
+            fail(f"sign_in: mfa names unknown role '{unknown[0]}'" if unknown else "sign_in: mfa lists the roles that need it")
+        kind, held = "roles", frozenset(mfa)
+    elif mfa in ("none", "all"):
+        kind, held = mfa, frozenset()
+    else:
+        fail("sign_in: mfa is none, all, or a list of roles")
+    methods = raw.get("methods")
+    if methods is not None and (not isinstance(methods, list) or not methods or set(methods) - MFA_METHODS):
+        fail(f"sign_in: methods are second-factor 'amr' values: {', '.join(sorted(MFA_METHODS))}")
+    acr = raw.get("acr") or []
+    if not isinstance(acr, list) or not all(isinstance(x, str) and x for x in acr):
+        fail("sign_in: acr lists the authentication context values that mean a second factor was used")
+    return SignIn(kind, held, frozenset(methods) if methods else MFA_METHODS, frozenset(acr))
 
 
 def load_policy(path: Path) -> AccessPolicy:

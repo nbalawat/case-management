@@ -15,6 +15,8 @@ from ..auth.oidc import AuthError
 from ..cases.service import definition, stage_due
 from ..config import settings
 from ..db import session_scope
+from ..directory import service as directory
+from ..domain.access import MFA_METHODS
 from ..domain.models import Case, now
 from ..domain.personas import Persona, policy_of
 from ..visibility import bind_viewer, find_case
@@ -39,9 +41,13 @@ def identity(authorization: str | None = Header(default=None)) -> Identity | Non
     if settings.auth_mode != "oidc":
         return None
     try:
-        return authenticate(authorization)
+        who = authenticate(authorization)
     except AuthError as e:
         raise HTTPException(401, str(e), headers={"WWW-Authenticate": "Bearer"}) from None
+    if who.operator and settings.oidc_operator_mfa and not who.second_factor(MFA_METHODS, ()):
+        raise HTTPException(401, "Platform staff sign in with a second factor. Sign in again using it.",
+                            headers={"WWW-Authenticate": 'Bearer error="insufficient_user_authentication"'})
+    return who
 
 
 def tenant(x_tenant: str | None = Header(default=None), who: Identity | None = Depends(identity)) -> TenantRuntime:
@@ -104,9 +110,13 @@ def persona(request: Request, rt: TenantRuntime = Depends(tenant), x_persona: st
         if not who.operator and provider.is_provider(pid):
             # Only the provider's own identity system speaks for its staff; a client's provider cannot name one of them.
             raise HTTPException(403, f"'{who.subject}' is a name kept for the provider's staff")
-        if pid not in rt.policy.people:
+        p = rt.policy.people.get(pid) if who.operator else _client_person(rt, who)
+        if p is None:
             raise HTTPException(403, f"'{who.subject}' is signed in but has no role at {rt.name}. Ask an administrator to add you on the Access page.")
-        p = rt.policy.people[pid]
+        if not who.operator and rt.policy.sign_in.requires_mfa(p) and not who.second_factor(rt.policy.sign_in.methods, rt.policy.sign_in.acr):
+            # RFC 9470: the client asks the identity provider again for a sign-in with a second factor
+            raise HTTPException(401, f"{rt.name} requires a second factor for {p.title}. Sign in again using it.",
+                                headers={"WWW-Authenticate": 'Bearer error="insufficient_user_authentication"'})
     else:
         if x_persona and x_persona not in rt.policy.people:
             raise HTTPException(403, f"'{x_persona}' is not a user of {rt.name}")
@@ -114,6 +124,15 @@ def persona(request: Request, rt: TenantRuntime = Depends(tenant), x_persona: st
     if p.external:
         _provider_request(rt, p, request)
     return p
+
+
+def _client_person(rt: TenantRuntime, who: Identity) -> Persona | None:
+    """Who a client's signed-in user is here. The identity provider's directory is asked first, then the policy."""
+    try:
+        with session_scope(rt.id) as s:
+            return directory.signing_in(s, rt.policy, who.subject, who.groups, who.name)
+    except directory.DirectoryError as e:
+        raise HTTPException(403, str(e)) from None
 
 
 def _provider_request(rt: TenantRuntime, p: Persona, request: Request) -> None:
