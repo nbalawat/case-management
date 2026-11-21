@@ -12,6 +12,15 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # The two whole-suite jobs run every test, spread over the runner's cores by pytest-xdist. --dist loadfile keeps
+  # each test file on one worker, so a file's module-scoped fixtures (the seeded app behind `client`) are built once
+  # and its tests run in the order they always have. Every worker has its own temporary directories, in-memory
+  # databases and (on Temporal) its own task queue and namespace prefix, so workers share nothing. --durations
+  # names the slowest tests, so the next speed-up is measured rather than guessed. The services job stays serial:
+  # its tests share one Postgres, one broker and one search engine.
+  PYTEST_PARALLEL: -n auto --dist loadfile --durations=15
+
 jobs:
   backend:
     name: Backend tests (SQLite)
@@ -27,17 +36,18 @@ jobs:
         run: uv run python -m app.migrate check
       - name: Test
         working-directory: backend
-        run: uv run pytest -q
+        run: uv run pytest -q $PYTEST_PARALLEL
 
   backend-temporal:
     name: Backend tests with case workflows on Temporal
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: temporal  # its own cache, like the services job
       - name: Start a Temporal development server
         run: |
           docker run -d --name temporal -p 7233:7233 temporalio/temporal:1.10.1 server start-dev --ip 0.0.0.0
@@ -49,7 +59,7 @@ jobs:
           TEST_WORKFLOW_ENGINE: temporal
           TEST_TEMPORAL_URL: temporal://localhost:7233
           TEST_TEMPORAL_NAMESPACES: per_client
-        run: uv run pytest -q --ignore=tests/test_temporal.py
+        run: uv run pytest -q $PYTEST_PARALLEL --ignore=tests/test_temporal.py
 
   services:
     name: Backend on Postgres, Kafka, OpenSearch, Apache AGE and Temporal
