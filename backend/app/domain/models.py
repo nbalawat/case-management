@@ -9,9 +9,9 @@ import contextlib
 import contextvars
 import random
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -77,11 +77,57 @@ class Party(TenantKeyed, Base):
     risk_rating: Mapped[str] = mapped_column(String(10), default="low")
     pep: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarded: Mapped[datetime] = mapped_column(DateTime, default=now)
+    # Who the customer is, as regulators ask for it. A person's birth date; a company's date of incorporation.
+    born: Mapped[date | None] = mapped_column(Date, nullable=True)
+    nationality: Mapped[str] = mapped_column(String(2), default="")  # a company's country of incorporation
+    address_line1: Mapped[str] = mapped_column(String(200), default="")
+    address_line2: Mapped[str] = mapped_column(String(200), default="")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    region: Mapped[str] = mapped_column(String(40), default="")  # state, province or county code
+    postal_code: Mapped[str] = mapped_column(String(20), default="")
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    # How the client looks after the relationship; attribute-based access rules read these.
+    segment: Mapped[str] = mapped_column(String(30), default="retail")  # retail | business | private | correspondent | ...
+    booking_jurisdiction: Mapped[str | None] = mapped_column(String(2), nullable=True)  # where the relationship is booked
+    relationship_manager: Mapped[str | None] = mapped_column(String(40), nullable=True)  # a person id at the client
     accounts: Mapped[list["Account"]] = relationship(back_populates="party")
+    identifiers: Mapped[list["PartyIdentifier"]] = relationship(back_populates="party", order_by="PartyIdentifier.kind",
+                                                                cascade="all, delete-orphan")
 
 
 def party_fk() -> ForeignKeyConstraint:
     return ForeignKeyConstraint(["tenant_id", "party_id"], ["party.tenant_id", "party.id"])
+
+
+class PartyIdentifier(TenantScoped, Base):
+    """A number that identifies a customer: tax id, passport, national id, company registration, LEI. Kinds are in app/domain/identity.py."""
+
+    __tablename__ = "party_identifier"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    party_id: Mapped[str] = mapped_column(String(40))
+    kind: Mapped[str] = mapped_column(String(24))
+    value: Mapped[str] = mapped_column(String(64))
+    normalized: Mapped[str] = mapped_column(String(64))  # letters and digits only, upper case: what matching compares
+    issuer_country: Mapped[str] = mapped_column(String(2), default="")
+    issued: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expires: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), default="seed")
+    party: Mapped[Party] = relationship(back_populates="identifiers")
+    __table_args__ = (party_fk(), UniqueConstraint("tenant_id", "party_id", "kind", "normalized", name="uq_party_identifier"),
+                      Index("ix_party_identifier_value", "tenant_id", "kind", "normalized"))
+
+
+class PartyEvent(TenantScoped, Base):
+    """Who changed or looked at a customer's identity, and what changed. Append-only, like the case audit trail."""
+
+    __tablename__ = "party_event"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    by: Mapped[str] = mapped_column(String(40))
+    kind: Mapped[str] = mapped_column(String(40))  # identity.updated | identifier.added | identifier.removed | identifiers.revealed
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Account(TenantKeyed, Base):
@@ -106,6 +152,9 @@ class Transaction(TenantKeyed, Base):
     channel: Mapped[str] = mapped_column(String(20))  # cash | wire | ach | card | p2p
     counterparty: Mapped[str] = mapped_column(String(200), default="")
     counterparty_country: Mapped[str] = mapped_column(String(2), default="US")
+    counterparty_account: Mapped[str] = mapped_column(String(64), default="")  # IBAN or account number on the other side
+    counterparty_institution: Mapped[str] = mapped_column(String(120), default="")  # the other side's bank: BIC, routing number or name
+    purpose: Mapped[str] = mapped_column(String(40), default="")  # ISO 20022 purpose code where the payment carried one, for example SALA
     feed_id: Mapped[str] = mapped_column(String(40), default="seed")
     # Relationships also tell the unit of work to insert parents before children.
     account: Mapped[Account] = relationship()

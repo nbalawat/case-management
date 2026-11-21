@@ -17,6 +17,8 @@ SCOPED_MODELS = sorted((mp.class_ for mp in Base.registry.mappers if issubclass(
 # One way to build a valid row of every tenant-scoped table. A new table must be added here, or the suite fails.
 FACTORY = {
     "Party": lambda k: m.Party(id="P1", name=f"Person {k}"),
+    "PartyIdentifier": lambda k: m.PartyIdentifier(id=f"pid-{k}", party_id="P1", kind="ssn", value="900-10-0001", normalized="900100001"),
+    "PartyEvent": lambda k: m.PartyEvent(id=f"pev-{k}", party_id="P1", by="x", kind="identity.updated"),
     "Account": lambda k: m.Account(id="A1", party_id="P1"),
     "Transaction": lambda k: m.Transaction(id="T1", account_id="A1", party_id="P1", ts=NOW, amount=10, direction="in", channel="cash"),
     "Alert": lambda k: m.Alert(id=f"alr-{k}", dedupe_key="same-key", scenario="structuring", scenario_version="1", party_id="P1",

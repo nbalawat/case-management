@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..cases.service import definition
 from ..domain.models import Alert, Case, Entity, EntityEdge, MediaItem, Party, Transaction
+from ..customers import record
 from ..domain.personas import policy_of
 from . import graph, resolution
 
@@ -42,7 +43,8 @@ def customer(s: Session, party_id: str) -> dict | None:
                        .where(Transaction.party_id == party_id)).one()
     return {
         "party": {"id": p.id, "name": p.name, "kind": p.kind, "occupation": p.occupation, "country": p.country, "risk_rating": p.risk_rating,
-                  "pep": p.pep, "onboarded": p.onboarded.date().isoformat(), "accounts": [{"id": a.id, "product": a.product, "status": a.status} for a in p.accounts]},
+                  "pep": p.pep, "onboarded": p.onboarded.date().isoformat(), "accounts": [{"id": a.id, "product": a.product, "status": a.status} for a in p.accounts],
+                  "identity": record.identity_of(p)},
         "entity_id": resolution.customer_entity_id(p.id),
         "totals": {"txns": totals[0], "in": round(float(totals[1] or 0), 2), "out": round(float(totals[2] or 0), 2),
                    "first": totals[3].isoformat() if totals[3] else None, "last": totals[4].isoformat() if totals[4] else None,
