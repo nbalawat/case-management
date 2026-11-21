@@ -26,6 +26,8 @@ data:
   TEMPORAL_NAMESPACE_PREFIX: {{ .Values.temporal.namespacePrefix | quote }}
   TEMPORAL_RETENTION_DAYS: {{ .Values.temporal.retentionDays | quote }}
   TEMPORAL_TASK_QUEUE: {{ .Values.temporal.taskQueue | quote }}
+  TEMPORAL_ENCRYPTION: {{ .Values.temporal.encryption | quote }}
+  TEMPORAL_KEY_VERSION: {{ .Values.temporal.keyVersion | quote }}
   FLINK_URL: {{ .Values.flink.url | quote }}
   FLINK_GATEWAY_URL: {{ .Values.flink.gatewayUrl | quote }}
   {{- with .Values.storage.evidenceUrl }}
