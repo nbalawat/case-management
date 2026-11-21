@@ -4,6 +4,7 @@ demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
 
 # An Iceberg catalog kept in the demo's own Postgres, with the tables on a Docker volume.
+GRAPH := age://caseforge:caseforge-local-only@graph:5432/graph
 LAKE := {"type":"sql","uri":"postgresql+psycopg://caseforge:caseforge-local-only@db:5432/caseforge","warehouse":"file:///app/data/warehouse"}
 
 backbone:        ## Docker: the demo plus Kafka, the outbox relay, the stream consumers and the Iceberg lake
@@ -12,11 +13,11 @@ backbone:        ## Docker: the demo plus Kafka, the outbox relay, the stream co
 backbone-cdc:    ## Docker: the same, with Debezium publishing the outbox instead of the relay
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' OUTBOX_PUBLISHER=debezium docker compose --profile backbone --profile cdc up --build
 
-full:            ## Docker: the demo with Kafka, the Iceberg lake and OpenSearch
-	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 docker compose --profile backbone --profile search up --build
+full:            ## Docker: the demo with Kafka, the Iceberg lake, OpenSearch, the graph engine (Apache AGE) and Temporal
+	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 docker compose --profile backbone --profile search --profile graph --profile durable up --build
 
 streaming:       ## Docker: everything in `full`, plus an Apache Flink cluster for stream detection (console on http://localhost:8081)
-	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 FLINK_URL=http://flink-jobmanager:8081 docker compose --profile backbone --profile search --profile streaming up --build
+	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 FLINK_URL=http://flink-jobmanager:8081 docker compose --profile backbone --profile search --profile graph --profile durable --profile streaming up --build
 
 CLIENT ?= meridian
 flink-job:       ## Docker, with `make streaming` running: render and submit one client's structuring job. make flink-job CLIENT=meridian

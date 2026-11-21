@@ -254,9 +254,10 @@ def resolve(s: Session) -> dict:
                                  right_name=right_name, score=round(score, 3), reasons=reasons))
     s.flush()
     merged = sum(1 for sp in spellings.values() if sp.key) - len(clusters)
-    from . import search  # here: search imports this package's names
+    from . import graphstore, search  # here: both import this module
 
     search.after_resolution(s)  # the search engine, when there is one, is rebuilt from what was just resolved
+    graphstore.after_resolution(s)  # and so is the graph engine
     return {"customers": len(parties), "counterparties": made, "spellings": len(spellings), "merged_spellings": merged,
             "relationships": len(edges), "open_questions": len(found), "customers_as_counterparties": len(owner_of)}
 

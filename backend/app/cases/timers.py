@@ -1,7 +1,7 @@
 """Stage clocks. A sweep finds breaches and applies the escalation a case type declares.
 
-In this build the sweep runs on demand and when work lists load. The target architecture gives every
-case a durable timer in the workflow engine, so a breach fires at the moment it happens.
+The sweep runs on demand and when work lists load. With TEMPORAL_URL set, every open case also has a durable
+timer in Temporal (app/durable), so a breach fires at the moment it happens whether or not anyone is looking.
 """
 from __future__ import annotations
 
@@ -17,24 +17,33 @@ from ..visibility import system_work
 PRIORITIES = ["low", "medium", "high", "critical"]
 
 
+def breach_case(s: Session, c: Case, at: datetime) -> bool:
+    """Apply a case's escalation if its stage clock has run out and this has not been done for this stage yet.
+
+    Safe to call twice, from the sweep and from a durable timer alike: the stage it was applied to is marked on the case.
+    """
+    if c.closed is not None:
+        return False
+    defn = definition(c)
+    due = stage_due(c, defn)
+    if due is None or due > at or (c.data or {}).get("stage_breach") == c.state_entered.isoformat():
+        return False
+    esc = defn.get("escalation", {})
+    before = c.priority
+    if esc.get("raise_priority", True) and c.priority != "critical":
+        c.priority = PRIORITIES[PRIORITIES.index(c.priority) + 1]
+    c.data = dict(c.data or {}) | {"stage_breach": c.state_entered.isoformat()}
+    record(s, c.id, "timers", "system", "sla.stage_breached",
+           {"stage": c.state, "due": due.isoformat(), "priority_from": before, "priority_to": c.priority,
+            "notify": esc.get("notify", "team_lead")}, ts=at)
+    return True
+
+
 @system_work
 def run_timers(s: Session, at: datetime | None = None) -> dict:
     at = at or now()
-    breached = overdue = 0
-    for c in s.scalars(select(Case).where(Case.closed.is_(None))):
-        defn = definition(c)
-        due = stage_due(c, defn)
-        if due is None or due > at or (c.data or {}).get("stage_breach") == c.state_entered.isoformat():
-            continue
-        esc = defn.get("escalation", {})
-        before = c.priority
-        if esc.get("raise_priority", True) and c.priority != "critical":
-            c.priority = PRIORITIES[PRIORITIES.index(c.priority) + 1]
-        c.data = dict(c.data or {}) | {"stage_breach": c.state_entered.isoformat()}
-        record(s, c.id, "timers", "system", "sla.stage_breached",
-               {"stage": c.state, "due": due.isoformat(), "priority_from": before, "priority_to": c.priority,
-                "notify": esc.get("notify", "team_lead")}, ts=at)
-        breached += 1
+    overdue = 0
+    breached = sum(breach_case(s, c, at) for c in s.scalars(select(Case).where(Case.closed.is_(None))))
     for r in s.scalars(select(InfoRequest).where(InfoRequest.status == "open", InfoRequest.due < at)):
         c = s.get(Case, r.case_id)
         flagged = set((c.data or {}).get("requests_overdue", []))

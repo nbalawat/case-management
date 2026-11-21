@@ -11,6 +11,8 @@ type Backbone = {
   outbox: { waiting: number | null; oldest_waiting: string | null; published: number | null; last_published: string | null; total: number; by_type: { type: string; count: number }[] }
   lake: { connected: boolean; note: string; tables: { name: string; rows: number; commits: number; last_commit: string | null }[] }
   search: { engine: string; names: number | null; note: string }
+  graph: { engine: string; entities: number | null; links: number | null; note: string }
+  clocks: { engine: string; connected: boolean; clocks: number | null; note: string }
   stream_jobs: { engine: string; connected: boolean; note: string; jobs: { job: string; title: string; source: string; state: string; since: string | null; also_in_application: boolean }[] }
   topics: { out: string[]; in: string[]; dead_letter: string }; streams: Stream[]
 }
@@ -54,6 +56,10 @@ function BackboneCard() {
       {data.lake.connected && <p className="muted small">{data.lake.note}. Each message from the bus is written once, and a table can be read as it stood at any earlier commit.</p>}
       <h4>Name search <Pill tone={data.search.engine === 'opensearch' ? 'good' : 'neutral'}>{data.search.engine === 'opensearch' ? 'OpenSearch' : 'Database'}</Pill></h4>
       <p className="muted">{data.search.note}{data.search.names !== null && ` ${data.search.names.toLocaleString()} customers and counterparties indexed for this client.`}</p>
+      <h4>Payment network <Pill tone={data.graph.engine === 'age' ? 'good' : 'neutral'}>{data.graph.engine === 'age' ? 'Apache AGE' : 'Database'}</Pill></h4>
+      <p className="muted">{data.graph.note}{data.graph.entities !== null && data.graph.links !== null && ` ${data.graph.entities.toLocaleString()} customers and counterparties and ${data.graph.links.toLocaleString()} relationships held for this client.`}</p>
+      <h4>Stage clocks <Pill tone={data.clocks.connected ? 'good' : 'neutral'}>{data.clocks.engine === 'temporal' ? (data.clocks.connected ? 'Temporal' : 'Temporal not answering') : 'Sweep'}</Pill></h4>
+      <p className="muted">{data.clocks.note}{data.clocks.clocks !== null && ` ${data.clocks.clocks.toLocaleString()} running for this client now.`}</p>
       <h4>Stream detection <Pill tone={data.stream_jobs.connected ? 'good' : 'neutral'}>{data.stream_jobs.engine === 'flink' ? (data.stream_jobs.connected ? 'Apache Flink' : 'Flink not answering') : 'In the application'}</Pill></h4>
       {data.stream_jobs.jobs.length === 0 ? <p className="muted">{data.stream_jobs.note}</p> : (
         <table><thead><tr><th>Job</th><th>State</th><th>Running since</th><th>Alerts arrive as</th></tr></thead>

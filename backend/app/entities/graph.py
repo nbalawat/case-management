@@ -11,6 +11,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..domain.models import Case, Entity, EntityEdge, Party
+from ..tenancy import tenant_of
+from . import graphstore
 from .resolution import customer_entity_id
 
 
@@ -82,9 +84,8 @@ def related_customers(s: Session, party_id: str, limit: int = 12) -> list[dict]:
     return out[:limit]
 
 
-def path(s: Session, a: str, b: str, max_hops: int = 6) -> list[dict] | None:
-    """The shortest chain of payments linking two customers, ignoring common counterparties. None if there is none within reach."""
-    start, goal = customer_entity_id(a), customer_entity_id(b)
+def _route_in_database(s: Session, start: str, goal: str, max_hops: int) -> list[str] | None:
+    """Breadth first over every relationship the client has. Fine for a laptop; an engine is the answer past that."""
     hubs = {e.id for e in s.scalars(select(Entity).where(Entity.kind == "counterparty")) if "common" in e.flags}
     links: dict[str, set[str]] = defaultdict(set)
     for e in s.scalars(select(EntityEdge)):
@@ -112,5 +113,32 @@ def path(s: Session, a: str, b: str, max_hops: int = 6) -> list[dict] | None:
     while node is not None:
         chain.append(node)
         node = came[node]
+    return chain[::-1]
+
+
+def _route(s: Session, start: str, goal: str, max_hops: int) -> list[str] | None:
+    """Ask the graph engine when there is one; if it is down, slow or not yet built, answer from the database."""
+    engine = graphstore.current()
+    if engine is not None and start != goal:
+        try:
+            return engine.route(tenant_of(s), start, goal, max_hops)
+        except Exception:  # noqa: BLE001  an engine outage must not take the network view away
+            graphstore.log.warning("Graph engine could not answer; finding the route in the database", exc_info=True)
+    return _route_in_database(s, start, goal, max_hops)
+
+
+def path(s: Session, a: str, b: str, max_hops: int = 6) -> list[dict] | None:
+    """A shortest chain of payments linking two customers, ignoring common counterparties. None if there is none within reach.
+
+    Whoever finds the route, the entities on it are read here through the caller's session.
+    """
+    chain = _route(s, customer_entity_id(a), customer_entity_id(b), max_hops)
+    if chain is None:
+        return None
     ents = {e.id: e for e in s.scalars(select(Entity).where(Entity.id.in_(chain)))}
-    return [{"id": i, "kind": ents[i].kind, "label": ents[i].name, "party_id": ents[i].party_id, "flags": ents[i].flags} for i in reversed(chain)]
+    if any(i not in ents for i in chain):  # the engine is behind the database: an entity on its route is gone
+        chain = _route_in_database(s, customer_entity_id(a), customer_entity_id(b), max_hops)
+        if chain is None:
+            return None
+        ents = {e.id: e for e in s.scalars(select(Entity).where(Entity.id.in_(chain)))}
+    return [{"id": i, "kind": ents[i].kind, "label": ents[i].name, "party_id": ents[i].party_id, "flags": ents[i].flags} for i in chain]
