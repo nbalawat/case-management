@@ -7,7 +7,7 @@ type Item = { name: string; status: string; note: string; kind?: string }
 type Integrations = { connectors: Item[]; interfaces: Item[] }
 type Stream = { stream: string; label: string; topic: string; received: number; loaded: number; duplicates: number; rejected: number; alerts: number; last_at: string | null; last_reject: string }
 type Backbone = {
-  bus: { kind: string; note: string; workers: boolean }; publisher: string
+  bus: { kind: string; note: string; workers_in_api: boolean }; publisher: string
   outbox: { waiting: number | null; oldest_waiting: string | null; published: number | null; last_published: string | null; total: number; by_type: { type: string; count: number }[] }
   lake: { connected: boolean; note: string; tables: { name: string; rows: number; commits: number; last_commit: string | null }[] }
   search: { engine: string; names: number | null; note: string }
