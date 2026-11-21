@@ -10,7 +10,7 @@ FROM python:3.13-slim
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock backend/
-RUN cd backend && uv sync --frozen --no-dev
+RUN cd backend && uv sync --frozen --no-dev --group llm
 COPY backend/ backend/
 COPY --from=ui /ui/dist frontend/dist
 RUN mkdir -p data/samples

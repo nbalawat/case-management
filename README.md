@@ -5,10 +5,12 @@ maps it to a canonical model, runs monitoring scenarios, groups alerts into case
 investigation, and routes the work through configurable workflows to the right people, under role, four-eyes
 and stage-clock controls, with a complete audit trail. It runs many clients on one platform: each has its own
 people, access policy, workflows and data, and a new client is onboarded from a template in about a minute.
+Anyone can ask a question about the caseload in plain language and get an answer that names the cases behind it.
 
 This is a demo build. It is meant to be shown, not deployed. All data is synthetic.
 
 ![My work](docs/screenshots/01-my-work.png)
+![Ask anything](docs/screenshots/15-ask.png)
 ![Workflow designer](docs/screenshots/08-workflows.png)
 ![Operator console](docs/screenshots/14-operator-console.png)
 
@@ -78,6 +80,30 @@ each says who to be. Steps 10 to 12 show the platform running several clients.
     configuration, in counts only. Onboard a new client: choose a template, name it, and it is live with its
     own copy of the policy and a small set of sample data. Suspend it and its sign-ins stop at once.
 
+13. **Ask anything, as Tara Singh at Meridian.** Open Ask and click "Which scenario produces the most SARs?".
+    The answer leads with the figure, charts the breakdown, and links the cases behind it; "How this was
+    answered" shows each lookup and its filters. Ask "Who has the most open work?", then switch to Ana Ruiz
+    (an analyst) and ask it again: her role does not hold the team view, so the answer says so, and "What
+    should I work on first?" lists only her own cases. Switch client and the same question gets that
+    client's answer. Every question lands in the question record.
+
+### Connecting a model to Ask
+
+With no key the Ask page uses an offline planner: a phrase matcher that understands common questions (the
+suggested ones and their variations), answers one question at a time, and says so when it cannot place a
+question. To answer free-form and follow-up questions with a model:
+
+```bash
+export ANTHROPIC_API_KEY=...        # then start the app as usual
+export ASK_MODEL=claude-opus-5-5    # optional; this is the default
+```
+
+The model never sees the database. It is handed five read-only lookups (breakdown, case list, case detail,
+customer, team workload) that run as the person asking, inside their client, and it gets only the lookups that
+person's role may use. Case ids in an answer are checked against what the lookups returned before they become
+links. `ASK_PROVIDER=offline` forces the planner even when a key is set. Other providers (a model in the
+client's own cloud, a local model) plug in behind the same interface in `backend/app/ask/gateway.py`.
+
 To show overlay mode (sitting on top of an incumbent monitoring engine), push an alert from a terminal and
 watch a case appear:
 
@@ -104,6 +130,7 @@ The full API reference is at <http://localhost:8000/docs>.
 | Clients | Shared database with every row keyed by client. Isolation is enforced in the data layer: queries are filtered and writes stamped automatically, and statements that cannot be filtered are refused. Per-client case types and workflow versions. Templates, one-step onboarding, suspend, and an operator console that shows counts only. | Postgres row-level security as a second layer, dedicated databases or stamps per client (the choice is recorded, not acted on), per-client encryption keys, usage metering, offboarding and data export |
 | Information requests | Requests to customer, branch or relationship manager with due dates and overdue flags | Actually sending them (email, portal, secure message) |
 | Agents | Multi-step investigation with cited findings, recommendation and draft narrative. Agents never move a case. | A language model. The provider is an offline rule-and-template implementation behind the `LLMProvider` interface, so the demo runs with no keys and no data leaving the laptop. |
+| Ask anything | Plain-language questions answered through a fixed vocabulary of 31 fields and 9 measures, never SQL. Answers are limited to the asker's client, team workload follows the client's own access policy, cited cases are verified, and every question is recorded. Hosted-model provider with tool use, plus an offline planner so the demo needs no key. | The hosted-model path has only been run against a stand-in client here, never a live model: its request shape and reply handling are tested, answer quality is not. Checking figures in an answer (only case ids are checked). Streaming. Per-role limits on which cases a person may see (everyone at a client sees all of its cases, as on the Cases page). Questions about transactions outside alerted activity. Spend limits. |
 | Filing | A hashed JSON filing record | FinCEN BSA XML, goAML |
 | Identity | Client and person pickers (no login). Anyone can pick any client or the operator console. | SSO; the client and person come from the token |
 | Scale | Measured single-process throughput on your machine | Anything distributed. Do not quote the laptop figure as a production figure. |
@@ -119,6 +146,8 @@ backend/app/
   cases/       case type registry, transition guards, conditions, tasks, assignment,
                information requests, timers, QA sampling, publishing
   agents/      provider interface, investigation steps, orchestrator
+  ask/         ask anything: query vocabulary, read-only tools, model gateway and providers,
+               answer loop with citation checks and the question record
   reporting/   dashboard metrics
   tenancy.py   client isolation: session binding, automatic filtering and stamping
   tenants/     client registry, templates, onboarding, access policy administration
@@ -130,7 +159,7 @@ frontend/src/         React + TypeScript UI
 ```
 
 Each replaceable part sits behind a small interface (`Connector`, `MappingProposer`, `LLMProvider`, the scenario
-registry), so later milestones swap implementations without touching callers. The database is chosen by
+registry, and `ChatModel` for the model that answers questions), so later milestones swap implementations without touching callers. The database is chosen by
 `DATABASE_URL`; nothing in the code is tied to a cloud.
 
 ## Milestones
@@ -144,9 +173,9 @@ onboarding journeys, QA, the workflow diagram and editor.
 **3. Multi-tenancy (done).** Isolated data per client, per-client access policy and workflow versions, templates
 and onboarding, a client switcher and an operator console. Tested with ten clients side by side.
 
-**4. Ask anything.** Agents that answer questions across the whole caseload in plain language, through
-governed queries, citing the cases behind every figure and limited to what the asker may see. Brings the model
-gateway with hosted and local models.
+**4. Ask anything (done).** Questions across the whole caseload in plain language, answered through governed
+lookups, citing the cases behind them and limited to what the asker may see. A model gateway with a hosted
+provider and an offline planner. Still to come here: a live-model evaluation run, streaming, and a local model.
 
 **5. Data pipelines.** Sources in object storage (S3, ADLS, GCS) behind one cloud-neutral interface, scheduled
 pipelines, saved mappings per source, data-quality gates and lineage. File upload remains only for samples.

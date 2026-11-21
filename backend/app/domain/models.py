@@ -216,3 +216,23 @@ class AccessPolicyVersion(TenantScoped, Base):
     published: Mapped[datetime] = mapped_column(DateTime, default=now)
     note: Mapped[str] = mapped_column(Text, default="")
     __table_args__ = (Index("ux_access_policy_version", "tenant_id", "version", unique=True),)
+
+
+class AskLog(TenantScoped, Base):
+    """One question put to "ask anything": who asked, what was looked up, what was answered. Never updated."""
+
+    __tablename__ = "ask_log"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(40), index=True)
+    asked_by: Mapped[str] = mapped_column(String(40), index=True)
+    role: Mapped[str] = mapped_column(String(40))
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(12), default="answered")  # answered | refused | incomplete | failed
+    provider: Mapped[str] = mapped_column(String(80), default="")
+    steps: Mapped[list] = mapped_column(JSON, default=list)  # each lookup: tool, inputs, outcome
+    cited: Mapped[list] = mapped_column(JSON, default=list)
+    unverified: Mapped[list] = mapped_column(JSON, default=list)
+    usage: Mapped[dict] = mapped_column(JSON, default=dict)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)

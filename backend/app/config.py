@@ -18,6 +18,10 @@ class Settings:
     llm_provider: str = os.getenv("LLM_PROVIDER", "mock")
     # Demo convenience: the client used when a request names none. Production takes the client from the sign-in token.
     default_tenant: str = os.getenv("DEFAULT_TENANT", "meridian")
+    # "Ask anything": auto uses the hosted model when ANTHROPIC_API_KEY is set, otherwise the offline planner.
+    ask_provider: str = os.getenv("ASK_PROVIDER", "auto")
+    ask_model: str = os.getenv("ASK_MODEL", "claude-opus-5-5")
+    ask_effort: str = os.getenv("ASK_EFFORT", "medium")
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
 
 

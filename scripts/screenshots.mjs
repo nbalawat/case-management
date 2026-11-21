@@ -45,6 +45,21 @@ await page.getByRole('button', { name: 'Load and run detection' }).waitFor()
 await page.getByRole('button', { name: 'Load and run detection' }).click()
 await page.getByText('Count reconciliation').waitFor(); await page.waitForLoadState('networkidle'); await page.waitForTimeout(400)
 await shot('11-data-onboarding')
+// Ask anything: a question answered with the cases behind it.
+await as('tara')
+await go('/ask')
+await page.getByRole('button', { name: 'Which scenario produces the most SARs?' }).click()
+await page.getByText('How this was answered').waitFor(); await page.waitForTimeout(400)
+await page.evaluate(() => window.scrollTo(0, 0)); await page.waitForTimeout(200)
+await page.screenshot({ path: `${out}15-ask.png` })
+await as('ana')
+await go('/ask')
+for (const q of ['Who has the most open work?', 'What should I work on first?']) {
+  await page.getByLabel('Your question').fill(q)
+  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+  await page.getByText('Looking through').waitFor({ state: 'detached' }); await page.waitForTimeout(300)
+}
+await shot('16-ask-as-analyst')
 // A second client: different people, roles and workloads, and its own access policy to edit.
 await as('joy', 'kestrel')
 await go('/'); await shot('12-second-client-my-work')

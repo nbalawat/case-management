@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { api, getPersonaId, getTenantId, isOperator, OPERATOR, setPersonaId, setTenantId, type Persona } from './api'
 import MyWork from './pages/MyWork'
+import Ask from './pages/Ask'
 import Overview from './pages/Overview'
 import Cases from './pages/Cases'
 import CaseWorkspace from './pages/CaseWorkspace'
@@ -28,7 +29,7 @@ export const usePersona = () => useContext(PeopleContext).persona
 export const useNameOf = () => useContext(PeopleContext).nameOf
 
 const NAV = [
-  ['/', 'My work'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/team', 'Team'], ['/workflows', 'Workflows'],
+  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/team', 'Team'], ['/workflows', 'Workflows'],
   ['/access', 'Access'], ['/onboarding', 'Data'], ['/platform', 'Integrations'],
 ]
 
@@ -102,6 +103,7 @@ export default function App() {
       {meta && people.persona && <main key={pid}>
         <Routes>
           <Route path="/" element={<MyWork />} />
+          <Route path="/ask" element={<Ask />} />
           <Route path="/overview" element={<Overview />} />
           <Route path="/cases" element={<Cases />} />
           <Route path="/cases/:id" element={<CaseWorkspace />} />

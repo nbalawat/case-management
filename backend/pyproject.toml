@@ -13,7 +13,9 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "httpx>=0.27"]
+dev = ["pytest>=8", "httpx>=0.27", {include-group = "llm"}]
+# The hosted model behind "ask anything". Without it the app uses the offline planner.
+llm = ["anthropic>=1.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
