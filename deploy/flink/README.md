@@ -65,6 +65,9 @@ Run for real: the rendered job on a local Flink 2.1.3 cluster with the Kafka con
 Kafka 3.9.1 broker, through to an open case (`backend/tests/test_flink.py`, seven tests, set `TEST_KAFKA_URL`,
 `TEST_FLINK_URL` and `TEST_FLINK_HOME`).
 
-Never run: the Docker image and Compose services here, Flink on Kubernetes, a managed Flink service, checkpoints
+Run once, on a MacBook under Docker: the image and Compose services here (`make streaming`, then
+`make flink-job CLIENT=meridian`), with three test deposits through to one Flink alert in a case.
+
+Never run: Flink on Kubernetes, a managed Flink service, checkpoints
 to object storage, recovery from a failure, or any volume beyond a handful of records. These tests are not in the
 CI workflow.
