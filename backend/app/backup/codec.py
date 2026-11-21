@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import date, datetime, time
 
-from sqlalchemy import Column, DateTime, Integer, Table
+from sqlalchemy import Column, Date, DateTime, Integer, Table, Time
 
 _MOD = 2**256
 
@@ -17,7 +17,7 @@ def surrogate(table: Table) -> str | None:
 
 
 def _out(v):
-    if isinstance(v, (datetime, date)):
+    if isinstance(v, (datetime, date, time)):
         return v.isoformat()
     return v
 
@@ -27,13 +27,15 @@ def encode(row: dict) -> str:
 
 
 def decoder(table: Table):
-    stamps = {c.name for c in table.columns if isinstance(c.type, DateTime)}
+    # Date and Time are checked before DateTime is relevant: neither is a subclass of the other in SQLAlchemy.
+    parse = {c.name: (datetime.fromisoformat if isinstance(c.type, DateTime) else date.fromisoformat if isinstance(c.type, Date)
+                      else time.fromisoformat) for c in table.columns if isinstance(c.type, (DateTime, Date, Time))}
 
     def decode(line: str) -> dict:
         row = json.loads(line)
-        for k in stamps & row.keys():
+        for k in parse.keys() & row.keys():
             if row[k] is not None:
-                row[k] = datetime.fromisoformat(row[k])
+                row[k] = parse[k](row[k])
         return row
     return decode
 

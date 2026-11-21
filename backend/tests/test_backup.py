@@ -133,3 +133,18 @@ def _console(client):
     assert drill["ok"]
     listed = client.get("/api/platform/backups", headers=op).json()
     assert listed["location"] == "file" and len(listed["backups"]) == 2 and listed["drills"][0]["ok"]
+
+
+def test_rows_round_trip_with_every_kind_of_time():
+    """Dates, times of day and timestamps come back as the types their columns expect, not as text."""
+    from datetime import date, datetime, time
+
+    from sqlalchemy import Column, Date, DateTime, Integer, MetaData, String, Table, Time
+
+    from app.backup.codec import decoder, encode
+
+    t = Table("t", MetaData(), Column("id", Integer, primary_key=True), Column("born", Date), Column("opens", Time),
+              Column("at", DateTime), Column("name", String))
+    row = {"id": 1, "born": date(2002, 8, 26), "opens": time(9, 30), "at": datetime(2026, 11, 21, 19, 40, 5), "name": "x"}
+    assert decoder(t)(encode(row)) == row
+    assert decoder(t)(encode(row | {"born": None, "opens": None, "at": None})) == row | {"born": None, "opens": None, "at": None}
