@@ -18,8 +18,10 @@ export const Avatar = ({ name }: { name: string }) =>
  * Who you are and where. In the demo it also switches person and client, which a real deployment takes from the
  * sign-in token; with single sign-on it only shows who signed in, and signs out.
  */
-export default function IdentityMenu({ persona, people, clientId, clientName, clients, demo, theme, onTheme, onPerson, onClient, onSignOut }: {
+export default function IdentityMenu({ persona, people, clientId, clientName, clients, demo, theme, onTheme, onPerson, onClient, onSignOut, workAt }: {
   persona: Persona; people: Persona[]; clientId: string; clientName: string; clients: Client[]; demo: boolean
+  /** Signed-in provider staff: the clients they are engaged at, to move between. */
+  workAt?: Client[]
   theme: ThemeChoice; onTheme: (t: ThemeChoice) => void; onPerson: (id: string) => void; onClient: (id: string) => void; onSignOut?: () => void
 }) {
   return (
@@ -45,11 +47,19 @@ export default function IdentityMenu({ persona, people, clientId, clientName, cl
           <DropdownMenuSeparator />
           <DropdownMenuLabel>View as (demo)</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={persona.id} onValueChange={onPerson}>
-            {people.map(p => (
+            {people.filter(p => p.org !== 'provider').map(p => (
               <DropdownMenuRadioItem key={p.id} value={p.id}>
                 <span className="min-w-0 flex-1 truncate">{p.name}</span><span className="max-w-[120px] truncate text-xs text-muted">{p.title}</span>
               </DropdownMenuRadioItem>))}
           </DropdownMenuRadioGroup>
+          {people.some(p => p.org === 'provider') && <>
+            <DropdownMenuLabel>Managed-service team (provider staff)</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={persona.id} onValueChange={onPerson}>
+              {people.filter(p => p.org === 'provider').map(p => (
+                <DropdownMenuRadioItem key={p.id} value={p.id}>
+                  <span className="min-w-0 flex-1 truncate">{p.name}</span><span className="max-w-[120px] truncate text-xs text-muted">{p.title.split(' · ')[0]}</span>
+                </DropdownMenuRadioItem>))}
+            </DropdownMenuRadioGroup></>}
           <DropdownMenuSeparator />
           <DropdownMenuLabel>Client</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={clientId} onValueChange={onClient}>
@@ -57,6 +67,12 @@ export default function IdentityMenu({ persona, people, clientId, clientName, cl
           </DropdownMenuRadioGroup>
           <DropdownMenuItem onSelect={() => onClient(OPERATOR)}><Building2 size={15} /> All clients · operator console</DropdownMenuItem>
         </>}
+        {!demo && workAt && workAt.length > 1 && <>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Work at</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={clientId} onValueChange={onClient}>
+            {workAt.map(c => <DropdownMenuRadioItem key={c.id} value={c.id}>{c.name}</DropdownMenuRadioItem>)}
+          </DropdownMenuRadioGroup></>}
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Appearance</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={theme} onValueChange={v => onTheme(v as ThemeChoice)}>

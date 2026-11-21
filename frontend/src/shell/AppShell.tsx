@@ -57,6 +57,10 @@ export default function AppShell({ clientName, people, sso, sample, identity, on
           </div>)}
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar current={current} detail={!!current && current.path !== pathname && pathname !== '/'} onMenu={() => setDrawer(true)} onPalette={openPalette} identity={identity(theme)} />
+          {persona?.org === 'provider' && (
+            <div className="sample engagement" role="note">
+              You are working at <b>{clientName}</b> under a managed-service engagement, as {persona.title.split(' · ')[0]}. {clientName} keeps a record of every page you open and every change you make.
+            </div>)}
           {sample && <DemoBanner client={clientName} sso={sso} />}
           <main id="content" key={persona?.id}>
             <Suspense fallback={<Loading />}>
