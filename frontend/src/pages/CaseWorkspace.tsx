@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { usePersona } from '../shell/people'
 import { useApi } from '../useApi'
 import { Loading } from '../components/ui'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/kit/tabs'
+import { TabCount } from '../components/layout/PageTabs'
+import { useTabParam } from '../components/layout/useTabParam'
 import FlowOfFunds from '../components/FlowOfFunds'
 import EvidenceCard from '../components/kyc/EvidenceCard'
 import type { Kyc } from '../components/kyc/types'
@@ -33,7 +35,6 @@ type Tab = (typeof TABS)[number]
 export default function CaseWorkspace() {
   const { id } = useParams()
   const persona = usePersona()
-  const [params, setParams] = useSearchParams()
   const { data, error, reload } = useApi<CaseDetail>(`/cases/${id}`, [persona?.id])
   const kyc = useApi<Kyc>(data ? `/customers/${data.party.id}/kyc` : null, [persona?.id])
   const [note, setNote] = useState('')
@@ -41,8 +42,7 @@ export default function CaseWorkspace() {
   const [focus, setFocus] = useState<string[]>([])
   const [request, setRequest] = useState<RequestDraft>(NEW_REQUEST)
   const [tick, setTick] = useState(0) // bumps after every action so the side panels reload too
-  const tab: Tab = TABS.includes(params.get('tab') as Tab) ? (params.get('tab') as Tab) : 'overview'
-  const goTo = (t: Tab) => setParams(p => { if (t === 'overview') p.delete('tab'); else p.set('tab', t); return p }, { replace: true })
+  const [tab, goTo] = useTabParam(TABS) as [Tab, (t: Tab) => void]
   if (!data) return <Loading error={error} />
   const { case: c, party } = data
 
@@ -52,7 +52,6 @@ export default function CaseWorkspace() {
   const changed = (m: string) => { setMsg(m); setTick(n => n + 1); reload() }
   const cite = (ids: string[]) => { setFocus(ids); goTo('transactions') }
   const openRequests = data.requests.filter(r => r.status !== 'answered').length
-  const count = (n: number) => (n > 0 ? <span className="tab-count">{n}</span> : null)
 
   return (
     <>
@@ -61,10 +60,10 @@ export default function CaseWorkspace() {
         <Tabs value={tab} onValueChange={v => goTo(v as Tab)} className="case-main">
           <TabsList aria-label="Case sections">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="transactions">Transactions {count(data.transactions.length)}</TabsTrigger>
+            <TabsTrigger value="transactions">Transactions<TabCount n={data.transactions.length} /></TabsTrigger>
             <TabsTrigger value="customer">Customer{party.pep && <span className="tab-count warn">PEP</span>}</TabsTrigger>
             <TabsTrigger value="narrative">Narrative{!c.drafted_by && c.narrative && <span className="tab-count">draft</span>}</TabsTrigger>
-            <TabsTrigger value="requests">Requests {count(openRequests)}</TabsTrigger>
+            <TabsTrigger value="requests">Requests<TabCount n={openRequests} /></TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
           </TabsList>
 

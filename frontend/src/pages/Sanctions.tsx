@@ -6,12 +6,10 @@ import { useNameOf, usePeople } from '../App'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
 import { HoldRow, type Hold } from '../components/HoldsCard'
 import { EX_TONE, type Exemption } from '../components/ScreeningCard'
+import { ListCard } from '../components/sanctions/lists'
+import type { List } from '../components/sanctions/types'
+import PageTabs from '../components/layout/PageTabs'
 
-type Entry = { id: string; ref: string; name: string; aliases: string[]; kind: string; countries: string[]; programs: string[]; added_version: number; removed_version: number | null }
-type List = {
-  code: string; name: string; kind: string; source: string; version: number; active: boolean; updated_by: string; updated_at: string; entries: number; removed: number
-  history: { version: number; at: string; by: string; added: number; changed: number; removed: number; note: string }[]; rows: Entry[]; more: number
-}
 type Request = {
   id: string; reference: string; received: string; due: string; status: string; subjects_count: number; overdue: boolean; possible: number; pending: number; confirmed: number
   searched_at: string | null; responded_at: string | null; responded_by: string | null; response: null | { positive: boolean; late: boolean; subjects: { no: number; name: string; customers: number; transactions: number }[] }
@@ -20,7 +18,6 @@ type Request = {
 type Subject = { no: number; name: string; kind: string; aliases: string[]; dob: string; identifiers: string; country: string }
 type Match = { id: string; subject_no: number; where: string; name: string; score: number; basis: string; party_ids: string[]; decision: string; decided_by: string | null; note: string }
 type Detail = Request & { subjects: Subject[]; matches: Match[]; can_handle: boolean }
-type Rescreen = { customers_screened: number; customer_hits: number; payment_hits: number; cases: string[] }
 type Desk = {
   lists: List[]; can_manage: boolean; can_decide: boolean; can_report: boolean; me: string; exemptions: Exemption[]; holds: Hold[]
   reports_owed: { hold_id: string; case_id: string; party_id: string; party_name: string; kind: string; amount: number; decided_at: string; due: string; overdue: boolean }[]
@@ -29,73 +26,6 @@ type Desk = {
 }
 const METHODS = [{ id: 'call_back', label: 'Call back' }]
 const REQ: Record<string, [string, string]> = { received: ['warning', 'Not yet searched'], searched: ['human', 'Searched, deciding matches'], responded: ['good', 'Answered: match reported'], no_match: ['neutral', 'Closed: nothing to report'] }
-const rescreened = (r: Rescreen | null) => (r ? ` Rescreened ${r.customers_screened} customers: ${r.customer_hits} customer and ${r.payment_hits} payment hits, ${r.cases.length} case${r.cases.length === 1 ? '' : 's'} opened or added to.` : '')
-
-function ListCard({ l, canManage, onChange }: { l: List; canManage: boolean; onChange: (m: string) => void }) {
-  const nameOf = useNameOf()
-  const [add, setAdd] = useState<null | { ref: string; name: string; countries: string }>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const run = (p: Promise<{ rescreen?: Rescreen | null }>, ok: string) => p.then(r => { setAdd(null); setErr(null); onChange(ok + rescreened(r.rescreen ?? null)) }).catch(e => setErr(e.message))
-  const toggle = () => { const note = window.prompt(l.active ? 'Why stop screening against this list?' : 'Why screen against this list again?'); if (note) run(api.post(`/sanctions/lists/${l.code}/active`, { active: !l.active, note }), l.active ? 'List switched off.' : 'List switched on.') }
-  const remove = (e: Entry) => { const note = window.prompt(`Why remove ${e.name}?`); if (note) run(api.post(`/sanctions/lists/${l.code}/entries/${encodeURIComponent(e.ref)}/remove`, { note }), `${e.name} removed. It stays in the history.`) }
-  return (
-    <div className="wlist">
-      <div className="hold-h"><b>{l.name}</b><Pill tone={l.kind === 'internal' ? 'human' : 'neutral'}>{l.kind === 'internal' ? "The client's own" : 'Published'}</Pill>
-        {l.active ? <Pill tone="good">Screening</Pill> : <Pill tone="serious">Switched off</Pill>}
-        <span className="muted small">version {l.version} · {l.entries} entries{l.removed ? `, ${l.removed} removed` : ''} · {nameOf(l.updated_by) || l.updated_by}, {fmtDate(l.updated_at)}</span>
-        {canManage && <span className="push"><button className="ghost" onClick={toggle}>{l.active ? 'Switch off' : 'Switch on'}</button>
-          {l.kind === 'internal' && !add && <button onClick={() => setAdd({ ref: '', name: '', countries: '' })}>Add a name…</button>}</span>}</div>
-      {l.source && <div className="small muted">{l.source}</div>}
-      {add && <div className="inline"><input type="search" aria-label="Reference" placeholder="Reference" value={add.ref} onChange={e => setAdd({ ...add, ref: e.target.value })} />
-        <input type="search" aria-label="Name" placeholder="Name" value={add.name} onChange={e => setAdd({ ...add, name: e.target.value })} />
-        <input type="search" aria-label="Countries" placeholder="Countries, e.g. PA; CY" value={add.countries} onChange={e => setAdd({ ...add, countries: e.target.value })} />
-        <button className="primary" disabled={!add.ref.trim() || !add.name.trim()} onClick={() => run(api.put(`/sanctions/lists/${l.code}/entries`, { entry: add }), `${add.name} added.`)}>Add and rescreen</button>
-        <button onClick={() => setAdd(null)}>Cancel</button></div>}
-      {err && <p className="msg" role="alert">{err}</p>}
-      <details><summary className="small">Entries and history</summary>
-        <div className="scroll tall short"><table><thead><tr><th>Reference</th><th>Name</th><th>Countries</th><th>Programme</th><th>Since</th><th /></tr></thead>
-          <tbody>{l.rows.map(e => <tr key={e.id} className={e.removed_version ? 'gone' : ''}>
-            <td>{e.ref}</td><td><b>{e.name}</b>{e.aliases.length > 0 && <div className="muted small">also {e.aliases.join(', ')}</div>}</td><td>{e.countries.join(', ')}</td><td>{e.programs.join(', ')}</td>
-            <td>v{e.added_version}{e.removed_version ? `, removed in v${e.removed_version}` : ''}</td>
-            <td>{canManage && l.kind === 'internal' && !e.removed_version && <button className="ghost" onClick={() => remove(e)}>Remove</button>}</td></tr>)}</tbody></table></div>
-        {l.more > 0 && <p className="muted small">And {l.more} more.</p>}
-        <ol className="custody">{l.history.map((x, i) => <li key={i}><b>Version {x.version}</b> by {nameOf(x.by) || x.by}, {fmtDateTime(x.at)}: {x.added} added, {x.changed} changed, {x.removed} removed{x.note ? `. ${x.note}` : ''}</li>)}</ol>
-      </details>
-    </div>
-  )
-}
-
-function LoadList({ lists, onChange }: { lists: List[]; onChange: (m: string) => void }) {
-  const [code, setCode] = useState(lists.find(l => l.kind === 'sanctions')?.code ?? '')
-  const [fresh, setFresh] = useState({ code: '', name: '', kind: 'sanctions' })
-  const [text, setText] = useState('')
-  const [note, setNote] = useState('')
-  const [err, setErr] = useState<string | null>(null)
-  const isNew = code === ''
-  const read = (f: File | undefined) => f?.text().then(setText)
-  const load = () => api.post<{ version: number; added: string[]; changed: string[]; removed: string[]; exemptions_ended: number; unchanged: boolean; rescreen: Rescreen | null }>(
-    '/sanctions/lists', { ...(isNew ? fresh : { code }), text, note })
-    .then(r => { setText(''); setNote(''); setErr(null); onChange(r.unchanged ? 'That is the version already held. Nothing changed.'
-      : `Version ${r.version} loaded: ${r.added.length} added, ${r.changed.length} changed, ${r.removed.length} removed${r.exemptions_ended ? `, ${r.exemptions_ended} exemption(s) ended` : ''}.${rescreened(r.rescreen)}`) })
-    .catch(e => setErr(e.message))
-  return (
-    <div className="override-form">
-      <h3>Load a list version</h3>
-      <div className="inline wrap">
-        <select aria-label="List" value={code} onChange={e => setCode(e.target.value)}>{lists.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}<option value="">A new list…</option></select>
-        {isNew && <><input type="search" aria-label="Code" placeholder="Code, e.g. eu_consolidated" value={fresh.code} onChange={e => setFresh({ ...fresh, code: e.target.value })} />
-          <input type="search" aria-label="Name" placeholder="Name" value={fresh.name} onChange={e => setFresh({ ...fresh, name: e.target.value })} />
-          <select aria-label="Kind" value={fresh.kind} onChange={e => setFresh({ ...fresh, kind: e.target.value })}><option value="sanctions">Published sanctions list</option><option value="internal">The client's own list</option></select></>}
-        <input type="file" aria-label="File" accept=".csv,.json,text/csv,application/json" onChange={e => read(e.target.files?.[0])} />
-      </div>
-      <textarea rows={4} aria-label="List contents" placeholder={'The list as issued: CSV with a header row (ref,name,aliases,kind,countries,programs,identifiers) or JSON.\nref,name,aliases,countries\nX-1,Orion Freight,Orion; OF Ltd,PA; CY'} value={text} onChange={e => setText(e.target.value)} />
-      <div className="inline"><input type="search" aria-label="Note" placeholder="Note, such as the publisher's issue number" value={note} onChange={e => setNote(e.target.value)} />
-        <button className="primary" disabled={!text.trim()} onClick={load}>Load and rescreen</button></div>
-      <p className="muted small">The load is compared with what is held. Entries no longer on it are marked removed, never deleted, and everyone on the books is screened again.</p>
-      {err && <p className="msg" role="alert">{err}</p>}
-    </div>
-  )
-}
 
 function RequestDetail({ id, onChange }: { id: string; onChange: (m: string) => void }) {
   const { data, reload } = useApi<Detail>(`/sanctions/requests/${id}`)
@@ -198,19 +128,22 @@ export default function Sanctions() {
       <div className="page-h"><h1>Sanctions</h1>
         <p>Payments and customers are screened against the lists in force. A possible match holds the payment; two people end a hold; what is blocked or sent back is reported to the authority. A change to any list screens everyone again.</p></div>
       <div className="kpis">
-        <Kpi label="Payments held" value={c.held} sub={fmtMoney(c.held_amount)} bad={c.held > 0} />
+        <Kpi label="Payments held" value={c.held} sub={fmtMoney(c.held_amount)} bad={c.held > 0} to="/sanctions" />
         <Kpi label="Waiting for a second person" value={c.awaiting_second + c.exemptions_pending} sub={`${c.awaiting_second} hold${c.awaiting_second === 1 ? '' : 's'}, ${c.exemptions_pending} exemption${c.exemptions_pending === 1 ? '' : 's'}`} />
-        <Kpi label="Reports owed to the authority" value={c.reports_owed} sub={c.reports_overdue ? `${c.reports_overdue} overdue` : 'none overdue'} bad={c.reports_overdue > 0} />
-        <Kpi label="Names screened against" value={c.entries} sub={`${data.lists.filter(l => l.active).length} lists in force`} />
-        <Kpi label="False-match exemptions in force" value={c.exemptions_active} />
+        <Kpi label="Reports owed to the authority" value={c.reports_owed} sub={c.reports_overdue ? `${c.reports_overdue} overdue` : 'none overdue'} bad={c.reports_overdue > 0} to="/sanctions?tab=reports" />
+        <Kpi label="Names screened against" value={c.entries} sub={`${data.lists.filter(l => l.active).length} lists in force`} to="/sanctions?tab=lists" />
+        <Kpi label="False-match exemptions in force" value={c.exemptions_active} to="/sanctions?tab=exemptions" />
       </div>
       {msg && <p className="notice" role="status">{msg}</p>}
-      <div className="cols-2">
+      <PageTabs label="Sanctions desk" tabs={[
+        { id: 'held', label: 'Held payments', count: data.holds.length, alert: c.awaiting_second > 0, content: <>
         <Card title={`Held now (${data.holds.length})`}>
           {data.holds.length === 0 ? <p className="empty">Nothing is held for sanctions on the cases you can see.</p>
             : data.holds.map(h => <div key={h.id}><div className="small"><Link to={`/cases/${h.case_id}`}>{h.case_id}</Link> · <Link to={`/customers/${h.party_id}`}>{h.party_id}</Link></div>
               <HoldRow h={h} view={{ can_work: false, can_decide: data.can_decide, me: data.me, methods: METHODS }} onChange={done} /></div>)}
         </Card>
+        </> },
+        { id: 'reports', label: 'Reports owed', count: data.reports_owed.length, alert: c.reports_overdue > 0, content: <>
         <Card title={`Reports owed to the authority (${data.reports_owed.length})`}>
           {data.reports_owed.length === 0 ? <p className="empty">Every blocked or rejected payment has its report.</p> : (
             <table><thead><tr><th>Customer</th><th>What happened</th><th>Report due</th><th /></tr></thead>
@@ -222,11 +155,8 @@ export default function Sanctions() {
               </tr>)}</tbody></table>)}
           <p className="muted small">Prepared reports are checked and sent from <Link to="/filings">Reports</Link>.</p>
         </Card>
-      </div>
-      <Card title="Lists screened against">
-        {data.lists.map(l => <ListCard key={l.code} l={l} canManage={data.can_manage} onChange={done} />)}
-        {data.can_manage ? <LoadList lists={data.lists} onChange={done} /> : <p className="muted small">{holder('manage_lists')} can load a new version or edit the client's own list.</p>}
-      </Card>
+        </> },
+        { id: 'exemptions', label: 'False-match exemptions', count: c.exemptions_pending, alert: c.exemptions_pending > 0, content: <>
       <Card title="False-match exemptions">
         <p className="muted small">A decision that one name is not one list entry, so the same false match is not raised again. Two people, an end date, and it ends by itself if the list entry changes.</p>
         {data.exemptions.length === 0 ? <p className="empty">None on the cases you can see.</p> : (
@@ -244,7 +174,16 @@ export default function Sanctions() {
                 {x.status === 'active' && data.can_decide && <button className="ghost" onClick={() => revoke(x)}>End it</button>}</td>
             </tr>)}</tbody></table></div>)}
       </Card>
-      {data.requests.allowed && <Requests view={data.requests} onChange={done} />}
+        </> },
+        { id: 'requests', label: 'Law enforcement requests', hidden: !data.requests.allowed, count: data.requests.requests.filter(r => r.overdue).length, alert: true,
+          content: <Requests view={data.requests} onChange={done} /> },
+        { id: 'lists', label: 'Lists', content: <>
+      <Card title="Lists screened against" action={data.can_manage ? <Link to="/screening-lists">Load or edit lists in Administration</Link> : undefined}>
+        {data.lists.map(l => <ListCard key={l.code} l={l} canManage={false} onChange={done} />)}
+        {!data.can_manage && <p className="muted small">{holder('manage_lists')} can load a new version or edit the client's own list.</p>}
+      </Card>
+        </> },
+      ]} />
     </>
   )
 }

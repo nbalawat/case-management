@@ -121,7 +121,7 @@ await go(`/customers/${subject.party_id}`); await page.locator('.net svg').waitF
 await page.locator('.net-node.flagged rect').first().hover(); await page.locator('.net').screenshot({ path: `${out}29-payment-network.png` })
 await go(`/counterparties/${firm.id}`); await shot('30-counterparty')
 await go('/entities'); await page.getByRole('button', { name: 'Same' }).first().click()
-await page.getByText('Decisions on record').waitFor(); await shot('31-entities-desk')
+await page.waitForLoadState('networkidle'); await shot('31-entities-desk')
 await page.keyboard.press('/'); await page.getByPlaceholder(/Search cases and customers/).fill('volkof')
 await page.locator('[cmdk-group-heading]', { hasText: 'Counterparties' }).waitFor(); await page.screenshot({ path: `${out}32-search.png` })
 await page.keyboard.press('Escape')
@@ -167,7 +167,7 @@ await go('/reference'); await page.getByText('Reasons for closing a case').waitF
 const kycDesk = await (await fetch(`${base}/api/kyc`, { headers: H })).json()
 const owned = name => kycDesk.structures.find(x => x.party_name.startsWith(name)).party_id
 await as('maya')
-await go('/kyc'); await page.getByText('Lower ratings waiting for a second person').waitFor(); await shot('42-kyc-desk')
+await go('/kyc'); await page.locator('section.card', { hasText: 'Periodic reviews' }).waitFor(); await shot('42-kyc-desk')
 await go(`/customers/${kycDesk.pending_overrides[0].party_id}`); await page.locator('.scale').waitFor()
 await page.locator('section.card', { hasText: 'Risk rating' }).first().screenshot({ path: `${out}43-risk-rating-override.png` })
 await as('ivan')
@@ -192,13 +192,14 @@ await page.locator('section.card', { hasText: 'Flow of funds' }).screenshot({ pa
 const sanctionsDesk = await (await fetch(`${base}/api/sanctions`, { headers: H })).json()
 await as('maya')
 await go('/sanctions'); await page.getByText('Held now').first().waitFor(); await shot('48-sanctions-desk')
+if ((await (await fetch(`${base}/api/sanctions`, { headers: { 'X-Tenant': 'meridian', 'X-Persona': 'maya' } })).json()).can_manage) { await go('/screening-lists'); await page.getByText('Load a new version').waitFor(); await shot('58-screening-lists') }
 const waiting = sanctionsDesk.holds.find(h => h.proposal) ?? sanctionsDesk.holds[0]
 await go(`/cases/${waiting.case_id}`); await page.locator('.hold').first().waitFor(); await page.locator('.match').first().waitFor()
 await page.locator('section.card', { hasText: 'List match' }).first().screenshot({ path: `${out}49-list-match.png` })
 await page.locator('section.card', { has: page.locator('.hold') }).first().screenshot({ path: `${out}50-hold-second-person.png` })
 const fraudDesk = await (await fetch(`${base}/api/fraud`, { headers: H })).json()
 await as('fran')
-await go('/fraud'); await page.locator('.reasons').waitFor(); await shot('51-fraud-desk')
+await go('/fraud'); await page.locator('section.card', { hasText: 'Open disputes (' }).waitFor(); await shot('51-fraud-desk')
 await go(`/cases/${fraudDesk.disputes.find(d => d.status !== 'closed').case_id}`); await page.locator('section.card', { hasText: 'Disputes' }).first().waitFor()
 await page.locator('section.card', { hasText: 'Disputes (' }).first().screenshot({ path: `${out}52-dispute.png` })
 // Detection governance: a change waiting with its backtest, trying settings against the past, and a lookback run.
@@ -212,7 +213,7 @@ await rapid.getByLabel('Hours within which it must leave').fill('24')
 await rapid.getByRole('button', { name: 'Run against the last year' }).click(); await rapid.locator('.backtest').waitFor()
 await shot('54-backtest')
 await as('hugo')
-await go('/detection')
+await go('/detection?tab=lookbacks')
 await page.getByRole('button', { name: /^Run it: raise/ }).click(); await page.locator('.lb-prog').waitFor()
 await page.locator('section.card', { hasText: 'Lookbacks (' }).screenshot({ path: `${out}55-lookback.png` })
 // Management reporting and governance: last month's report, the change register, a recertification and the audit trail.
