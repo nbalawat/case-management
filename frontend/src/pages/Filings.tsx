@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, daysUntil, fmtDate, fmtMoney } from '../api'
 import { useApi } from '../useApi'
 import { usePeople } from '../App'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
+import DataGrid from '../components/grid/DataGrid'
+import { SearchInput } from '../components/grid/controls'
+import type { GridColumn, SortState } from '../components/grid/types'
 
 export type FilingRow = {
   id: string; kind: string; status: string; format_title: string; case_id: string | null; party_id: string; subject: string; amount: number | null
@@ -34,6 +37,23 @@ export default function Filings() {
   const [show, setShow] = useState('open')
   const [busy, setBusy] = useState<string | null>(null)
   const [fail, setFail] = useState<string | null>(null)
+  const [q, setQ] = useState('')
+  const [sorting, setSorting] = useState<SortState>([{ id: 'prepared', desc: true }])
+  const columns = useMemo<GridColumn<FilingRow>[]>(() => [
+    { id: 'kind', accessorFn: f => f.kind, header: 'Report', meta: { label: 'Report', pinned: true }, enableHiding: false,
+      cell: ({ row: { original: f } }) => <><b>{f.kind}</b>{f.amends_id && <Pill>Amendment</Pill>}<div className="muted small">{f.id}</div></> },
+    { id: 'subject', accessorFn: f => f.subject, header: 'Subject', meta: { label: 'Subject' }, cell: ({ row: { original: f } }) => <>{f.subject}<div className="muted small">{f.party_id}</div></> },
+    { id: 'amount', accessorFn: f => f.amount ?? -1, header: 'Amount', meta: { label: 'Amount', align: 'right' }, cell: ({ row: { original: f } }) => (f.amount != null ? fmtMoney(f.amount) : '–') },
+    { id: 'activity', accessorFn: f => f.from ?? '', header: 'Activity', meta: { label: 'Activity', className: 'nowrap' },
+      cell: ({ row: { original: f } }) => (f.from ? `${fmtDate(`${f.from}T12:00:00`)}${f.to && f.to !== f.from ? ` to ${fmtDate(`${f.to}T12:00:00`)}` : ''}` : '–') },
+    { id: 'status', accessorFn: f => f.status, header: 'Status', meta: { label: 'Status' },
+      cell: ({ row: { original: f } }) => <><Status f={f} />{f.status === 'prepared' && f.problems.length > 0 && <div className="muted small">{f.problems.length} problem{f.problems.length === 1 ? '' : 's'}</div>}</> },
+    { id: 'reference', accessorFn: f => f.reference, header: "Regulator's reference", meta: { label: "Regulator's reference" }, cell: ({ row }) => row.original.reference || <span className="muted">–</span> },
+    { id: 'prepared', accessorFn: f => f.prepared_at, header: 'Prepared', meta: { label: 'Prepared' }, cell: ({ row }) => fmtDate(row.original.prepared_at) },
+    { id: 'next', accessorFn: f => f.due ?? f.continuing_review_due ?? '', header: 'Next date', meta: { label: 'Next date' },
+      cell: ({ row: { original: f } }) => (f.status === 'prepared' && f.due ? `Due ${fmtDate(f.due)}` : f.continuing_review_due ? `Review by ${fmtDate(f.continuing_review_due)}` : <span className="muted">–</span>) },
+    { id: 'channel', accessorFn: f => f.channel, header: 'Sent by', meta: { label: 'Sent by', hidden: true }, cell: ({ row }) => row.original.channel || '–' },
+  ], [])
   if (!data) return <Loading error={error} />
   const prepare = (d: CashDay) => {
     setBusy(d.party_id + d.day); setFail(null)
@@ -74,20 +94,9 @@ export default function Filings() {
           {[['open', 'Needs attention'], ['acknowledged', 'Accepted'], ['superseded', 'Replaced'], ['all', 'All']].map(([k, label]) =>
             <button key={k} aria-pressed={show === k} onClick={() => setShow(k)}>{label}</button>)}
         </div>}>
-        {rows.length === 0 ? <p className="empty">No reports here.</p> : (
-          <div className="scroll"><table className="rows">
-            <thead><tr><th>Report</th><th>Subject</th><th className="num">Amount</th><th>Activity</th><th>Status</th><th>Regulator's reference</th><th>Prepared</th><th>Next date</th></tr></thead>
-            <tbody>{rows.map(f => (
-              <tr key={f.id} tabIndex={0} onClick={() => nav(`/filings/${f.id}`)} onKeyDown={e => e.key === 'Enter' && nav(`/filings/${f.id}`)}>
-                <td><b>{f.kind}</b>{f.amends_id && <Pill>Amendment</Pill>}<div className="muted small">{f.id}</div></td>
-                <td>{f.subject}<div className="muted small">{f.party_id}</div></td>
-                <td className="num">{f.amount != null ? fmtMoney(f.amount) : '–'}</td>
-                <td className="nowrap">{f.from ? `${fmtDate(`${f.from}T12:00:00`)}${f.to && f.to !== f.from ? ` to ${fmtDate(`${f.to}T12:00:00`)}` : ''}` : '–'}</td>
-                <td><Status f={f} />{f.status === 'prepared' && f.problems.length > 0 && <div className="muted small">{f.problems.length} problem{f.problems.length === 1 ? '' : 's'}</div>}</td>
-                <td>{f.reference || <span className="muted">–</span>}</td><td>{fmtDate(f.prepared_at)}</td>
-                <td>{f.status === 'prepared' && f.due ? `Due ${fmtDate(f.due)}` : f.continuing_review_due ? `Review by ${fmtDate(f.continuing_review_due)}` : <span className="muted">–</span>}</td>
-              </tr>))}</tbody>
-          </table></div>)}
+        <DataGrid<FilingRow> id="filings" label="Regulatory reports" columns={columns} rows={rows.filter(f => !q || `${f.kind} ${f.subject} ${f.party_id} ${f.id} ${f.reference}`.toLowerCase().includes(q.toLowerCase()))}
+          getRowId={f => f.id} sorting={sorting} onSortingChange={setSorting} onOpen={f => nav(`/filings/${f.id}`)} empty="No reports here."
+          toolbar={<SearchInput value={q} onChange={setQ} placeholder="Subject, report or reference" />} />
         <p className="muted small">An accepted suspicious-activity report is looked at again within 120 days in case the activity has carried on.</p>
       </Card>
     </>

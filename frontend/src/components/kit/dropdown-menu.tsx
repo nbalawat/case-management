@@ -31,3 +31,10 @@ export const DropdownMenuLabel = ({ className, ...p }: ComponentPropsWithoutRef<
 
 export const DropdownMenuSeparator = ({ className, ...p }: ComponentPropsWithoutRef<typeof Menu.Separator>) =>
   <Menu.Separator className={cn('my-1.5 h-px bg-line', className)} {...p} />
+
+export const DropdownMenuCheckboxItem = ({ className, children, ...p }: ComponentPropsWithoutRef<typeof Menu.CheckboxItem>) => (
+  <Menu.CheckboxItem className={cn(row, 'pl-8', className)} {...p}>
+    <Menu.ItemIndicator className="absolute left-2.5 inline-flex"><Check size={15} /></Menu.ItemIndicator>
+    {children}
+  </Menu.CheckboxItem>
+)

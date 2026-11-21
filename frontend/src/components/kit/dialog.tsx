@@ -14,3 +14,13 @@ export const DialogContent = ({ className, children, ...p }: ComponentPropsWitho
       'shadow-[0_24px_64px_rgb(11_15_26/0.28)] outline-none', className)} {...p}>{children}</D.Content>
   </D.Portal>
 )
+
+/** A panel that slides in from the right: quick views and details beside a list, without leaving it. */
+export const SheetContent = ({ className, children, ...p }: ComponentPropsWithoutRef<typeof D.Content>) => (
+  <D.Portal>
+    <D.Overlay className="fixed inset-0 z-50 bg-[rgb(11_15_26/0.30)]" />
+    <D.Content className={cn('sheet fixed inset-y-0 right-0 z-50 flex w-[min(560px,100vw)] flex-col border-l border-line bg-surface text-ink',
+      'shadow-[0_0_48px_rgb(11_15_26/0.25)] outline-none', className)} {...p}>{children}</D.Content>
+  </D.Portal>
+)
+export const DialogClose = D.Close
