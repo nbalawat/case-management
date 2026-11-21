@@ -62,8 +62,12 @@ search:
   url: ""               # opensearch://host:9200. Empty: names are searched in the database.
 
 temporal:
-  url: ""               # temporal://host:7233. Empty: stage clocks are checked by the sweep and no worker is deployed.
-  namespace: default
+  url: ""               # temporal://host:7233. Set: every case runs as a durable workflow on it. Empty: case workflows run in the application, the sweep checks stage clocks, and no worker is deployed.
+  engine: ""            # builtin | temporal. Empty: temporal when url is set.
+  namespaceMode: per_client  # per_client: each client in namespace <namespacePrefix><client id>, registered on first use. shared: everyone in `namespace`.
+  namespacePrefix: caseforge-
+  namespace: default    # the shared namespace (namespaceMode: shared)
+  retentionDays: 30     # how long Temporal keeps a finished workflow's history (the case's own audit trail is in the database, for good)
   taskQueue: caseforge
   worker:
     replicas: 2
