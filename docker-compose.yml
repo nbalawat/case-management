@@ -22,7 +22,10 @@ services:
     build: .
     environment: &app-env
       DATABASE_URL: postgresql+psycopg://caseforge:caseforge-local-only@db:5432/caseforge
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # optional: a model behind the Ask page
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # optional: a model behind the Ask page and the agents
+      OPEN_MODEL_URL: ${OPEN_MODEL_URL:-}        # optional: an open-weight model on vLLM or Ollama, e.g. http://host.docker.internal:11434/v1
+      OPEN_MODEL: ${OPEN_MODEL:-}
+      AGENT_MODE: ${AGENT_MODE:-rules}           # model: the specialist agents run on the model, with the rules as fallback
       EVENT_BUS_URL: ${EVENT_BUS_URL:-}          # empty: events wait in the outbox table
       OUTBOX_PUBLISHER: ${OUTBOX_PUBLISHER:-relay}
       SEARCH_URL: ${SEARCH_URL:-}                # empty: names are searched in the database
