@@ -5,7 +5,10 @@ import App from './App'
 import SignIn, { NoRole } from './pages/SignIn'
 import { OPERATOR, setPersonaId, setTenantId } from './api'
 import { authMode, initAuth } from './auth'
-import './index.css'
+import './styles/app.css'
+import { applyTheme, readTheme } from './shell/theme'
+
+applyTheme(readTheme()) // before the first paint, so a dark-theme user never sees a white flash
 
 const root = createRoot(document.getElementById('root')!)
 

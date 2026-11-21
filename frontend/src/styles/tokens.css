@@ -1,0 +1,17 @@
+/* The dark theme. Light values live with the original styles in index.css; this file only overrides them.
+   The theme is chosen by data-theme on <html> (see shell/theme.ts). */
+:root { color-scheme: light; }
+:root[data-theme=dark] {
+  color-scheme: dark;
+  --bg: #0b0e17; --bg-2: #121726; --surface: #11162a; --ink: #e8ecf6; --soft: #aab2c8; --muted: #8890a8;
+  --line: #242b42; --line-strong: #3a4361; --edge: #4a5372; --quiet: #6b7391; --chip: #1c2238;
+  --brand: #7d9bff; --brand-soft: #1a2448; --on-brand: #0b0e17;
+  --series-1: #5aa0f0; --series-2: #f08a5d;
+  --good: #6fdc9c; --good-bg: #0f2a1b; --warn: #ffcf6b; --warn-bg: #33280c; --warn-soft: #231d10;
+  --serious: #ff9f73; --serious-bg: #3a1d10; --crit: #ff8a80; --crit-bg: #3a1614; --crit-soft: #261315;
+  --agent: #b9a5ff; --agent-bg: #221a40; --tooltip: #000; --code-bg: #05070e; --code-ink: #dfe6ff;
+}
+:root[data-theme=dark] button.primary { color: var(--on-brand); }
+:root[data-theme=dark] .stepper li.now { color: var(--on-brand); }
+:root[data-theme=dark] { --brand-ink: #c9d5ff; }
+:root[data-theme=dark] :is(input, select, textarea):not([type=checkbox]):not([type=radio]) { background-color: var(--surface); color: var(--ink); }
