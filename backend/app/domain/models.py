@@ -978,3 +978,4 @@ from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook 
 from ..ai import usage as _ai_usage  # noqa: E402,F401  registers the model usage table
 from ..views import store as _views  # noqa: E402,F401  registers the grid settings and saved view tables
 from ..notifications import store as _notifications  # noqa: E402,F401  registers the notification table and the hook that fills it
+from ..public import models as _public  # noqa: E402,F401  the public API's tables

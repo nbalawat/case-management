@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api } from '../../../api'
 import { Card } from '../../ui'
 
-type Answer = { question: string; answer: string; draft?: string; cites: string[]; sources: string[]; intent: string }
+type Answer = { question: string; answer: string; draft?: string; cites: string[]; sources: string[]; intent: string; provider?: string; fell_back?: string }
 const ASKS = ['Why is this the recommendation?', 'Summarise this case', 'What are the largest transactions?', 'Draft a request to the customer', 'Draft a closure note']
 
 type Props = {
@@ -35,7 +35,9 @@ export default function Copilot({ caseId, canWork, onCite, onNote, onRequest, on
       {chat.map((a, i) => (
         <div className="answer" key={i}>
           <div className="q">{a.question}</div>
-          <div>{a.answer}</div>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{a.answer}</div>
+          {a.fell_back && <p className="muted small">Answered by the rule-based copilot, because {a.fell_back}.</p>}
+          {a.provider && a.provider !== 'rules' && <p className="muted small">Written by {a.provider}; every figure and record id checked against what it read.</p>}
           {a.draft && <><pre>{a.draft}</pre>
             {a.intent === 'draft_request' && canWork && <button className="ghost" onClick={() => onRequest(a.draft!)}>Use as an information request</button>}
             {a.intent === 'draft_note' && <button className="ghost" onClick={() => onNote(a.draft!)}>Use as my note</button>}</>}
