@@ -133,3 +133,24 @@ def test_with_a_metrics_port_the_api_does_not_serve_metrics_itself(client, monke
     assert client.get("/metrics").status_code == 404
     monkeypatch.delenv("METRICS_PORT")
     assert client.get("/metrics").status_code == 200
+
+
+def test_gauges_before_migrations_log_no_traceback(monkeypatch, caplog):
+    """On a first start the gauges are asked for before the tables exist: that is expected, so it is said quietly."""
+    from sqlalchemy.exc import OperationalError, ProgrammingError
+
+    c = metrics.PlatformCollector()
+    for err in (ProgrammingError("SELECT", {}, Exception('relation "tenant" does not exist')),
+                OperationalError("SELECT", {}, Exception("no such table: tenant"))):
+        monkeypatch.setattr(c, "_read", lambda err=err: (_ for _ in ()).throw(err))
+        c._at = -1e9
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="caseforge.metrics"):
+            got = list(c.collect())
+        assert [m.name for m in got] == ["caseforge_platform_gauges_up"]
+        assert not any(r.exc_info for r in caplog.records) and any("schema" in r.getMessage() for r in caplog.records)
+    monkeypatch.setattr(c, "_read", lambda: (_ for _ in ()).throw(RuntimeError("database gone")))
+    c._at = -1e9
+    with caplog.at_level(logging.INFO, logger="caseforge.metrics"):
+        list(c.collect())
+    assert any(r.exc_info for r in caplog.records if r.levelno == logging.WARNING)  # anything else still warns in full

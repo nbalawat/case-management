@@ -41,6 +41,14 @@ def record_stream(stream: str, tenant: str, received: int, loaded: int, duplicat
     STREAM_BATCH_SECONDS.labels(stream).observe(seconds)
 
 
+def _schema_not_ready(e: Exception) -> bool:
+    """A missing table, as Postgres and SQLite each say it."""
+    from sqlalchemy.exc import OperationalError, ProgrammingError
+
+    text = str(getattr(e, "orig", e)).lower()
+    return isinstance(e, (OperationalError, ProgrammingError)) and ("does not exist" in text or "no such table" in text)
+
+
 class PlatformCollector(Collector):
     """Gauges read from the database at scrape time, cached briefly."""
 
@@ -54,8 +62,11 @@ class PlatformCollector(Collector):
             if time.monotonic() - self._at > CACHE_SECONDS:
                 try:
                     self._cached = self._read()
-                except Exception:  # noqa: BLE001  a database that cannot answer must not take /metrics down with it
-                    log.warning("Platform gauges could not be read", exc_info=True)
+                except Exception as e:  # noqa: BLE001  a database that cannot answer must not take /metrics down with it
+                    if _schema_not_ready(e):  # a first start, before migrations have made the tables: expected, so no traceback
+                        log.info("Platform gauges wait for the database schema (tables not created yet)")
+                    else:
+                        log.warning("Platform gauges could not be read", exc_info=True)
                     up = GaugeMetricFamily("caseforge_platform_gauges_up", "Whether the platform gauges could be read")
                     up.add_metric([], 0)
                     self._cached = [up]
