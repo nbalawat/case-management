@@ -191,4 +191,5 @@ jobs:
           kubectl -n cf-ci get kafka,kafkanodepool,kafkauser,opensearchcluster,externalsecret,certificate -o wide || true
           kubectl -n cf-ci describe pods | tail -150
           kubectl -n opensearch-operator logs deploy/opensearch-operator --tail=80 || true
+          kubectl -n strimzi logs deploy/strimzi-cluster-operator --tail=80 || true
           kubectl get events -A --sort-by=.lastTimestamp | tail -60

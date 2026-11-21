@@ -1,6 +1,7 @@
 {{- if .Values.search.enabled }}
 {{- $s := .Values.search }}
 # A private CA per stamp (cert-manager) signs the OpenSearch HTTP certificate, so the application verifies the server.
+# It is not named <cluster>-ca: the operator keeps its own generated transport CA under that name.
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -12,12 +13,12 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: {{ $s.name }}-ca
+  name: {{ $s.name }}-stamp-ca
   labels: {{- include "data.labels" . | nindent 4 }}
 spec:
   isCA: true
-  commonName: {{ $s.name }}-ca.{{ .Release.Namespace }}
-  secretName: {{ $s.name }}-ca
+  commonName: {{ $s.name }}-stamp-ca.{{ .Release.Namespace }}
+  secretName: {{ $s.name }}-stamp-ca
   duration: 87600h
   privateKey: {algorithm: ECDSA, size: 384}
   issuerRef: {name: {{ $s.name }}-selfsigned, kind: Issuer}
@@ -25,11 +26,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: {{ $s.name }}-ca
+  name: {{ $s.name }}-stamp-ca
   labels: {{- include "data.labels" . | nindent 4 }}
 spec:
   ca:
-    secretName: {{ $s.name }}-ca
+    secretName: {{ $s.name }}-stamp-ca
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -46,7 +47,7 @@ spec:
     - {{ $s.name }}.{{ .Release.Namespace }}
     - {{ $s.name }}.{{ .Release.Namespace }}.svc
     - {{ $s.name }}.{{ .Release.Namespace }}.svc.cluster.local
-  issuerRef: {name: {{ $s.name }}-ca, kind: Issuer}
+  issuerRef: {name: {{ $s.name }}-stamp-ca, kind: Issuer}
 ---
 # The operator's admin client certificate (it applies the security config with it). Required when the HTTP
 # certificate is ours rather than generated. Its DN is listed as adminDn below and never matches a node's.
@@ -62,7 +63,7 @@ spec:
   renewBefore: 360h
   privateKey: {algorithm: RSA, size: 2048, encoding: PKCS8, rotationPolicy: Always}
   usages: [client auth, digital signature, key encipherment]
-  issuerRef: {name: {{ $s.name }}-ca, kind: Issuer}
+  issuerRef: {name: {{ $s.name }}-stamp-ca, kind: Issuer}
 ---
 apiVersion: opensearch.org/v1
 kind: OpenSearchCluster
