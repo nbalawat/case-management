@@ -13,6 +13,7 @@ from .api.access import router as access_router
 from .api.agents import router as agents_router
 from .api.ask import router as ask_router
 from .api.auth import router as auth_router
+from .api.backbone import router as backbone_router
 from .api.deps import signed_in
 from .api.entities import router as entities_router
 from .api.filings import router as filings_router
@@ -48,14 +49,21 @@ async def lifespan(_: FastAPI):
         from .ingest import scheduler
 
         task = asyncio.create_task(scheduler.run_forever())
+    backbone = None
+    if settings.backbone_workers:
+        from .backbone import worker
+
+        backbone = worker.start_in_process()
     yield
     if task:
         task.cancel()
+    if backbone:
+        backbone[1].set()
 
 
-app = FastAPI(title="CaseForge demo API", version="0.14.0", lifespan=lifespan)
+app = FastAPI(title="CaseForge demo API", version="0.17.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
-for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, navigation_router):
+for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, backbone_router, navigation_router):
     app.include_router(r, dependencies=[Depends(signed_in)])
 app.include_router(auth_router)
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1

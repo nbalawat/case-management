@@ -232,7 +232,7 @@ def integrations():
         "connectors": CONNECTOR_CATALOGUE,
         "interfaces": [
             {"name": "REST API (OpenAPI)", "status": "live", "note": "Interactive docs at /docs"},
-            {"name": "Audit event stream", "status": "live", "note": "GET /api/events; Kafka CloudEvents next"},
+            {"name": "Audit event stream", "status": "live", "note": "GET /api/events, and CloudEvents on the event bus through the outbox"},
             {"name": "Workflow configuration API", "status": "live", "note": "Check and publish case type versions, per client"},
             {"name": "Access policy API", "status": "live", "note": "Check and publish each client's roles, queues and people"},
             {"name": "Client onboarding API", "status": "live", "note": "Operator console: create a client from a template in one call"},

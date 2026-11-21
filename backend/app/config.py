@@ -40,6 +40,27 @@ class Settings:
     oidc_operator_claim: str = os.getenv("OIDC_OPERATOR_CLAIM", "preferred_username")
     # A built-in identity provider for laptops and tests. Never switch it on in a real deployment.
     dev_idp: bool = os.getenv("DEV_IDP", "0") == "1"
+    # The event backbone. Unset: events wait in the outbox table. memory:// keeps them in this process (tests, a laptop).
+    # kafka://host:9092[,host:9092] publishes to Kafka or anything that speaks its protocol; KAFKA_CONFIG is a JSON object
+    # of extra client properties (TLS, SASL) so cloud-specific settings stay out of the code.
+    event_bus_url: str = os.getenv("EVENT_BUS_URL", "")
+    event_topic_prefix: str = os.getenv("EVENT_TOPIC_PREFIX", "caseforge")
+    kafka_config: str = os.getenv("KAFKA_CONFIG", "")
+    # Run the outbox relay and the inbound stream consumers inside the API process. One process only; a real
+    # deployment runs `python -m app.backbone.worker` beside the API instead.
+    backbone_workers: bool = os.getenv("BACKBONE_WORKERS", "0") == "1"
+    # relay: this application publishes the outbox. debezium: change data capture does, and the relay stays off.
+    outbox_publisher: str = os.getenv("OUTBOX_PUBLISHER", "relay")
+    outbox_keep_days: int = int(os.getenv("OUTBOX_KEEP_DAYS", "7"))
+    # What the transaction stream does with a payment for a customer or account it has never seen: reject or create.
+    stream_unknown_customer: str = os.getenv("STREAM_UNKNOWN_CUSTOMER", "reject")
+    # History on the lake: a JSON object of Iceberg catalog properties. Unset: no lake. On a laptop, for example
+    # {"type": "sql", "uri": "sqlite:///data/lake-catalog.db", "warehouse": "file:///abs/path/data/warehouse"}.
+    lake_catalog: str = os.getenv("LAKE_CATALOG", "")
+    # Search. Unset: names are searched in the database. opensearch://host:9200[,host:9200] (opensearchs:// for TLS) puts
+    # OpenSearch behind the same interface; SEARCH_CONFIG is a JSON object of extra client options (http_auth, ca_certs).
+    search_url: str = os.getenv("SEARCH_URL", "")
+    search_config: str = os.getenv("SEARCH_CONFIG", "")
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
 
 

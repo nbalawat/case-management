@@ -6,6 +6,7 @@ they are shown, so search can never reveal a case the person may not see.
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Protocol
 
@@ -17,6 +18,7 @@ from ..domain.models import Alert, Case, Entity, Party, Transaction
 from . import names
 
 KINDS = ("customer", "counterparty", "case", "alert", "transaction")
+log = logging.getLogger("caseforge.search")
 _ID = re.compile(r"^(case|alr|ent|mc)-[0-9a-z]+$|^[PAT][0-9A-Fa-f]{4,}$")
 
 
@@ -70,6 +72,45 @@ class DatabaseIndex:
 
 
 index: SearchIndex = DatabaseIndex()
+_engine: SearchIndex | None = None
+_engine_for: str | None = None
+
+
+def current() -> SearchIndex:
+    """The index searches go to: the configured engine, or the database."""
+    from ..config import settings
+
+    global _engine, _engine_for
+    if not settings.search_url:
+        return index
+    if _engine is None or _engine_for != settings.search_url:
+        from .opensearch import connect
+
+        _engine, _engine_for = connect(), settings.search_url
+    return _engine
+
+
+def _find(s: Session, kind: str, q: str, limit: int) -> list:
+    """Ask the engine; if it is down, answer from the database rather than fail the search box."""
+    engine = current()
+    try:
+        return getattr(engine, kind)(s, q, limit)
+    except Exception:  # noqa: BLE001  an engine outage must not take search away
+        if engine is index:
+            raise
+        log.exception("Search engine unavailable; answering from the database")
+        return getattr(index, kind)(s, q, limit)
+
+
+def after_resolution(s: Session) -> None:
+    """Called when a client's entities have been rebuilt. A failure to index never fails the load that caused it."""
+    engine = current()
+    if engine is index:
+        return
+    try:
+        engine.rebuild(s)
+    except Exception:  # noqa: BLE001
+        log.exception("Search index rebuild failed; searches fall back to the database until the next rebuild")
 
 
 def search(s: Session, q: str, limit: int = 8) -> dict:
@@ -77,12 +118,12 @@ def search(s: Session, q: str, limit: int = 8) -> dict:
     out = {k: [] for k in KINDS}
     if len(q) < 2:
         return {"query": q, "groups": out, "total": 0}
-    customers = index.customers(s, q, limit)
+    customers = _find(s, "customers", q, limit)
     out["customer"] = [{"id": p.id, "title": p.name, "detail": f"{p.id} · {p.occupation or p.kind} · {p.risk_rating} risk", "score": round(sc, 2)}
                        for sc, p in customers]
     out["counterparty"] = [{"id": e.id, "title": e.name, "score": round(sc, 2), "flags": e.flags,
                             "detail": f"{e.customers} customer{'s' if e.customers != 1 else ''} · {len(e.aliases)} spelling{'s' if len(e.aliases) != 1 else ''}"
-                            + (f" · {', '.join(e.countries)}" if e.countries else "")} for sc, e in index.counterparties(s, q, limit)]
+                            + (f" · {', '.join(e.countries)}" if e.countries else "")} for sc, e in _find(s, "counterparties", q, limit)]
     # Cases: by id, or belonging to a customer that matched. Read through the session, so the caller's view applies.
     party_ids = [p.id for _, p in customers]
     cq = select(Case).order_by(Case.closed.is_not(None), Case.created.desc()).limit(limit)

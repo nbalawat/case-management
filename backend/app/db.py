@@ -24,6 +24,7 @@ def make_engine(url: str | None = None):
     if url in ("sqlite://", "sqlite:///:memory:"):
         kwargs["poolclass"] = StaticPool  # one shared in-memory database, for tests
     eng = create_engine(url, **kwargs)
+    eng.caseforge = True  # the tenancy guard applies to sessions on this engine (see tenancy._ours)
     if url.startswith("sqlite"):
         @event.listens_for(eng, "connect")
         def _pragmas(conn, _):  # pragma: no cover - driver hook
@@ -45,7 +46,7 @@ def init_db(eng=None) -> None:
     Base.metadata.create_all(eng or engine)
 
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 def ensure_schema(eng=None) -> None:

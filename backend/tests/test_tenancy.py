@@ -38,6 +38,8 @@ FACTORY = {
     "Dispute": lambda k: m.Dispute(id=f"dsp-{k}", case_id=f"case-{k}", party_id="P1", amount=1.0, rail="card", reason_code="unauthorised", opened_by="x"),
     "ScenarioVersion": lambda k: m.ScenarioVersion(id=f"scv-{k}", scenario="structuring", number=1, proposed_by="x"),
     "Lookback": lambda k: m.Lookback(id=f"lbk-{k}", name="n", scenario="structuring", period_from=NOW, period_to=NOW, created_by="x"),
+    "OutboxEvent": lambda k: m.OutboxEvent(event_id=f"ev-{k}", topic="t", key="same key", type="x", payload="{}"),
+    "StreamStat": lambda k: m.StreamStat(stream="transactions"),
     "AccessReview": lambda k: m.AccessReview(id=f"acr-{k}", name="n", started_by="x", due=NOW),
     "InfoShare": lambda k: m.InfoShare(id=f"lea-{k}", reference="same reference", due=NOW, loaded_by="x"),
     "Filing": lambda k: m.Filing(id=f"sar-{k}", case_id=f"case-{k}", kind="SAR", filed_by="x", sha256="0" * 64),
@@ -213,3 +215,30 @@ def test_an_incoming_alert_only_ever_touches_the_receiving_client(two):
     with two.tenant(A) as s:
         assert s.get(m.Case, case_b.id) is None and s.get(m.Alert, alert_b.id) is None
         assert s.scalars(select(m.CaseEvent).where(m.CaseEvent.case_id == case_b.id)).first() is None
+
+
+def test_the_guard_covers_every_engine_the_application_builds():
+    """The guard recognises the application's database by a mark set where engines are made, so there must be one such place."""
+    from pathlib import Path
+
+    from app.db import make_engine
+
+    assert make_engine("sqlite://").caseforge is True
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    makers = sorted(str(p.relative_to(app_dir)) for p in app_dir.rglob("*.py") if "create_engine(" in p.read_text())
+    assert makers == ["db.py"]
+
+
+def test_a_session_with_no_engine_is_still_guarded():
+    from sqlalchemy.orm import Session as PlainSession
+
+    with PlainSession() as s, pytest.raises(TenantError):
+        s.execute(select(m.Case))
+
+
+def test_a_library_session_on_its_own_database_is_left_alone():
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session as PlainSession
+
+    with PlainSession(create_engine("sqlite://")) as s:
+        assert s.execute(text("select 1")).scalar() == 1
