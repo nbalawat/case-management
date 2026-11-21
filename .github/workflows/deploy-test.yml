@@ -161,11 +161,21 @@ jobs:
           set -euo pipefail
           kubectl create namespace cf-ci
           kubectl label namespace cf-ci caseforge.io/stamp=ci pod-security.kubernetes.io/enforce=baseline
-          helm install data deploy/helm/caseforge-data -n cf-ci \
+          # The operator's pod can be Ready before its admission webhook serves (its certificate mounts late), so
+          # wait for the webhook's endpoints, and install once more if a webhook call still raced it.
+          for _ in $(seq 1 30); do
+            kubectl -n opensearch-operator get endpointslices -l kubernetes.io/service-name=opensearch-operator-webhook-service \
+              -o jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}' | grep -q . && break
+            sleep 5
+          done
+          install_data() {
+          helm upgrade --install data deploy/helm/caseforge-data -n cf-ci \
             --set kafka.replicas=1 --set kafka.storageGi=5 --set kafka.resources.requests.memory=1Gi --set kafka.resources.limits.memory=1Gi \
             --set search.replicas=1 --set search.diskSize=5Gi --set search.resources.requests.memory=1Gi \
             --set search.resources.limits.memory=1536Mi --set search.jvm="-Xms512m -Xmx512m" \
             --set kafka.resources.requests.cpu=250m --set search.resources.requests.cpu=250m
+          }
+          install_data || { echo "Retrying the data chart once the webhook has settled"; sleep 20; install_data; }
       - name: Kafka is ready and its user exists
         run: |
           set -euo pipefail
