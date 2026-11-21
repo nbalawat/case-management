@@ -1,4 +1,4 @@
-.PHONY: migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
+.PHONY: lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -25,6 +25,9 @@ flink-job:       ## Docker, with `make streaming` running: render and submit one
 	mkdir -p deploy/flink/jobs
 	docker compose exec -T app uv run --no-dev python -m app.streamjobs $(JOB) $(CLIENT) --bootstrap kafka:9092 > deploy/flink/jobs/$(CLIENT)-$(JOB).sql
 	docker compose exec flink-jobmanager ./bin/sql-client.sh -f /jobs/$(CLIENT)-$(JOB).sql
+
+lake-backfill:   ## Docker, with `make full` running: copy a client's file-loaded transactions into the lake. make lake-backfill CLIENT=meridian
+	docker compose exec -T app uv run --no-dev python -m app.lake.backfill $(CLIENT)
 
 build:           ## Build the UI so the API can serve it
 	cd frontend && npm install && npm run build
