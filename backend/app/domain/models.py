@@ -1029,3 +1029,4 @@ from ..views import store as _views  # noqa: E402,F401  registers the grid setti
 from ..notifications import store as _notifications  # noqa: E402,F401  registers the notification table and the hook that fills it
 from ..public import models as _public  # noqa: E402,F401  the public API's tables
 from ..directory import models as _directory  # noqa: E402,F401  people and groups from each client's identity provider
+from ..auth import models as _auth  # noqa: E402,F401  browser sign-in sessions

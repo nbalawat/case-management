@@ -42,6 +42,13 @@ services:
       FLINK_GATEWAY_URL: ${FLINK_GATEWAY_URL:-}  # Flink's SQL Gateway: start and stop jobs from the Integrations page
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}  # empty: no traces; make observability sends them to Jaeger
       LOG_FORMAT: ${LOG_FORMAT:-text}            # json: one object per line, with request id, client and trace id
+      AUTH_MODE: ${AUTH_MODE:-demo}              # oidc: sign in through each client's identity provider (make sso: Keycloak)
+      API_SECRET_KEY: ${API_SECRET_KEY:-}        # required with AUTH_MODE=oidc: seals sign-in sessions and credentials
+      OIDC_CLIENTS: ${OIDC_CLIENTS:-}            # client=issuer pairs, for clients with no provider registered in the console
+      OIDC_OPERATOR_ISSUER: ${OIDC_OPERATOR_ISSUER:-}
+      OIDC_OPERATOR_AUDIENCE: ${OIDC_OPERATOR_AUDIENCE:-caseforge}
+      OIDC_OPERATOR_MFA: ${OIDC_OPERATOR_MFA:-1}
+      OIDC_BACKCHANNEL: ${OIDC_BACKCHANNEL:-}    # the browser reaches Keycloak on localhost:8080, this container on keycloak:8080
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, keys:/app/data/keys, warehouse:/app/data/warehouse]  # documents, the keyring that seals them, and lake tables outlive the container
     depends_on:
@@ -196,6 +203,26 @@ services:
     volumes: ["./deploy/debezium:/config:ro"]
     command: ["sh", "-c", "until curl -sf http://connect:8083/connectors > /dev/null; do sleep 3; done; curl -sf -X PUT -H 'Content-Type: application/json' --data @/config/outbox-connector.json http://connect:8083/connectors/caseforge-outbox/config"]
     depends_on: [connect]
+  # ---- sign-in through a real identity provider: docker compose --profile sso (make sso sets the app up for it)
+  keycloak:
+    profiles: [sso]
+    image: quay.io/keycloak/keycloak:26.4
+    # start-dev: a laptop stack (an in-container H2 database, plain HTTP). A deployment runs Keycloak properly, or any
+    # other OpenID Connect provider: Entra ID, Okta, Auth0, Google.
+    command: ["start-dev", "--import-realm", "--http-port=8080", "--health-enabled=true"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: caseforge-local-only
+      # The issuer in every token and every address in discovery: the one the browser uses. The app's container reaches
+      # the same Keycloak on keycloak:8080, which OIDC_BACKCHANNEL maps those addresses to.
+      KC_HOSTNAME: http://localhost:8080
+    volumes: ["./deploy/keycloak/realms:/opt/keycloak/data/import:ro"]
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      retries: 60
+      start_period: 60s
   # ---- seeing it run: docker compose --profile observability (make observability adds it to `make full`)
   prometheus:
     profiles: [observability]

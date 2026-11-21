@@ -1,0 +1,325 @@
+{
+  "realm": "meridian",
+  "enabled": true,
+  "displayName": "Meridian Retail Bank",
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 43200,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "clients": [
+    {
+      "clientId": "caseforge-web",
+      "name": "CaseForge",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/api/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8000/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "caseforge audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "caseforge-web",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "AML Investigators"
+    },
+    {
+      "name": "Internal Audit"
+    }
+  ],
+  "users": [
+    {
+      "username": "ana",
+      "enabled": true,
+      "firstName": "Ana",
+      "lastName": "Ruiz",
+      "email": "ana@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "ivan",
+      "enabled": true,
+      "firstName": "Ivan",
+      "lastName": "Petrov",
+      "email": "ivan@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "lena",
+      "enabled": true,
+      "firstName": "Lena",
+      "lastName": "Fischer",
+      "email": "lena@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "sofia",
+      "enabled": true,
+      "firstName": "Sofia",
+      "lastName": "Marin",
+      "email": "sofia@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "kai",
+      "enabled": true,
+      "firstName": "Kai",
+      "lastName": "Nakamura",
+      "email": "kai@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "fran",
+      "enabled": true,
+      "firstName": "Fran",
+      "lastName": "Dubois",
+      "email": "fran@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "quinn",
+      "enabled": true,
+      "firstName": "Quinn",
+      "lastName": "Adeyemi",
+      "email": "quinn@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "tara",
+      "enabled": true,
+      "firstName": "Tara",
+      "lastName": "Singh",
+      "email": "tara@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "maya",
+      "enabled": true,
+      "firstName": "Maya",
+      "lastName": "Chen",
+      "email": "maya@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "hugo",
+      "enabled": true,
+      "firstName": "Hugo",
+      "lastName": "Laurent",
+      "email": "hugo@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "omar",
+      "enabled": true,
+      "firstName": "Omar",
+      "lastName": "Haddad",
+      "email": "omar@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "noah",
+      "enabled": true,
+      "firstName": "Noah",
+      "lastName": "Brooks",
+      "email": "noah@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "rosa",
+      "enabled": true,
+      "firstName": "Rosa",
+      "lastName": "Bianchi",
+      "email": "rosa@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "audra",
+      "enabled": true,
+      "firstName": "Audra",
+      "lastName": "Klein",
+      "email": "audra@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "zara",
+      "enabled": true,
+      "firstName": "Zara",
+      "lastName": "Khan",
+      "email": "zara@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/AML Investigators"
+      ]
+    },
+    {
+      "username": "ines.audit",
+      "enabled": true,
+      "firstName": "Ines",
+      "lastName": "Duarte",
+      "email": "ines.audit@meridian.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/Internal Audit"
+      ]
+    }
+  ]
+}

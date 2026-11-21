@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import jwt
 
@@ -31,11 +32,47 @@ def trusted_url(url: str) -> bool:
     return bool(u.hostname) and (u.scheme == "https" or (u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1")))
 
 
+def backchannel(url: str) -> str:
+    """The address this server uses for an identity provider address, where the two differ.
+
+    In Docker Compose the browser reaches Keycloak at http://localhost:8080 (so that is the issuer in every token),
+    while the application's container reaches it at http://keycloak:8080. OIDC_BACKCHANNEL maps one to the other;
+    it never changes what is trusted, only the route taken to it.
+    """
+    from ..config import settings
+
+    for pair in filter(None, (x.strip() for x in settings.oidc_backchannel.split(","))):
+        public, _, internal = pair.partition("=")
+        if public and internal and url.startswith(public):
+            return internal + url[len(public):]
+    return url
+
+
 def http_fetch(url: str) -> dict:
     if not trusted_url(url):
         raise AuthError("Identity provider address is not trusted")
-    with urllib.request.urlopen(url, timeout=5) as r:  # noqa: S310 - scheme checked above
+    with urllib.request.urlopen(backchannel(url), timeout=5) as r:  # noqa: S310 - scheme checked above
         return json.loads(r.read())
+
+
+def http_post_form(url: str, form: dict) -> dict:
+    """POST a form to an identity provider endpoint (token, revocation). Its JSON answer, or {} for an empty one."""
+    if not trusted_url(url):
+        raise AuthError("Identity provider address is not trusted")
+    req = urllib.request.Request(backchannel(url), data=urlencode(form).encode(), method="POST",
+                                 headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310 - scheme checked above
+            body = r.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read()).get("error", "")
+        except ValueError:
+            detail = ""
+        raise AuthError(f"The identity provider refused: {detail or e.code}") from None
+    except OSError as e:
+        raise AuthError("Identity provider could not be reached") from e
+    return json.loads(body) if body.strip() else {}
 
 
 @dataclass(frozen=True)

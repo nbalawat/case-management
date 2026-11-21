@@ -6,10 +6,12 @@ headers; a real deployment takes both from the sign-in token, never from the cal
 from __future__ import annotations
 
 from collections.abc import Iterator
+from urllib.parse import urlparse
 
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from ..auth import sessions
 from ..auth.identity import Identity, authenticate
 from ..auth.oidc import AuthError
 from ..cases.service import definition, stage_due
@@ -36,10 +38,39 @@ def staff_member(sid: str | None) -> dict | None:
         return provider.staff_out(m) if m is not None and m.active else None
 
 
-def identity(authorization: str | None = Header(default=None)) -> Identity | None:
-    """Who is calling, from their token. None in demo mode, where the headers are believed instead."""
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def _same_origin(request: Request) -> bool:
+    """Whether a request made with the session cookie came from this application's own pages."""
+    if request.headers.get("sec-fetch-site") == "same-origin":
+        return True
+    origin, home = request.headers.get("origin"), urlparse(settings.public_url)
+    return bool(origin) and origin.rstrip("/") == f"{home.scheme}://{home.netloc}"
+
+
+def _from_session(request: Request) -> str | None:
+    """The bearer token a browser's sign-in session stands for, or None when it has none."""
+    cookie = request.cookies.get(sessions.COOKIE)
+    if not cookie:
+        return None
+    if request.method not in SAFE_METHODS and not _same_origin(request):
+        # The cookie is SameSite=Strict already; this also stops a change sent from a page that is not ours.
+        raise HTTPException(403, "This request did not come from CaseForge's own pages")
+    with session_scope(platform=True) as s:
+        try:
+            return f"Bearer {sessions.access_token(s, cookie)}"
+        except AuthError as e:  # caught inside, so a session that has just ended stays ended
+            problem = str(e)
+    raise HTTPException(401, problem, headers={"WWW-Authenticate": "Bearer"})
+
+
+def identity(request: Request, authorization: str | None = Header(default=None)) -> Identity | None:
+    """Who is calling: from a bearer token, or from the browser's sign-in session. None in demo mode."""
     if settings.auth_mode != "oidc":
         return None
+    if not authorization:
+        authorization = _from_session(request)
     try:
         who = authenticate(authorization)
     except AuthError as e:

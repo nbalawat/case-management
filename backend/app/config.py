@@ -76,6 +76,16 @@ class Settings:
     oidc_operator_claim: str = os.getenv("OIDC_OPERATOR_CLAIM", "preferred_username")
     # 1: platform staff must have signed in with a second factor (the token's 'amr' says so), or nothing is answered.
     oidc_operator_mfa: bool = os.getenv("OIDC_OPERATOR_MFA", "1") == "1"
+    # public=internal pairs, comma-separated: the address this server uses for an identity provider the browser
+    # reaches elsewhere (Compose: http://localhost:8080=http://keycloak:8080). Empty: the same address.
+    oidc_backchannel: str = os.getenv("OIDC_BACKCHANNEL", "")
+    # Identity providers declared in configuration, client=issuer pairs, comma-separated, for clients that have none
+    # registered in the operator console (which takes precedence). All use OIDC_CLIENTS_AUDIENCE as audience and client id.
+    oidc_clients: str = os.getenv("OIDC_CLIENTS", "")
+    oidc_clients_audience: str = os.getenv("OIDC_CLIENTS_AUDIENCE", "caseforge-web")
+    # Browser sign-in sessions held by this server (the browser only ever holds an httpOnly cookie).
+    session_idle_minutes: int = int(os.getenv("SESSION_IDLE_MINUTES", "30"))
+    session_max_hours: int = int(os.getenv("SESSION_MAX_HOURS", "12"))
     # A built-in identity provider for laptops and tests. Never switch it on in a real deployment.
     dev_idp: bool = os.getenv("DEV_IDP", "0") == "1"
     # The event backbone. Unset: events wait in the outbox table. memory:// keeps them in this process (tests, a laptop).

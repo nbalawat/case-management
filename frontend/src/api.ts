@@ -1,8 +1,8 @@
-// Thin API client. In this demo the active client and person travel in headers; a real deployment takes both
-// from the sign-in token, so a user can never name a client they do not belong to.
+// Thin API client. In demo mode the active client and person travel in headers; with sign-in on, the server takes
+// both from the session behind the browser's httpOnly cookie, so a user can never name a client they do not belong to.
 export type Persona = { id: string; name: string; role: string; title: string; about: string; read_only: boolean; permissions: string[]; org?: 'client' | 'provider' }
 
-import { authMode, bearer, signOut } from './auth'
+import { authMode, signOut } from './auth'
 
 export const OPERATOR = '@operator' // the provider's own staff, who work across clients
 let tenantId = localStorage.getItem('tenant') || 'meridian'
@@ -19,7 +19,7 @@ export const isStaff = () => staffMode
 export const setPersonaId = (id: string) => localStorage.setItem(personaKey(), id)
 
 function identity(): Record<string, string> {
-  if (authMode() === 'oidc') return { ...bearer(), ...(staffMode && !isOperator() ? { 'X-Tenant': tenantId } : {}) } // the token says who
+  if (authMode() === 'oidc') return staffMode && !isOperator() ? { 'X-Tenant': tenantId } : {} // the session cookie says who
   if (isOperator()) return { 'X-Operator': 'olivia' }
   const who = getPersonaId()
   return { 'X-Tenant': tenantId, ...(who ? { 'X-Persona': who } : {}) }
@@ -27,7 +27,7 @@ function identity(): Record<string, string> {
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`/api${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...identity(), ...(init?.headers || {}) } })
-  if (r.status === 401 && authMode() === 'oidc') signOut() // the token expired or was withdrawn
+  if (r.status === 401 && authMode() === 'oidc') signOut() // the session ended or the sign-in was withdrawn
   if (!r.ok) {
     const body = await r.json().catch(() => ({}))
     throw new Error(body.detail || `Request failed (${r.status})`)
