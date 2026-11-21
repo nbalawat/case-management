@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api, fmtDate, fmtDateTime, fmtMoney, daysUntil, words } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf } from '../App'
+import { useNameOf } from '../shell/people'
 import { Card, Pill } from './ui'
 
 export type Dispute = {

@@ -6,7 +6,7 @@ import OpenedClosedChart from '../components/dashboard/OpenedClosedChart'
 import StageChart from '../components/dashboard/StageChart'
 import ScenarioChart from '../components/dashboard/ScenarioChart'
 import { casesHref } from '../components/dashboard/drill'
-import { usePeople } from '../App'
+import { usePeople } from '../shell/people'
 
 type Dash = {
   kpis: Record<string, number | null>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, fmtDateTime, words } from '../api'
 import { useApi } from '../useApi'
-import { usePeople } from '../App'
+import { usePeople } from '../shell/people'
 import { Card, Pill } from '../components/ui'
 
 type Filter = { field: string; op: string; value: unknown }

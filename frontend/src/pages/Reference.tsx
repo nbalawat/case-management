@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api, fmtDateTime, words } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf, usePeople } from '../App'
+import { useNameOf, usePeople } from '../shell/people'
 import { Card, Loading, Pill } from '../components/ui'
 
 type Kind = 'list' | 'number' | 'text'
@@ -28,7 +28,8 @@ function ListCard({ list, canEdit, onSaved }: { list: List; canEdit: boolean; on
   const [rows, setRows] = useState<Code[]>(list.codes)
   const [msg, setMsg] = useState<string | null>(null)
   const nameOf = useNameOf()
-  useEffect(() => setRows(list.codes), [list.codes])
+  const [from, setFrom] = useState(list.codes)
+  if (from !== list.codes) { setFrom(list.codes); setRows(list.codes) }  // a saved list comes back: start again from it
   const fields = Object.entries(list.fields)
   const known = new Set(list.codes.map(c => c.code))
   const dirty = JSON.stringify(rows) !== JSON.stringify(list.codes)

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { api, fmtDate } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf, usePeople } from '../App'
+import { useNameOf, usePeople } from '../shell/people'
+import { EX_TONE } from './exemptionTone'
 import { Card, Pill } from './ui'
 
 export type Exemption = {
@@ -12,7 +13,6 @@ type View = {
   matches: { subject: string; entry_id: string; entry_name: string; entry_ref: string; score: number; countries: string[]; programs: string[]; aliases: string[] }[]
   exemptions: Exemption[]; can_propose: boolean; can_decide: boolean; me: string
 }
-export const EX_TONE: Record<string, string> = { pending: 'warning', active: 'good', refused: 'neutral', revoked: 'neutral', expired: 'serious' }
 
 /** What this case's hits matched on the list, side by side, and a way to stop the same false match coming back. */
 export default function ScreeningCard({ caseId, tick, onChange }: { caseId: string; tick: number; onChange: (m: string) => void }) {

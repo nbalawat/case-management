@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, fmtDateTime } from '../api'
-import { switchClient } from '../App'
+import { switchClient } from '../shell/switchClient'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
 
@@ -37,7 +37,7 @@ function Onboard({ onDone }: { onDone: () => void }) {
   const [region, setRegion] = useState('us-east')
   const [deployment, setDeployment] = useState('pooled')
   const [sample, setSample] = useState(true)
-  const [check, setCheck] = useState<Check | null>(null)
+  const [answer, setCheck] = useState<Check | null>(null)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<Created | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
@@ -45,10 +45,11 @@ function Onboard({ onDone }: { onDone: () => void }) {
   const chosen = types ?? tpl?.case_types.map(c => c.id) ?? []
   const body = { id, name, template, region, deployment, case_types: chosen, sample_data: sample }
   useEffect(() => {
-    if (!id || !name) { setCheck(null); return }
+    if (!id || !name) return
     const timer = setTimeout(() => api.post<Check>('/platform/tenants/check', body).then(setCheck).catch(e => setCheck({ ok: false, error: e.message })), 250)
     return () => clearTimeout(timer)
   }, [id, name, template, chosen.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
+  const check = id && name ? answer : null  // an answer only counts while there is a request to check
   if (!data) return <Card title="Onboard a client"><Loading error={error} /></Card>
   const toggle = (t: string) => setTypes(chosen.includes(t) ? chosen.filter(x => x !== t) : [...chosen, t])
   const submit = async () => {

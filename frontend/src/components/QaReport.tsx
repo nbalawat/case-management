@@ -1,5 +1,5 @@
 import { useApi } from '../useApi'
-import { useNameOf } from '../App'
+import { useNameOf } from '../shell/people'
 import { Card, Kpi, Pill } from './ui'
 
 type Report = {

@@ -60,6 +60,8 @@ export default function DataGrid<T>({
   }
   const toggle = (rid: string) => onSelectedChange?.(chosen.has(rid) ? selected.filter(x => x !== rid) : [...selected, rid])
 
+  // TanStack Table hands back functions the React Compiler cannot memoise. Nothing here is memoised on them.
+  // oxlint-disable-next-line react/incompatible-library
   const table = useReactTable<T>({
     data: rows, columns: selectable ? [selectCol, ...columns] : columns, getRowId,
     state: { sorting: sorting as SortingState, columnVisibility: visibility },
