@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..domain.models import Alert, Case, Party, ScenarioVersion, Transaction, new_id, now
+from ..domain.models import Alert, Case, Party, ScenarioVersion, new_id, now
 from ..domain.personas import Persona
 from ..tenancy import tenant_of
 from ..visibility import system_work
@@ -81,18 +81,11 @@ def validate(name: str, params: dict) -> dict:
 def hits(s: Session, name: str, params: dict, since: datetime | None = None, until: datetime | None = None,
          party_ids: set[str] | None = None) -> dict[str, tuple[str, Hit]]:
     """What one scenario finds with the given settings, keyed as alerts are, so two runs can be compared. Writes nothing."""
-    q = select(Transaction).order_by(Transaction.party_id, Transaction.ts)
-    if since is not None:
-        q = q.where(Transaction.ts >= since)
-    if until is not None:
-        q = q.where(Transaction.ts <= until)
-    by_party: dict[str, list[Transaction]] = defaultdict(list)
-    for t in s.scalars(q):
-        if party_ids is None or t.party_id in party_ids:
-            by_party[t.party_id].append(t)
+    from .history import by_party  # the operational store, or the lake when DETECTION_HISTORY=lake
+
     out: dict[str, tuple[str, Hit]] = {}
     with tuned(Tuning(params={name: params})):
-        for pid, txns in by_party.items():
+        for pid, txns in by_party(s, since, until, party_ids):
             for h in REGISTRY[name]["fn"](txns):
                 out.setdefault(f"{h.scenario}:{pid}:{h.window_key}", (pid, h))
     return out
