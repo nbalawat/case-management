@@ -30,6 +30,7 @@ services:
       GRAPH_URL: ${GRAPH_URL:-}                  # empty: routes between customers are found in the database
       TEMPORAL_URL: ${TEMPORAL_URL:-}            # empty: stage clocks are checked by the sweep only
       FLINK_URL: ${FLINK_URL:-}                  # empty: no stream processor; scenarios run in the stream consumer
+      FLINK_GATEWAY_URL: ${FLINK_GATEWAY_URL:-}  # Flink's SQL Gateway: start and stop jobs from the Integrations page
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
     depends_on:
@@ -144,6 +145,12 @@ services:
     build: ./deploy/flink
     command: taskmanager
     environment: *flink-env
+    depends_on: [flink-jobmanager]
+  # Flink's own SQL Gateway. The application submits a client's rendered job through it (FLINK_GATEWAY_URL).
+  flink-sql-gateway:
+    profiles: [streaming]
+    build: ./deploy/flink
+    command: ["bin/sql-gateway.sh", "start-foreground", "-Dsql-gateway.endpoint.rest.address=0.0.0.0", "-Drest.address=flink-jobmanager"]
     depends_on: [flink-jobmanager]
 
   # ---- Debezium publishes the outbox instead of the relay: add --profile cdc and OUTBOX_PUBLISHER=debezium

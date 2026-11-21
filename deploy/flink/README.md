@@ -22,7 +22,19 @@ SQL has no such function without custom Java code, which this project does not s
 
 One job per client and rule, like the topics. Its name on the cluster is `caseforge <job> <client>`. The jobs share one definition of the two topics (`backend/app/streamjobs/common.sql`).
 
-## Render and submit
+## Start and stop from the product
+
+With `FLINK_GATEWAY_URL` set to the cluster's SQL Gateway (`bin/sql-gateway.sh`, part of Flink), the Integrations
+page has Start, Stop and Restart beside each job, for people who hold the permission to approve detection changes.
+Starting renders the job from the client's settings in force, creates the client's topics if they are missing, and
+submits it through the gateway. Every start and stop is recorded with who did it and the settings used
+(`stream_job_run`). When a client's settings change after its job started, the page says so and a restart applies
+them. A restarted job reads the client's transaction topic again from the start: alerts it raised before come again
+and are dropped downstream as duplicates, and the new settings apply to all of the topic's history.
+
+A job submitted by hand, as below, appears on the page without a starter and can be stopped from it.
+
+## Render and submit by hand
 
 A job is rendered for a client, never edited by hand. Rendering writes in the client's topics and the thresholds
 that client has approved under Detection, and refuses any value that could change the SQL.

@@ -81,8 +81,11 @@ def stream_jobs(s: Session, tenant_id: str) -> dict:
     from ..streamjobs import flink
     from ..streamjobs.jobs import JOBS
 
+    from ..streamjobs import control
+
     on = {j.scenario: tuning.current(s, j.scenario)[1] for j in JOBS.values()} if settings.flink_url else {}
-    return flink.status(tenant_id, on)
+    view = flink.status(tenant_id, on)
+    return view | {"jobs": control.describe(s, view["jobs"]), "controlled_here": control.enabled()}
 
 
 def graph_engine(tenant_id: str) -> dict:

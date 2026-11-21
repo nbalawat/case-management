@@ -713,6 +713,20 @@ class ScenarioVersion(TenantScoped, Base):
     decision_note: Mapped[str] = mapped_column(Text, default="")
 
 
+class StreamJobRun(TenantScoped, Base):
+    """One start or stop of a client's stream job from the product: who, when, and the settings the job was given."""
+
+    __tablename__ = "stream_job_run"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    job: Mapped[str] = mapped_column(String(60), index=True)
+    action: Mapped[str] = mapped_column(String(12))  # started | stopped
+    params: Mapped[dict] = mapped_column(JSON, default=dict)  # the scenario settings written into the job (started only)
+    engine_job_id: Mapped[str] = mapped_column(String(64), default="")  # the job's id on the cluster
+    by: Mapped[str] = mapped_column(String(40))
+    at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+
+
 class Lookback(TenantScoped, Base):
     """A lookback project: a past period run again through one scenario, usually with different settings, and worked to a conclusion."""
 

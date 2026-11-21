@@ -29,6 +29,17 @@ def overview(url: str | None = None, timeout: float = 2.0) -> list[dict]:
     return sorted(jobs, key=lambda j: j.get("start-time", 0), reverse=True)
 
 
+def cancel(job_id: str, url: str | None = None, timeout: float = 10.0) -> None:
+    """Ask the cluster to cancel one job. The id comes from the cluster's own overview, never from a caller."""
+    base = (url or settings.flink_url).rstrip("/")
+    if not base.startswith(("http://", "https://")) or not job_id.isalnum():
+        raise FlinkError("FLINK_URL must be the cluster's REST address, for example http://flink-jobmanager:8081")
+    try:
+        urllib.request.urlopen(urllib.request.Request(f"{base}/jobs/{job_id}?mode=cancel", method="PATCH"), timeout=timeout).close()  # noqa: S310
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise FlinkError("The Flink cluster did not cancel the job.") from e
+
+
 def status(tenant_id: str, scenarios_on: dict[str, bool] | None = None) -> dict:
     """One client's stream jobs. A cluster that cannot be reached is reported, not raised: the page still loads.
 
@@ -49,6 +60,7 @@ def status(tenant_id: str, scenarios_on: dict[str, bool] | None = None) -> dict:
         running = bool(j and j.get("state") == "RUNNING")
         out.append({
             "job": spec.name, "title": spec.title, "scenario": spec.scenario, "source": spec.source,
+            "engine_job_id": live["jid"] if live else None,
             "state": j["state"] if j else "NOT SUBMITTED",
             "since": datetime.fromtimestamp(j["start-time"] / 1000, UTC).isoformat() if j and j.get("start-time", 0) > 0 else None,
             # Both engines raising the same rule is not wrong (the alerts land in one case) but it is double work.

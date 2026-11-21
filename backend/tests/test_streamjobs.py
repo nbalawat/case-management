@@ -275,7 +275,8 @@ def test_with_no_cluster_configured_the_page_says_where_scenarios_run(world):  #
     assert settings.flink_url == ""
     with world.tenant(T) as s:
         v = status.view(s)["stream_jobs"]
-    assert v == {"engine": "none", "connected": False, "jobs": [], "note": "No stream processor is connected. Scenarios run in the application's stream consumer."}
+    assert v == {"engine": "none", "connected": False, "jobs": [], "controlled_here": False,
+                 "note": "No stream processor is connected. Scenarios run in the application's stream consumer."}
 
 
 def test_a_job_that_was_never_submitted_is_reported_as_such(cluster):
@@ -334,7 +335,7 @@ def test_a_cluster_that_is_down_is_reported_not_raised(world):  # noqa: F811
             v = status.view(s)["stream_jobs"]
     finally:
         object.__setattr__(settings, "flink_url", "")
-    assert v == {"engine": "flink", "connected": False, "note": "The Flink cluster did not answer.", "jobs": []}
+    assert v == {"engine": "flink", "connected": False, "note": "The Flink cluster did not answer.", "jobs": [], "controlled_here": False}
 
 
 def test_a_cluster_that_answers_nonsense_is_reported_not_raised(cluster):
