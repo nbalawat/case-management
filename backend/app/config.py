@@ -57,6 +57,10 @@ class Settings:
     # History on the lake: a JSON object of Iceberg catalog properties. Unset: no lake. On a laptop, for example
     # {"type": "sql", "uri": "sqlite:///data/lake-catalog.db", "warehouse": "file:///abs/path/data/warehouse"}.
     lake_catalog: str = os.getenv("LAKE_CATALOG", "")
+    # Search. Unset: names are searched in the database. opensearch://host:9200[,host:9200] (opensearchs:// for TLS) puts
+    # OpenSearch behind the same interface; SEARCH_CONFIG is a JSON object of extra client options (http_auth, ca_certs).
+    search_url: str = os.getenv("SEARCH_URL", "")
+    search_config: str = os.getenv("SEARCH_CONFIG", "")
     demo_tenants: bool = os.getenv("DEMO_TENANTS", "1") == "1"
 
 

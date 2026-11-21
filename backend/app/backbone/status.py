@@ -25,6 +25,7 @@ def view(s: Session) -> dict:
     cdc = settings.outbox_publisher != "relay"
     return {
         "lake": lake(tenant),
+        "search": search_engine(tenant),
         "bus": {"kind": kind, "note": note, "workers": settings.backbone_workers},
         "publisher": "debezium" if cdc else "relay",
         # Under change data capture rows are never marked here, so "waiting" would mislead: report only the total.
@@ -57,3 +58,15 @@ def lake(tenant_id: str) -> dict:
         return {"connected": False, "note": "The lake catalog did not answer.", "tables": []}
     return {"connected": True, "note": f"Apache Iceberg ({store.url})",
             "tables": [{"name": t.name, "rows": t.rows, "commits": t.commits, "last_commit": t.last_commit.isoformat() if t.last_commit else None} for t in tables]}
+
+
+def search_engine(tenant_id: str) -> dict:
+    """Where this client's name search is answered. An engine that cannot be reached is reported, not raised."""
+    if not settings.search_url:
+        return {"engine": "database", "names": None, "note": "Names are searched in the operational database."}
+    try:
+        from ..entities import search
+
+        return {"engine": "opensearch", "names": search.current().count(tenant_id), "note": "OpenSearch, one index per client, rebuilt after each entity resolution."}
+    except Exception:  # noqa: BLE001
+        return {"engine": "database", "names": None, "note": "The search engine did not answer, so names are being searched in the database."}

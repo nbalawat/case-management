@@ -1,4 +1,4 @@
-.PHONY: backbone backbone-cdc demo dev-api dev-ui test seed build reset
+.PHONY: full backbone backbone-cdc demo dev-api dev-ui test seed build reset
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -11,6 +11,9 @@ backbone:        ## Docker: the demo plus Kafka, the outbox relay, the stream co
 
 backbone-cdc:    ## Docker: the same, with Debezium publishing the outbox instead of the relay
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' OUTBOX_PUBLISHER=debezium docker compose --profile backbone --profile cdc up --build
+
+full:            ## Docker: the demo with Kafka, the Iceberg lake and OpenSearch
+	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 docker compose --profile backbone --profile search up --build
 
 build:           ## Build the UI so the API can serve it
 	cd frontend && npm install && npm run build

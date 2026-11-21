@@ -10,6 +10,7 @@ type Backbone = {
   bus: { kind: string; note: string; workers: boolean }; publisher: string
   outbox: { waiting: number | null; oldest_waiting: string | null; published: number | null; last_published: string | null; total: number; by_type: { type: string; count: number }[] }
   lake: { connected: boolean; note: string; tables: { name: string; rows: number; commits: number; last_commit: string | null }[] }
+  search: { engine: string; names: number | null; note: string }
   topics: { out: string[]; in: string[]; dead_letter: string }; streams: Stream[]
 }
 type Bench = { events: number; parties: number; map_seconds: number; detect_seconds: number; map_per_sec: number; end_to_end_per_sec: number; alerts: number }
@@ -18,7 +19,7 @@ const Status = ({ s }: { s: string }) => <Pill tone={s === 'live' ? 'good' : 'ne
 const TARGET = [
   ['Event backbone', 'Outbox in the database; Kafka when one is connected', 'Apache Kafka, with Debezium on the outbox'], ['Stream detection', 'Python consumers in micro-batches', 'Apache Flink'],
   ['Workflow', 'Synchronous service calls', 'Temporal durable workflows'], ['Case store', 'SQLite or Postgres', 'Postgres, partitioned per tenant'],
-  ['History and analytics', 'Operational tables; Iceberg tables when a catalog is connected', 'Apache Iceberg lakehouse with a REST catalog'], ['Search', 'SQL filters', 'OpenSearch'],
+  ['History and analytics', 'Operational tables; Iceberg tables when a catalog is connected', 'Apache Iceberg lakehouse with a REST catalog'], ['Search', 'The database; OpenSearch when one is connected', 'OpenSearch'],
   ['Agents', 'Offline rule-and-template provider', 'LLM gateway with hosted or self-hosted models'], ['Identity', 'Persona switch', 'OIDC via Keycloak'],
 ]
 
@@ -50,6 +51,8 @@ function BackboneCard() {
           <tbody>{data.lake.tables.map(x => <tr key={x.name}><td><b>{x.name}</b></td><td className="num">{x.rows.toLocaleString()}</td><td className="num">{x.commits.toLocaleString()}</td>
             <td>{x.last_commit ? fmtDateTime(x.last_commit) : '–'}</td></tr>)}</tbody></table>)}
       {data.lake.connected && <p className="muted small">{data.lake.note}. Each message from the bus is written once, and a table can be read as it stood at any earlier commit.</p>}
+      <h4>Name search <Pill tone={data.search.engine === 'opensearch' ? 'good' : 'neutral'}>{data.search.engine === 'opensearch' ? 'OpenSearch' : 'Database'}</Pill></h4>
+      <p className="muted">{data.search.note}{data.search.names !== null && ` ${data.search.names.toLocaleString()} customers and counterparties indexed for this client.`}</p>
       <p className="muted small">Out: {data.topics.out.join(', ')}. Records that cannot be loaded go to {data.topics.dead_letter} with the reason.</p>
     </Card>
   )

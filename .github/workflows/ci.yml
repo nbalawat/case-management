@@ -27,7 +27,7 @@ jobs:
         run: uv run pytest -q
 
   services:
-    name: Backend on Postgres and Kafka
+    name: Backend on Postgres, Kafka and OpenSearch
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -43,17 +43,28 @@ jobs:
       kafka:
         image: apache/kafka:3.9.1
         ports: ["9092:9092"]
+      opensearch:
+        image: opensearchproject/opensearch:2.19.1
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: "true"
+          DISABLE_INSTALL_DEMO_CONFIG: "true"
+          OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd "curl -sf http://localhost:9200/_cluster/health" --health-interval 5s --health-retries 40
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: The whole demo on Postgres, and the event backbone on a real broker
+      - name: The whole demo on Postgres, the event backbone on a real broker, search on a real engine
         working-directory: backend
         env:
           TEST_POSTGRES_URL: postgresql+psycopg://caseforge:ci-only@localhost:5432/caseforge
           TEST_KAFKA_URL: kafka://localhost:9092
-        run: uv run pytest -q tests/test_postgres.py tests/test_kafka.py
+          TEST_OPENSEARCH_URL: opensearch://localhost:9200
+        run: uv run pytest -q tests/test_postgres.py tests/test_kafka.py tests/test_opensearch.py
 
   frontend:
     name: Frontend lint and build

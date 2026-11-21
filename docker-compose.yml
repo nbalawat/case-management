@@ -3,6 +3,7 @@
 #
 # With the event backbone (Kafka, the outbox relay and the stream consumers):  make backbone
 # With Debezium publishing the outbox instead of the relay:                    make backbone-cdc
+# Everything: Kafka, the lake and OpenSearch:                                  make full
 services:
   db:
     image: postgres:17-alpine
@@ -23,6 +24,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # optional: a model behind the Ask page
       EVENT_BUS_URL: ${EVENT_BUS_URL:-}          # empty: events wait in the outbox table
       OUTBOX_PUBLISHER: ${OUTBOX_PUBLISHER:-relay}
+      SEARCH_URL: ${SEARCH_URL:-}                # empty: names are searched in the database
       LAKE_CATALOG: ${LAKE_CATALOG:-}            # empty: no lake; make backbone sets an Iceberg catalog in Postgres
     ports: ["8000:8000"]
     volumes: [evidence:/app/data/evidence, warehouse:/app/data/warehouse]  # customer documents and lake tables outlive the container
@@ -69,6 +71,21 @@ services:
       app: {condition: service_healthy}  # the API creates the schema and the demo clients
       kafka: {condition: service_healthy}
 
+  # ---- name search on OpenSearch: docker compose --profile search, with SEARCH_URL=opensearch://opensearch:9200
+  opensearch:
+    profiles: [search]
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"       # a laptop demo on a private Docker network; a deployment keeps security on
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes: [searchdata:/usr/share/opensearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health > /dev/null"]
+      interval: 5s
+      retries: 40
+
   # ---- Debezium publishes the outbox instead of the relay: add --profile cdc and OUTBOX_PUBLISHER=debezium
   connect:
     profiles: [cdc]
@@ -100,4 +117,5 @@ volumes:
   pgdata:
   kafkadata:
   warehouse:
+  searchdata:
   evidence:
