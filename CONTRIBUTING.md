@@ -50,7 +50,8 @@ repeated id or path.
 - Two branches that each add a migration leave two heads once both land. `python -m app.migrate check` (a CI step)
   and `tests/test_registration.py` fail on that, and on a repeated revision id, and name the files.
 - Revision ids only need to be unique; Alembic follows `down_revision`, not the number, so numbered ids (including
-  ones reserved for open pull requests) and time ids live side by side and may land in any order.
+  ones reserved for open pull requests) and time ids live side by side and may land in any order. An id is
+  four digits or a 14-digit time; `test_schema.py` checks the format and uniqueness, not that ids ascend.
 - Immediately before merging, after merging `main`: your first new migration's `down_revision` must be what
   `python -m app.migrate heads` prints for `main`. `check` also fails when a `down_revision` names a revision
   that is not there.
