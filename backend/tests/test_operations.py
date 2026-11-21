@@ -233,6 +233,58 @@ def test_a_merge_is_refused_unless_it_is_one_matter_decided_by_someone_who_may(s
         merge.merge(s, b, a, P["tara"], "again")
 
 
+def test_a_merge_can_be_undone_while_the_survivor_is_open(s):
+    a, b = _pair(s)
+    b.owner, a.priority = "ivan", "low"
+    a_due = a.sla_due
+    b.sla_due = a.sla_due - timedelta(days=2)
+    merge.merge(s, b, a, P["ana"], "Looked like one matter", ts=T0 + timedelta(days=2))
+    assert a.priority == "high" and a.sla_due == b.sla_due
+    s.add(Alert(id="alr-later", dedupe_key="k-later", scenario="structuring", scenario_version="1", party_id="P1", score=0.5, explanation="x",
+                txn_ids=[], case_id=a.id, created=T0))  # arrived after the merge: stays with the survivor
+    s.flush()
+    for who, note, says in [(P["ivan"], "x", "owner of the case or a team lead"), (P["ana"], " ", "Say why"), (P["audra"], "x", "someone who works cases")]:
+        with pytest.raises(TransitionError, match=says):
+            merge.unmerge(s, b, who, note)
+    merge.unmerge(s, b, P["ana"], "Different counterparties after all", ts=T0 + timedelta(days=3))
+    s.expire_all()
+    assert b.closed is None and b.disposition is None and b.owner == "ivan" and "merged_into" not in b.data
+    assert {x.id for x in s.query(Alert).filter(Alert.case_id == b.id)} == {"alr-b"} and s.query(InfoRequest).filter(InfoRequest.case_id == b.id).count() == 1
+    assert {x.id for x in s.query(Alert).filter(Alert.case_id == a.id)} == {"alr-P1", "alr-later"}
+    assert (a.priority, a.sla_due, a.data["merged_from"]) == ("low", a_due, [])
+    kinds = [e.kind for e in s.query(CaseEvent).filter(CaseEvent.case_id.in_([a.id, b.id])).order_by(CaseEvent.ts, CaseEvent.id)]
+    assert "case.unmerged" in kinds and "case.unmerged_from" in kinds
+    with pytest.raises(TransitionError, match="not merged"):
+        merge.unmerge(s, b, P["ana"], "again")
+
+
+def test_a_merge_into_a_closed_case_cannot_be_undone(s):
+    a, b = _pair(s)
+    merge.merge(s, b, a, P["ana"], "One matter")
+    a.closed = T0 + timedelta(days=5)
+    with pytest.raises(TransitionError, match="has closed"):
+        merge.unmerge(s, b, P["ana"], "too late")
+
+
+def test_a_case_that_is_two_matters_is_split_and_both_trails_say_so(s):
+    a, b = _pair(s)
+    merge.merge(s, b, a, P["ana"], "One matter")
+    for ids, who, note, says in [([], P["ana"], "x", "Choose alerts"), (["nope"], P["ana"], "x", "Choose alerts"),
+                                 (["alr-P1", "alr-b"], P["ana"], "x", "Leave at least one"), (["alr-b"], P["ana"], "", "Say why"),
+                                 (["alr-b"], P["ivan"], "x", "owner of the case or a team lead")]:
+        with pytest.raises(TransitionError, match=says):
+            merge.split(s, a, ids, who, note)
+    new = merge.split(s, a, ["alr-b"], P["ana"], "The wire activity is its own matter", ts=T0 + timedelta(days=3))
+    s.expire_all()
+    assert (new.case_type, new.party_id, new.owner, new.priority, new.closed) == (a.case_type, a.party_id, "ana", a.priority, None)
+    assert [x.id for x in s.query(Alert).filter(Alert.case_id == new.id)] == ["alr-b"] and [x.id for x in s.query(Alert).filter(Alert.case_id == a.id)] == ["alr-P1"]
+    assert new.data["split_from"] == a.id and a.data["split_into"] == [new.id]
+    assert s.query(CaseEvent).filter(CaseEvent.case_id == new.id, CaseEvent.kind == "case.split_from").count() == 1
+    a.closed = T0 + timedelta(days=4)
+    with pytest.raises(TransitionError, match="open case"):
+        merge.split(s, a, ["alr-P1"], P["ana"], "x")
+
+
 def test_a_merged_case_is_not_sampled_for_qa_and_takes_no_further_steps(s, monkeypatch):
     monkeypatch.setattr("app.cases.qa.sampled", lambda case_id, rate: True)
     a, b = _pair(s)

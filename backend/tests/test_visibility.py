@@ -19,7 +19,7 @@ from app.cases.case_types import load_case_types
 from app.cases.service import TransitionError, create_case, record
 from app.domain import models as m
 from app.domain.access import AccessPolicyError, parse_policy
-from app.tenants import access_admin
+from app.tenants import access_admin, registry
 from support import PERSONAS, T
 from test_access_per_client import _draft
 from test_client_api import CLIENTS, EVERYONE, OP, PEOPLE, _auditor, _permissions, everything, h
@@ -271,11 +271,16 @@ def test_a_policy_that_blinds_people_to_their_own_queue_is_refused_and_changes_a
     def narrow(r):
         r["roles"]["qa_reviewer"]["sees"] = {"scope": "queues"}
         r["roles"]["investigator"].pop("sees")
-        r["roles"]["fraud_analyst"]["sees"] = {"scope": "all", "case_types": ["fraud_claim", "chargeback"]}
+        r["roles"]["fraud_analyst"]["sees"] = {"scope": "all", "case_types": ["fraud_claim", "scam_reimbursement", "chargeback"]}
 
-    out = access_admin.check(s, _draft(edit=narrow))
+    running = registry.runtime(T).case_types
+    registry.runtime(T).case_types = [c for c in running if c != "chargeback"]  # a client that does not handle chargebacks
+    try:
+        out = access_admin.check(s, _draft(edit=narrow))
+    finally:
+        registry.runtime(T).case_types = running
     assert "'QA reviewer' now sees: Every case in their own queues (was: Every case)" in out["changes"]
-    assert "'L2 investigator' now sees: Every case (was: tm_alert_investigation cases)" in out["changes"]
+    assert "'L2 investigator' now sees: Every case (was: info_request_314a, lookback, subpoena, tm_alert_investigation cases)" in out["changes"]
     assert any("does not run: chargeback" in w for w in out["warnings"]) and any("restricted case waits" in w for w in out["warnings"])
     assert not [w for w in access_admin.check(s, _draft(edit=lambda r: None))["warnings"] if "does not run" in w]
 
@@ -465,7 +470,7 @@ def test_the_access_page_says_in_words_what_each_role_sees(client):
     page = client.get("/api/access", headers=h("meridian", "omar")).json()
     roles = {r["id"]: r for r in page["roles"]}
     assert roles["analyst"]["sees"] == "Every case in their own queues" and roles["analyst"]["limited"]
-    assert roles["investigator"]["sees"] == "Transaction monitoring investigation cases"
+    assert roles["investigator"]["sees"] == "FinCEN 314(a) request, Lookback review, Subpoena or production order, Transaction monitoring investigation cases"
     assert roles["mlro"]["sees"] == "Every case" and roles["mlro"]["restricted"] and not roles["admin"]["restricted"]
     people = {p["id"]: p for p in page["people"]}
     assert people["lena"]["restricted"] and len(people["lena"]["sees"]) == 2 and people["audra"]["sees"] == ["Every case"]

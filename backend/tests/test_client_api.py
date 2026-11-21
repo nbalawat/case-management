@@ -200,7 +200,8 @@ def test_the_operator_sees_counts_and_never_client_content(client, ids):
 def test_onboarding_a_client_from_the_console_and_suspending_it(client):
     body = {"id": "northwind", "name": "Northwind Credit Union", "template": "fintech_payments", "region": "us-west", "sample_data": True}
     assert client.post("/api/platform/tenants/check", json=body, headers=OP).json() == {
-        "ok": True, "case_types": ["fraud_claim", "tm_alert_investigation", "sanctions_hit"], "people": 8, "roles": 10, "queues": 8}
+        "ok": True, "case_types": ["fraud_claim", "tm_alert_investigation", "sanctions_hit", "scam_reimbursement", "chargeback",
+                       "info_request_314a", "subpoena", "lookback"], "people": 8, "roles": 10, "queues": 8}
     for bad, message in ((body | {"id": "meridian"}, "already exists"), (body | {"id": "No"}, "Client id"),
                          (body | {"case_types": ["kyc_refresh"]}, "unknown queue"), (body | {"template": "x"}, "Unknown template")):
         assert message in client.post("/api/platform/tenants/check", json=bad, headers=OP).json()["error"]

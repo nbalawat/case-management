@@ -1,0 +1,40 @@
+case_type: info_request_314a
+title: FinCEN 314(a) request
+domain: AML
+version: 1.0.0
+scenarios: []
+initial_state: search
+
+# A law-enforcement subject list from FinCEN. Search accounts held in the last 12 months and transactions in the last
+# 6 months, report positive matches only, within 14 days, and tell no one outside the team.
+states:
+  search:
+    label: Search records
+    queue: aml-l2
+    sla_hours: 168
+    tasks:
+      - {id: accounts, label: Accounts maintained in the last 12 months searched}
+      - {id: transactions, label: Funds transfers in the last 6 months searched}
+      - {id: matches, label: Each possible match confirmed or ruled out}
+  review:
+    label: MLRO review
+    queue: mlro
+    sla_hours: 72
+  reported:   {label: Match reported to FinCEN, kind: closed, disposition: match_reported}
+  no_match:   {label: No match, kind: closed, disposition: no_match}
+
+transitions:
+  - {from: search, to: review, label: Send for review, roles: [investigator], requires: [tasks, note]}
+  - {from: review, to: reported, label: Report the match, roles: [mlro], requires: [note]}
+  - {from: review, to: no_match, label: Confirm no match, roles: [mlro], requires: [note]}
+  - {from: review, to: search, label: Search again, roles: [mlro], requires: [note]}
+
+sla:
+  clock: 314(a) response due
+  due_days: 14
+escalation:
+  raise_priority: true
+  notify: mlro
+agents:
+  on_create: [data_assembly, entity_research]
+  autonomy: L1

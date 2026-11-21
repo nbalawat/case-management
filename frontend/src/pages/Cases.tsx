@@ -8,7 +8,7 @@ import BulkBar from '../components/BulkBar'
 import CaseQuickView from '../components/case/CaseQuickView'
 import DataGrid from '../components/grid/DataGrid'
 import { FacetFilter, Pager, SearchInput, Segmented, ViewsMenu } from '../components/grid/controls'
-import { load, save, type SavedView } from '../components/grid/prefs'
+import { useGridPrefs, type SavedView } from '../components/grid/prefs'
 import type { GridColumn } from '../components/grid/types'
 import { toSortParam, useListParams } from '../components/grid/useListParams'
 import { drillChips } from '../components/dashboard/drill'
@@ -53,7 +53,7 @@ export default function Cases() {
   const nav = useNavigate()
   const [picked, setPicked] = useState<string[]>([])
   const [preview, setPreview] = useState<string | null>(null)
-  const [views, setViews] = useState<SavedView[]>(() => load(GRID, 'views', []))
+  const prefs = useGridPrefs(GRID)
   const rows = useMemo(() => data?.rows ?? [], [data])
   const page = Number(p.get('page')), size = Number(p.get('size'))
   const labels = data?.labels
@@ -103,10 +103,11 @@ export default function Cases() {
           rowClassName={r => (r.open && r.stage_breached ? 'breached' : '')}
           empty="No cases match these filters."
           toolbar={<>
-            <ViewsMenu builtIn={BUILT_IN} saved={views} current={p.query.replace(/(^|&)(page|size)=[^&]*/g, '').replace(/^&/, '')}
+            <ViewsMenu builtIn={BUILT_IN} saved={prefs.views} current={p.query.replace(/(^|&)(page|size)=[^&]*/g, '').replace(/^&/, '')}
               onApply={v => p.replaceAll(v.query)}
-              onSave={name => { const next = [...views.filter(v => v.name !== name), { name, query: p.query }]; setViews(next); save(GRID, 'views', next) }}
-              onDelete={name => { const next = views.filter(v => v.name !== name); setViews(next); save(GRID, 'views', next) }} />
+              onSave={(name, shared) => prefs.saveView(name, p.query, shared)}
+              onShare={(v, shared) => v.id && prefs.shareView(v.id, shared)}
+              onDelete={v => v.id && prefs.deleteView(v.id)} />
             <Segmented label="Status" value={p.get('status')} onChange={v => p.set({ status: v })} options={[['open', 'Open'], ['closed', 'Closed'], ['all', 'All']]} />
             <SearchInput value={p.get('q')} onChange={v => p.set({ q: v })} placeholder="Customer, customer ID or case ID" />
             <FacetFilter label="Case type" value={p.getAll('case_type')} onChange={v => p.set({ case_type: v })}

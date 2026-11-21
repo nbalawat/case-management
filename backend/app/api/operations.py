@@ -83,6 +83,35 @@ def post_merge(case_id: str, body: MergeIn, s: Session = Depends(get_session), p
     return {"ok": True, "into": target.id}
 
 
+class UnmergeIn(BaseModel):
+    note: str = ""
+
+
+@router.post("/cases/{case_id}/unmerge")
+def post_unmerge(case_id: str, body: UnmergeIn, s: Session = Depends(get_session), p: Persona = Depends(actor)):
+    source = get_case_or_404(s, case_id)
+    try:
+        merge.unmerge(s, source, p, body.note)
+    except TransitionError as e:
+        _refuse(e)
+    return {"ok": True, "case": source.id}
+
+
+class SplitIn(BaseModel):
+    alert_ids: list[str]
+    note: str = ""
+
+
+@router.post("/cases/{case_id}/split")
+def post_split(case_id: str, body: SplitIn, s: Session = Depends(get_session), p: Persona = Depends(actor)):
+    case = get_case_or_404(s, case_id)
+    try:
+        new = merge.split(s, case, body.alert_ids, p, body.note)
+    except TransitionError as e:
+        _refuse(e)
+    return {"ok": True, "case": new.id}
+
+
 @router.get("/cases/{case_id}/extras")
 def get_extras(case_id: str, s: Session = Depends(get_session), p: Persona = Depends(persona)):
     """What the workspace needs beyond the case itself: who it could merge with, its closing reason, and its QA scorecard."""
@@ -92,6 +121,10 @@ def get_extras(case_id: str, s: Session = Depends(get_session), p: Persona = Dep
         case_row(x) for x in s.scalars(select(Case).where(Case.party_id == c.party_id, Case.case_type == c.case_type, Case.id != c.id, Case.closed.is_(None)))]
     out = {"merge_candidates": siblings, "can_merge": p.can("work") and not p.read_only and (p.can("reassign") or any(x["owner"] == p.id for x in siblings)),
            "merged_into": data.get("merged_into"), "merged_from": data.get("merged_from", []),
+           "split_from": data.get("split_from"), "split_into": data.get("split_into", []),
+           "can_rework": p.can("work") and not p.read_only,
+           "alerts": [] if c.closed is not None else [{"id": a.id, "scenario": a.scenario, "created": a.created.isoformat(), "score": a.score}
+                                                      for a in s.scalars(select(Alert).where(Alert.case_id == c.id).order_by(Alert.created, Alert.id))],
            "reason": {"code": data["reason_code"], "label": reference.label(s, "disposition_reasons", data["reason_code"])} if data.get("reason_code") else None,
            "qa": None}
     if c.case_type == QA_CASE_TYPE:

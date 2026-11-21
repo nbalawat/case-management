@@ -63,15 +63,18 @@ class World:
     def __init__(self, s):
         self.s, self.n = s, 0
 
-    def customer(self, pid, name, occupation="teacher", country="US"):
-        self.s.add_all([m.Party(id=pid, name=name, occupation=occupation, country=country), m.Account(id=f"A-{pid}", party_id=pid)])
+    def customer(self, pid, name, occupation="teacher", country="US", ids=(), **facts):
+        p = m.Party(id=pid, name=name, occupation=occupation, country=country, **facts)
+        p.identifiers = [m.PartyIdentifier(id=f"pid-{pid}-{n}", kind=k, value=v, normalized=v.replace("-", "").upper()) for n, (k, v) in enumerate(ids)]
+        self.s.add_all([p, m.Account(id=f"A-{pid}", party_id=pid)])
         self.s.flush()
         return pid
 
-    def pay(self, pid, counterparty, amount=100.0, direction="out", country="US", channel="wire", days_ago=1):
+    def pay(self, pid, counterparty, amount=100.0, direction="out", country="US", channel="wire", days_ago=1, account=""):
         self.n += 1
         self.s.add(m.Transaction(id=f"T{self.n:05d}", account_id=f"A-{pid}", party_id=pid, ts=NOW - timedelta(days=days_ago), amount=amount,
-                                 direction=direction, channel=channel, counterparty=counterparty, counterparty_country=country))
+                                 direction=direction, channel=channel, counterparty=counterparty, counterparty_country=country,
+                                 counterparty_account=account))
 
     def resolve(self):
         self.s.flush()
@@ -169,6 +172,62 @@ def test_a_counterparty_is_never_assumed_to_be_a_customer_and_a_confirmed_one_li
     assert [q["right"] for q in w.open("customer_as_counterparty")] == ["Ada Stone (P1)", "Ben Rivers (P3)"]
     assert [r["party_id"] for r in graph.related_customers(w.s, "P1") if r["direct"]] == ["P2"]
     assert [r["party_id"] for r in graph.related_customers(w.s, "P2") if r["direct"]] == ["P1"]
+
+
+def test_a_shared_id_number_proposes_a_duplicate_even_when_the_names_are_written_differently(w):
+    from datetime import date
+
+    w.customer("P1", "Ada Stone", "florist", ids=[("passport", "X1234567")], born=date(1980, 2, 3))
+    w.customer("P2", "Ada Stone-Rivers", "nurse", ids=[("passport", "X1234567")], born=date(1980, 2, 3))  # married, re-onboarded
+    w.customer("P3", "Ben Okafor", "chef", ids=[("passport", "X1234567")], born=date(1971, 9, 9))  # a typo'd number, nothing else agrees
+    w.customer("P4", "Chiara Bassi", "teacher", ids=[("passport", "X1234567")], born=date(1980, 2, 3))  # all but the name: asked
+    w.resolve()
+    asked = {(q["left"], q["right"]): q for q in w.open("duplicate_customer")}
+    assert list(asked) == [("Ada Stone (P1)", "Ada Stone-Rivers (P2)"), ("Ada Stone (P1)", "Chiara Bassi (P4)"), ("Ada Stone-Rivers (P2)", "Chiara Bassi (P4)")]
+    assert asked[("Ada Stone (P1)", "Ada Stone-Rivers (P2)")]["reasons"][:3] == ["Names are 82% alike", "Same passport", "Same date of birth"]
+
+
+def test_a_birthday_address_or_phone_strengthens_a_name_and_a_disagreement_weakens_it(w):
+    from datetime import date
+
+    same = {"born": date(1980, 2, 3), "postal_code": "02110", "address_line1": "1 Main St", "phone": "+1 617-555-0101"}
+    w.customer("P1", "Ada Stone", "florist", **same)
+    w.customer("P2", "Ada Stone", "nurse", **same | {"phone": "(617) 555 0101"})  # occupation differs: the rest carries it
+    w.customer("P3", "Ada Stone", "florist", born=date(1999, 1, 1))  # same name and job, born twenty years later: a namesake
+    w.customer("P4", "Ada Stone", "florist", ids=[("ssn", "900-11-1111")])
+    w.customer("P5", "Ada Stone", "florist", ids=[("ssn", "900-22-2222")])  # two different SSNs: two people
+    w.resolve()
+    pairs = {(q["left"].split()[-1], q["right"].split()[-1]): q["reasons"] for q in w.open("duplicate_customer")}
+    assert ("(P1)", "(P2)") in pairs and pairs[("(P1)", "(P2)")] == ["Same name", "Same date of birth", "Same address", "Same phone number", "Same country"]
+    assert ("(P1)", "(P3)") not in pairs and ("(P4)", "(P5)") not in pairs
+    assert ("(P1)", "(P4)") in pairs  # nothing disagrees, and name, country and job agree
+
+
+def test_a_person_and_a_company_are_never_the_same_customer():
+    from app.entities.evidence import Facts, compare
+
+    assert compare(Facts("P1", "Atlas Fuel", kind="company"), Facts("P2", "Atlas Fuel", kind="person")).score == 0
+
+
+def test_two_spellings_paid_into_one_account_are_asked_about_however_different_they_look(w):
+    w.customer("P1", "Ada Stone")
+    for name in ("Meridian Trading Partners Intl", "Meridian Trade Partners"):
+        w.pay("P1", name, account="LU280019400644750000")
+    w.pay("P1", "Northline Transit", account="LU280019400644750000")
+    w.pay("P1", "Summit Insurance", account="LU999")
+    w.resolve()
+    asked = [q for q in w.open("counterparty_variant")]
+    assert {(q["left"], q["right"]) for q in asked} == {("meridian trade partners", "meridian trading partners intl"),
+                                                        ("meridian trade partners", "northline transit"), ("meridian trading partners intl", "northline transit")}
+    assert all("Both are paid into account ending 0000" in q["reasons"] for q in asked)
+    q = next(q for q in asked if "northline transit" in q["right"])
+    resolution.decide(w.s, q["id"], PERSONAS["tara"], False)
+    assert len(w.open("counterparty_variant")) == 2  # told apart once, asked no more
+
+
+def test_names_in_other_scripts_are_compared_in_latin_letters():
+    assert names.key("Владимир Петров") == "vladimir petrov" and names.key("王伟") == "wang wei"
+    assert names.similarity("Γιώργος Παπαδόπουλος", "Giorgos Papadopoulos") >= 0.96
 
 
 def test_two_customer_records_are_only_questioned_when_more_than_the_name_agrees(w):
@@ -389,3 +448,12 @@ def test_deciding_over_http_changes_the_network_for_everyone_at_the_client(clien
     assert now_["counts"]["open"] == page["counts"]["open"] - 1 and now_["counts"]["decided"] == page["counts"]["decided"] + 1
     assert now_["decided"][0]["note"] == "Confirmed with the branch" or any(d["note"] == "Confirmed with the branch" for d in now_["decided"])
     assert client.get("/api/entities", headers=everything("alder")).json()["counts"]["decided"] == 0
+
+
+def test_the_demo_customer_onboarded_twice_is_found_by_its_ssn_and_birthday(client):
+    from app.customers.demo import REOPENED
+
+    with appdb.session_scope("meridian") as s:
+        [q] = [q for q in resolution.questions(s) if q["kind"] == "duplicate_customer" and REOPENED["meridian"] in q["right"]]
+        assert q["score"] >= 0.9 and {"Same US Social Security or taxpayer number", "Same date of birth", "Same address"} <= set(q["reasons"])
+        assert q["reasons"][0].startswith("Names are")  # written with a middle initial, so the name alone would never have found it

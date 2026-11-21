@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, fmtDateTime } from '../api'
+import { api, fmtDateTime, words } from '../api'
 import { useApi } from '../useApi'
 import { useNameOf } from '../shell/people'
 import { Card, Pill } from './ui'
@@ -11,6 +11,8 @@ type Mark = { mark: string; root_cause: string; comment: string }
 type Scorecard = { answers: Record<string, Mark>; score: number; pass_mark: number; by: string; at: string }
 type Extras = {
   merge_candidates: CaseRow[]; can_merge: boolean; merged_into: string | null; merged_from: string[]
+  split_from: string | null; split_into: string[]; can_rework: boolean
+  alerts: { id: string; scenario: string; created: string; score: number }[]
   reason: { code: string; label: string } | null
   qa: null | { criteria: Code[]; root_causes: Code[]; scorecard: Scorecard | null; pass_mark: number; can_score: boolean }
 }
@@ -21,6 +23,7 @@ export default function CaseExtras({ caseId, tick, onChange }: { caseId: string;
   const { data } = useApi<Extras>(`/cases/${caseId}/extras`, [tick])
   if (!data) return null
   const merged = data.merged_into || data.merged_from.length > 0 || data.merge_candidates.length > 0
+    || data.split_from || data.split_into.length > 0 || (data.can_rework && data.alerts.length > 1)
   return (
     <>
       {data.reason && <Card title="Closing reason"><p>{data.reason.label} <span className="muted small">({data.reason.code})</span></p></Card>}
@@ -33,13 +36,26 @@ export default function CaseExtras({ caseId, tick, onChange }: { caseId: string;
 function MergeCard({ caseId, data, onChange }: { caseId: string; data: Extras; onChange: (m: string) => void }) {
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [splitting, setSplitting] = useState<string[] | null>(null)
   const nameOf = useNameOf()
+  const done = (message: string) => { setNote(''); setSplitting(null); setError(null); onChange(message) }
   const merge = (into: string) => api.post(`/cases/${caseId}/merge`, { into, note })
-    .then(() => { setNote(''); onChange(`Merged into ${into}. Its alerts and requests moved across.`) }).catch(e => setError(e.message))
+    .then(() => done(`Merged into ${into}. Its alerts and requests moved across.`)).catch(e => setError(e.message))
+  const unmerge = () => api.post(`/cases/${caseId}/unmerge`, { note })
+    .then(() => done('The merge is undone. This case is open again with the alerts and requests it brought.')).catch(e => setError(e.message))
+  const split = () => api.post<{ case: string }>(`/cases/${caseId}/split`, { alert_ids: splitting ?? [], note })
+    .then(r => done(`Split: the chosen alerts are now case ${r.case}.`)).catch(e => setError(e.message))
+  const why = (label: string) => <input aria-label={label} placeholder={label} value={note} onChange={e => setNote(e.target.value)} maxLength={300} />
   return (
     <Card title="Related cases">
-      {data.merged_into && <p>This case was merged into <Link to={`/cases/${data.merged_into}`}>{data.merged_into}</Link>. Its alerts and requests continue there.</p>}
+      {data.merged_into && <>
+        <p>This case was merged into <Link to={`/cases/${data.merged_into}`}>{data.merged_into}</Link>. Its alerts and requests continue there.</p>
+        {data.can_rework && <div className="merge">{why('Why are these separate matters after all?')}
+          <button disabled={!note.trim()} title={note.trim() ? '' : 'Say why first'} onClick={unmerge}>Undo the merge</button></div>}
+      </>}
       {data.merged_from.length > 0 && <p>Includes the work of {data.merged_from.map(id => <Link key={id} to={`/cases/${id}`}>{id} </Link>)}, merged into this case.</p>}
+      {data.split_from && <p>Split from <Link to={`/cases/${data.split_from}`}>{data.split_from}</Link>, which keeps the rest of the alerts.</p>}
+      {data.split_into.length > 0 && <p>Some alerts were split off into {data.split_into.map(id => <Link key={id} to={`/cases/${id}`}>{id} </Link>)}.</p>}
       {data.merge_candidates.length > 0 && <>
         <p className="muted small">Another open case of this type exists for the same customer. If they are one matter, merge this case into it.</p>
         {data.merge_candidates.map(o => (
@@ -47,9 +63,25 @@ function MergeCard({ caseId, data, onChange }: { caseId: string; data: Extras; o
             <span><Link to={`/cases/${o.id}`}><b>{o.id}</b></Link> · {o.state_label} · {o.owner ? nameOf(o.owner) : 'Unassigned'}</span>
             {data.can_merge && <button disabled={!note.trim()} title={note.trim() ? '' : 'Say why these are one matter first'} onClick={() => merge(o.id)}>Merge into {o.id}</button>}
           </div>))}
-        {data.can_merge && <input aria-label="Why these are one matter" placeholder="Why are these one matter?" value={note} onChange={e => setNote(e.target.value)} maxLength={300} />}
+        {data.can_merge && why('Why are these one matter?')}
         {!data.can_merge && <p className="muted small">The owner of the surviving case or a team lead can merge them.</p>}
       </>}
+      {data.can_rework && data.alerts.length > 1 && (splitting === null
+        ? <p><button onClick={() => setSplitting([])}>Split this case…</button> <span className="muted small">when some of its alerts are a separate matter</span></p>
+        : <div className="split grid gap-2">
+          <p className="muted small">Choose the alerts that become a new case. At least one stays here.</p>
+          {data.alerts.map(a => (
+            <label key={a.id} className="flex items-center gap-2">
+              <input type="checkbox" checked={splitting.includes(a.id)}
+                onChange={e => setSplitting(cur => e.target.checked ? [...(cur ?? []), a.id] : (cur ?? []).filter(x => x !== a.id))} />
+              {words(a.scenario)} · {fmtDateTime(a.created)} <span className="muted small">{a.id}</span>
+            </label>))}
+          {why('Why are these a separate matter?')}
+          <div className="inline">
+            <button className="primary" disabled={!note.trim() || splitting.length === 0 || splitting.length === data.alerts.length} onClick={split}>Split into a new case</button>
+            <button onClick={() => setSplitting(null)}>Cancel</button>
+          </div>
+        </div>)}
       {error && <p className="msg" role="status">{error}</p>}
     </Card>
   )
