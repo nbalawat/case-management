@@ -81,6 +81,8 @@ class Settings:
     # History on the lake: a JSON object of Iceberg catalog properties. Unset: no lake. On a laptop, for example
     # {"type": "sql", "uri": "sqlite:///data/lake-catalog.db", "warehouse": "file:///abs/path/data/warehouse"}.
     lake_catalog: str = os.getenv("LAKE_CATALOG", "")
+    # Where backups go: any object store URL (file://, s3://, abfs://, gs://). Empty on a laptop: data/backups.
+    backup_url: str = os.getenv("BACKUP_URL", f"file://{ROOT / 'data' / 'backups'}")
     # The lake writer gathers this many messages, or waits this long, before writing: fewer, larger files.
     lake_flush_rows: int = int(os.getenv("LAKE_FLUSH_ROWS", "20000"))
     lake_flush_seconds: float = float(os.getenv("LAKE_FLUSH_SECONDS", "5"))
