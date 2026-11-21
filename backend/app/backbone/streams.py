@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..agents.investigator import investigate
+from ..workflow import engine
 from ..alerts.hub import ingest_external_alert, route_alerts
 from ..config import settings
 from ..db import session_scope
@@ -79,7 +79,7 @@ def load_transaction_batch(s: Session, messages: list[Message]) -> Outcome:
     if result.parties:
         alerts = run_detection(s, result.parties)
         for c in route_alerts(s, alerts):
-            investigate(s, c)
+            engine().brief(s, c)
         out.alerts = len(alerts)
     return out
 
@@ -109,7 +109,7 @@ def load_alert_batch(s: Session, messages: list[Message]) -> Outcome:
             s, source=str(a["source"]), external_id=str(a["external_id"]), scenario=str(a["scenario"]), party_id=str(a["party_id"]), score=score,
             explanation=str(a["explanation"]), party_name=a.get("party_name"), txn_ids=[str(x) for x in a.get("txn_ids") or []])
         if case is not None:
-            investigate(s, case)
+            engine().brief(s, case)
         out.loaded += 1
         out.alerts += 1
     return out

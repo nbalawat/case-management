@@ -11,6 +11,7 @@ from app.agents.tools import HumanOnly, ToolDenied, Toolbox, extract
 from app.alerts.hub import ingest_external_alert
 from app.cases.case_types import library
 from app.domain import models as m
+from support import eventually
 from test_client_api import CLIENTS, EVERYONE, _permissions, h
 
 T = "meridian"
@@ -300,7 +301,8 @@ def test_an_agent_at_l3_discounts_a_weak_hit_inside_the_limit_and_people_can_reo
 
     r = client.post(f"/api/agents/closed-alerts/{a0.id}/review", headers=h(T, "tara"), json={"confirm": False})
     assert r.status_code == 200 and r.json()["result"] == "reopened" and r.json()["case_id"]
-    detail = client.get(f"/api/cases/{r.json()['case_id']}", headers=h(T, "audra")).json()
+    reopened = r.json()["case_id"]
+    detail = eventually(lambda: (d := client.get(f"/api/cases/{reopened}", headers=h(T, "audra")).json())["agent_run"] and d)
     assert detail["case"]["case_type"] == "sanctions_hit" and detail["agent_run"]["recommendation"] in ("escalate", "close")
     assert client.post(f"/api/agents/closed-alerts/{a0.id}/review", headers=h(T, "tara"), json={"confirm": True}).status_code == 422
     assert client.post(f"/api/agents/closed-alerts/{a1.id}/review", headers=h(T, "tara"), json={"confirm": True}).status_code == 422

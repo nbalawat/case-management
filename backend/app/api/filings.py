@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..domain.personas import Persona
 from ..filing import service
+from ..workflow import engine
 from ..filing.formats import FORMATS
 from ..filing.report import SUBMIT
 from ..tenants.registry import TenantRuntime
@@ -70,7 +71,10 @@ def recheck(filing_id: str, s: Session = Depends(get_session), p: Persona = Depe
 
 @router.post("/{filing_id}/submit")
 def submit(filing_id: str, s: Session = Depends(get_session), p: Persona = Depends(require(SUBMIT))):
-    return _do(service.submit, s, filing_id, p)
+    def send():
+        engine().run_job(s, "filing.submit", {"filing_id": filing_id}, p)  # retried on Temporal if the channel stumbles
+        return service._get(s, filing_id)
+    return _do(send)
 
 
 class AnswerIn(BaseModel):
