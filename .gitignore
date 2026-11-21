@@ -27,6 +27,7 @@ data/quarantine/
 
 !docs/screenshots/34-report-accepted.png
 data/evidence/
+data/models/
 # Stream jobs rendered for a client by `make flink-job`
 deploy/flink/jobs/
 # Secrets and local settings (ANTHROPIC_API_KEY, OPEN_MODEL_URL). Docker Compose and the app both read it.

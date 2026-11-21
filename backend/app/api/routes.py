@@ -98,8 +98,8 @@ def get_case(case_id: str, s: Session = Depends(get_session), p: Persona = Depen
                   "country": c.party.country, "risk_rating": c.party.risk_rating, "pep": c.party.pep,
                   "onboarded": c.party.onboarded.date().isoformat(), "accounts": [a.id for a in c.party.accounts]},
         "alerts": [{"id": a.id, "scenario": a.scenario, "version": a.scenario_version, "score": a.score,
-                    "explanation": a.explanation, "created": a.created.isoformat(), "source": a.source, "txn_ids": a.txn_ids}
-                   | describe(a.scenario) for a in alerts],
+                    "explanation": a.explanation, "created": a.created.isoformat(), "source": a.source, "txn_ids": a.txn_ids,
+                    "model": (a.triage or {}).get("model")} | describe(a.scenario) for a in alerts],
         "transactions": [_txn(t, alerted) for t in sorted(shown, key=lambda t: t.ts, reverse=True)],
         "agent_run": None if run is None else {"id": run.id, "provider": run.provider, "recommendation": run.recommendation,
                                                "confidence": run.confidence, "steps": run.steps,
