@@ -45,6 +45,9 @@ volumes:
     emptyDir: {}
   - name: data
     emptyDir: {}
+{{- with .Values.extraVolumes }}
+{{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end -}}
 
 {{- define "caseforge.container" -}}
@@ -61,4 +64,15 @@ env:
 volumeMounts:
   - {name: tmp, mountPath: /tmp}
   - {name: data, mountPath: /app/data}  # scratch only: evidence, quarantine and the lake are addressed by URL
+{{- with .Values.extraVolumeMounts }}
+{{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{/* Pod labels: the chart's own plus podLabels, such as azure.workload.identity/use for Azure workload identity. */}}
+{{- define "caseforge.podLabels" -}}
+{{ include "caseforge.labels" . }}
+{{- range $k, $v := .Values.podLabels }}
+{{ $k }}: {{ $v | quote }}
+{{- end }}
 {{- end -}}

@@ -1,0 +1,33 @@
+{{- if .Values.signedImages.enabled }}
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: caseforge-signed-images
+  annotations:
+    policies.kyverno.io/title: Signed caseforge images
+    policies.kyverno.io/description: >-
+      caseforge images must carry a keyless cosign signature made by this repository's release workflow, and are
+      rewritten to their digest so what runs is what was signed.
+spec:
+  validationFailureAction: {{ .Values.podSecurity.action }}
+  webhookTimeoutSeconds: 30
+  background: false
+  rules:
+    - name: verify-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences: {{- toYaml .Values.signedImages.image_patterns | nindent 12 }}
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: {{ .Values.signedImages.certificate_issuer | quote }}
+                    subjectRegExp: {{ required "signedImages.subject_regexp is required" .Values.signedImages.subject_regexp | quote }}
+                    rekor:
+                      url: https://rekor.sigstore.dev
+{{- end }}

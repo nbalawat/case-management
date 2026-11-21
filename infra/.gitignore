@@ -1,0 +1,10 @@
+# OpenTofu working directories, plans and local state never go into git.
+.tofu/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+# Lock files are committed for root stacks only, once generated with `make infra-lock`.
+modules/**/.terraform.lock.hcl

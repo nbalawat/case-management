@@ -1,0 +1,28 @@
+# In-cluster data services for one stamp, in the stamp's namespace. Each is used only when the stamp's mode for it is
+# in_cluster; a managed cloud service is used instead when the mode is managed. The operators (Strimzi, the
+# OpenSearch operator, cert-manager, External Secrets) are installed once per cluster by the platform add-ons.
+
+kafka:
+  enabled: true
+  name: kafka
+  version: "4.1.0"
+  replicas: 3                # brokers and controllers in one combined node pool
+  storageGi: 100
+  storageClass: ""           # empty: the cluster default
+  topicPrefix: caseforge     # the application's EVENT_TOPIC_PREFIX; its user may only touch topics with this prefix
+  resources:
+    requests: {cpu: 500m, memory: 2Gi}
+    limits: {memory: 2Gi}
+
+search:
+  enabled: true
+  name: search
+  version: "2.19.1"
+  replicas: 3
+  diskSize: 50Gi
+  storageClass: ""
+  indexPrefix: caseforge
+  resources:
+    requests: {cpu: 500m, memory: 2Gi}
+    limits: {memory: 2Gi}
+  jvm: -Xms1g -Xmx1g

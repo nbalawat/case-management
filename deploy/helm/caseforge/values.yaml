@@ -86,6 +86,13 @@ llm:
 # Extra environment variables, as a map. For anything the chart has no value for.
 extraEnv: {}
 
+# Extra volumes and mounts on every pod, for example a CA bundle from a Secret for a data service with its own CA.
+extraVolumes: []
+extraVolumeMounts: []
+
+# Extra labels on every pod. Azure workload identity needs azure.workload.identity/use: "true".
+podLabels: {}
+
 serviceAccount:
   create: true
   name: ""
@@ -114,6 +121,7 @@ podSecurityContext:
   seccompProfile: {type: RuntimeDefault}
 securityContext:
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true   # the application writes only to /tmp and /app/data, both emptyDirs
   capabilities: {drop: [ALL]}
 
 nodeSelector: {}

@@ -1,0 +1,156 @@
+{{- if .Values.search.enabled }}
+{{- $s := .Values.search }}
+# A private CA per stamp (cert-manager) signs the OpenSearch HTTP certificate, so the application verifies the server.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $s.name }}-selfsigned
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $s.name }}-ca
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: {{ $s.name }}-ca.{{ .Release.Namespace }}
+  secretName: {{ $s.name }}-ca
+  duration: 87600h
+  privateKey: {algorithm: ECDSA, size: 384}
+  issuerRef: {name: {{ $s.name }}-selfsigned, kind: Issuer}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $s.name }}-ca
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ $s.name }}-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $s.name }}-http
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $s.name }}-http-tls
+  duration: 2160h
+  renewBefore: 360h
+  privateKey: {algorithm: RSA, size: 2048, encoding: PKCS8, rotationPolicy: Always}
+  dnsNames:
+    - {{ $s.name }}
+    - {{ $s.name }}.{{ .Release.Namespace }}
+    - {{ $s.name }}.{{ .Release.Namespace }}.svc
+    - {{ $s.name }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef: {name: {{ $s.name }}-ca, kind: Issuer}
+---
+apiVersion: opensearch.org/v1
+kind: OpenSearchCluster
+metadata:
+  name: {{ $s.name }}
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  general:
+    serviceName: {{ $s.name }}
+    version: {{ $s.version | quote }}
+    httpPort: 9200
+    # No privileged init container to raise vm.max_map_count: mmap is off instead, so the pods need no privilege.
+    setVMMaxMapCount: false
+    drainDataNodes: true
+    additionalConfig:
+      node.store.allow_mmap: "false"
+  security:
+    tls:
+      transport:
+        generate: true
+        perNode: true
+      http:
+        generate: false
+        secret: {name: {{ $s.name }}-http-tls}
+        caSecret: {name: {{ $s.name }}-http-tls}
+  nodePools:
+    - component: nodes
+      replicas: {{ $s.replicas }}
+      diskSize: {{ $s.diskSize | quote }}
+      roles: [cluster_manager, data, ingest]
+      jvm: {{ $s.jvm | quote }}
+      resources: {{- toYaml $s.resources | nindent 8 }}
+      {{- with $s.storageClass }}
+      persistence:
+        pvc:
+          storageClass: {{ . }}
+          accessModes: [ReadWriteOnce]
+      {{- end }}
+      pdb:
+        enable: true
+        maxUnavailable: 1
+---
+# The application's own user, with rights on its own indices only. Its password is generated in the cluster by
+# External Secrets and never leaves it.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: {{ $s.name }}-user-password
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  length: 40
+  digits: 6
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ $s.name }}-user
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  refreshInterval: "0"   # generate once; do not rotate on every refresh
+  target:
+    name: {{ $s.name }}-user
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: {{ $s.name }}-user-password
+---
+apiVersion: opensearch.org/v1
+kind: OpenSearchRole
+metadata:
+  name: caseforge
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  opensearchCluster: {name: {{ $s.name }}}
+  clusterPermissions: [cluster_composite_ops, cluster_monitor]
+  indexPermissions:
+    - indexPatterns: ["{{ $s.indexPrefix }}*"]
+      allowedActions: [crud, create_index, manage]
+---
+apiVersion: opensearch.org/v1
+kind: OpenSearchUser
+metadata:
+  name: caseforge
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  opensearchCluster: {name: {{ $s.name }}}
+  passwordFrom:
+    name: {{ $s.name }}-user
+    key: password
+---
+apiVersion: opensearch.org/v1
+kind: OpenSearchUserRoleBinding
+metadata:
+  name: caseforge
+  labels: {{- include "data.labels" . | nindent 4 }}
+spec:
+  opensearchCluster: {name: {{ $s.name }}}
+  users: [caseforge]
+  roles: [caseforge]
+{{- end }}

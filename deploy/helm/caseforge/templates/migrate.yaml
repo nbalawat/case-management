@@ -16,7 +16,7 @@ spec:
   activeDeadlineSeconds: {{ .Values.migrations.timeoutSeconds }}
   template:
     metadata:
-      labels: {{- include "caseforge.labels" . | nindent 8 }}
+      labels: {{- include "caseforge.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never

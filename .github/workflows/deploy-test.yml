@@ -1,0 +1,194 @@
+# Prove the charts deploy, on a real Kubernetes cluster (kind) inside the runner. No cloud account is involved.
+#
+#   app    Kyverno with the caseforge policies enforced, Postgres, then the application chart in a namespace held to the
+#          restricted pod security standard. The migration hook must finish, the pods must become ready, the API must
+#          answer, and an upgrade must run the hook again cleanly.
+#   data   The operators the platform add-ons install (cert-manager, External Secrets, Strimzi, the OpenSearch operator)
+#          and the per-stamp data chart, sized down to one node each: Kafka and OpenSearch must become ready.
+name: Deploy test
+
+on:
+  pull_request:
+    paths: ["deploy/**", "Dockerfile", "backend/**", "frontend/**", ".github/workflows/deploy-test.yml"]
+  push:
+    branches: [main]
+    paths: ["deploy/**", "Dockerfile", "backend/**", "frontend/**", ".github/workflows/deploy-test.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: v3.19.0
+  KIND_VERSION: v0.30.0
+  KYVERNO_CHART: 3.9.2
+  CERT_MANAGER_CHART: v1.21.3
+  EXTERNAL_SECRETS_CHART: 2.15.0
+  STRIMZI_CHART: 1.3.1
+  OPENSEARCH_OPERATOR_CHART: 3.0.14
+
+jobs:
+  app:
+    name: Application chart installs and upgrades on kind under enforced policies
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e
+        with: {version: "${{ env.HELM_VERSION }}"}
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with: {version: "${{ env.KIND_VERSION }}", cluster_name: caseforge}
+      - name: Build the image and load it into the cluster
+        run: |
+          docker build -t caseforge:ci .
+          kind load docker-image caseforge:ci --name caseforge
+      - name: Kyverno and the caseforge policies, enforced
+        run: |
+          set -euo pipefail
+          helm repo add kyverno https://kyverno.github.io/kyverno
+          helm install kyverno kyverno/kyverno --version "$KYVERNO_CHART" -n kyverno --create-namespace --wait --timeout 10m \
+            --set admissionController.replicas=1 --set backgroundController.replicas=1 \
+            --set cleanupController.replicas=1 --set reportsController.replicas=1
+          helm install policies deploy/helm/caseforge-policies --wait --set podSecurity.action=Enforce
+          kubectl wait --for=condition=Ready clusterpolicy --all --timeout=5m
+      - name: Postgres for the stamp (a stand-in for the managed database)
+        run: |
+          set -euo pipefail
+          kubectl create namespace db
+          kubectl -n db create secret generic pg --from-literal=password="$(openssl rand -hex 24)"
+          kubectl -n db apply -f - <<'EOF'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: {name: postgres}
+          spec:
+            selector: {matchLabels: {app: postgres}}
+            template:
+              metadata: {labels: {app: postgres}}
+              spec:
+                containers:
+                  - name: postgres
+                    image: postgres:17-alpine
+                    env:
+                      - {name: POSTGRES_USER, value: caseforge}
+                      - {name: POSTGRES_DB, value: caseforge}
+                      - name: POSTGRES_PASSWORD
+                        valueFrom: {secretKeyRef: {name: pg, key: password}}
+                    ports: [{containerPort: 5432}]
+                    readinessProbe: {exec: {command: [pg_isready, -U, caseforge]}, periodSeconds: 3}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata: {name: postgres}
+          spec: {selector: {app: postgres}, ports: [{port: 5432}]}
+          EOF
+          kubectl -n db rollout status deploy/postgres --timeout=5m
+      - name: The stamp namespace, held to the restricted standard, and its secret
+        run: |
+          set -euo pipefail
+          kubectl create namespace cf-ci
+          kubectl label namespace cf-ci caseforge.io/stamp=ci \
+            pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
+          password="$(kubectl -n db get secret pg -o jsonpath='{.data.password}' | base64 -d)"
+          kubectl -n cf-ci create secret generic caseforge-secrets \
+            --from-literal=DATABASE_URL="postgresql+psycopg://caseforge:${password}@postgres.db.svc:5432/caseforge"
+      - name: Install (dedicated mode, demo tenants, no ingress)
+        run: |
+          set -euo pipefail
+          helm install acme deploy/helm/caseforge -n cf-ci -f deploy/helm/caseforge/modes/dedicated.yaml \
+            --set image.repository=caseforge --set image.tag=ci --set image.pullPolicy=Never \
+            --set existingSecret=caseforge-secrets --set demoTenants=true --set auth.mode=demo \
+            --set ingress.enabled=false --set networkPolicy.enabled=false --set api.replicas=1 \
+            --wait --timeout 15m
+          kubectl -n cf-ci get pods,jobs
+      - name: The API answers
+        run: |
+          set -euo pipefail
+          svc="$(kubectl -n cf-ci get svc -l app.kubernetes.io/instance=acme -o jsonpath='{.items[0].metadata.name}')"
+          kubectl -n cf-ci port-forward "svc/$svc" 8000:"$(kubectl -n cf-ci get svc "$svc" -o jsonpath='{.spec.ports[0].port}')" &
+          for _ in $(seq 1 30); do curl -sf http://localhost:8000/api/tenants > /tmp/tenants.json && break; sleep 2; done
+          python3 -c "import json; t = json.load(open('/tmp/tenants.json')); print(len(t), 'tenants'); assert t"
+      - name: Upgrade runs the migration hook again and stays healthy
+        run: |
+          set -euo pipefail
+          helm upgrade acme deploy/helm/caseforge -n cf-ci --reuse-values --set api.replicas=2 --wait --timeout 10m
+          kubectl -n cf-ci get pods
+      - name: Nothing was blocked or reported by the policies
+        run: |
+          set -euo pipefail
+          kubectl get events -n cf-ci --field-selector reason=PolicyViolation -o name | tee /tmp/violations
+          test ! -s /tmp/violations
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n cf-ci describe pods | tail -120
+          kubectl -n cf-ci logs -l app.kubernetes.io/instance=acme --all-containers --tail=80 || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -60
+
+  data:
+    name: Data chart (Kafka with Strimzi, OpenSearch with its operator) becomes ready on kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e
+        with: {version: "${{ env.HELM_VERSION }}"}
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with: {version: "${{ env.KIND_VERSION }}", cluster_name: data}
+      - name: Operators, at the versions the platform add-ons pin
+        run: |
+          set -euo pipefail
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm repo add strimzi https://strimzi.io/charts
+          helm repo add opensearch-operator https://opensearch-project.github.io/opensearch-k8s-operator
+          helm install cert-manager jetstack/cert-manager --version "$CERT_MANAGER_CHART" -n cert-manager --create-namespace \
+            --set crds.enabled=true --wait --timeout 10m
+          helm install external-secrets external-secrets/external-secrets --version "$EXTERNAL_SECRETS_CHART" \
+            -n external-secrets --create-namespace --wait --timeout 10m
+          helm install strimzi strimzi/strimzi-kafka-operator --version "$STRIMZI_CHART" -n strimzi --create-namespace \
+            --set watchAnyNamespace=true --wait --timeout 10m
+          helm install opensearch-operator opensearch-operator/opensearch-operator --version "$OPENSEARCH_OPERATOR_CHART" \
+            -n opensearch-operator --create-namespace --wait --timeout 10m
+      - name: The stamp's data services, one node each
+        run: |
+          set -euo pipefail
+          kubectl create namespace cf-ci
+          kubectl label namespace cf-ci caseforge.io/stamp=ci pod-security.kubernetes.io/enforce=baseline
+          helm install data deploy/helm/caseforge-data -n cf-ci \
+            --set kafka.replicas=1 --set kafka.storageGi=5 --set kafka.resources.requests.memory=1Gi --set kafka.resources.limits.memory=1Gi \
+            --set search.replicas=1 --set search.diskSize=5Gi --set search.resources.requests.memory=1Gi \
+            --set search.resources.limits.memory=1536Mi --set search.jvm="-Xms512m -Xmx512m" \
+            --set kafka.resources.requests.cpu=250m --set search.resources.requests.cpu=250m
+      - name: Kafka is ready and its user exists
+        run: |
+          set -euo pipefail
+          kubectl -n cf-ci wait kafka/kafka --for=condition=Ready --timeout=15m
+          kubectl -n cf-ci wait kafkauser --all --for=condition=Ready --timeout=5m
+      - name: OpenSearch is ready and its user's secret was generated
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 90); do
+            phase="$(kubectl -n cf-ci get opensearchcluster search -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+            health="$(kubectl -n cf-ci get opensearchcluster search -o jsonpath='{.status.health}' 2>/dev/null || true)"
+            echo "phase=$phase health=$health"
+            [ "$phase" = RUNNING ] && { [ "$health" = green ] || [ "$health" = yellow ]; } && break
+            sleep 10
+          done
+          [ "$phase" = RUNNING ]
+          kubectl -n cf-ci wait externalsecret --all --for=condition=Ready --timeout=5m
+          kubectl -n cf-ci get secret search-user search-http-tls
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n cf-ci get kafka,kafkanodepool,kafkauser,opensearchcluster,externalsecret,certificate -o wide || true
+          kubectl -n cf-ci describe pods | tail -150
+          kubectl -n opensearch-operator logs deploy/opensearch-operator-controller-manager --tail=80 || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -60
