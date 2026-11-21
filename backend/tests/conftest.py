@@ -1,3 +1,7 @@
+import os
+
+os.environ.setdefault("CASEFORGE_NO_DOTENV", "1")  # a developer's own .env (an API key, say) never changes what the tests see
+
 from contextlib import contextmanager
 
 import pytest

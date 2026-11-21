@@ -8,6 +8,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _load_dotenv(path: Path) -> None:
+    """Read KEY=VALUE lines from the repository's .env (the same file Docker Compose reads) into the environment,
+    without overriding anything already set. Keeps secrets such as ANTHROPIC_API_KEY out of the code and the shell."""
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.removeprefix("export ").partition("=")
+        key, value = key.strip(), value.strip().strip("'\"")
+        if key and key.isidentifier() and key not in os.environ:
+            os.environ[key] = value
+
+
+if os.getenv("CASEFORGE_NO_DOTENV") != "1":
+    _load_dotenv(ROOT / ".env")
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'caseforge.db'}")
