@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..domain.models import Alert, Transaction, new_id
-from .scenarios import REGISTRY, screening_against
+from .scenarios import REGISTRY, screening_against, tuned
 from ..visibility import system_work
 
 
@@ -26,16 +26,19 @@ def run_detection(s: Session, party_ids: set[str] | None = None, only: set[str] 
     created: list[Alert] = []
     from ..sanctions import lists  # here, not at the top: the lists module reads the scenario defaults
 
-    with screening_against(lists.watch(s)):
-        _run(s, by_party, existing, created, only)
+    from . import tuning  # the client's own settings, and the scenarios it has switched off
+
+    client = tuning.live(s)
+    with screening_against(lists.watch(s)), tuned(client):
+        _run(s, by_party, existing, created, only, client.off)
     s.flush()
     return created
 
 
-def _run(s: Session, by_party: dict[str, list[Transaction]], existing: set[str], created: list[Alert], only: set[str] | None) -> None:
+def _run(s: Session, by_party: dict[str, list[Transaction]], existing: set[str], created: list[Alert], only: set[str] | None, off: frozenset[str] = frozenset()) -> None:
     for pid, txns in by_party.items():
         for sc in REGISTRY.values():
-            if only is not None and sc["name"] not in only:
+            if (only is not None and sc["name"] not in only) or sc["name"] in off:
                 continue
             for h in sc["fn"](txns):
                 key = f"{h.scenario}:{pid}:{h.window_key}"

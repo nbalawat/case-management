@@ -20,6 +20,8 @@ permissions:
   manage_lists: Manage screening lists - load a new version, edit the client's own list, switch a list on or off
   sanctions_decisions: Decide sanctions matters - approve the release or blocking of a held payment, and approve a false-match exemption
   info_sharing: Handle law enforcement search requests - see them, search, decide matches and answer
+  tune_detection: Tune detection - propose scenario settings with a backtest, and plan and run lookback projects
+  approve_tuning: Approve detection changes - put a proposed scenario change live, and sign off a lookback
 
 queues:
   kyc: Client due diligence
@@ -42,10 +44,10 @@ roles:
   investigator:         {title: Investigator, permissions: [work, resolve_entities], sees: {scope: all, case_types: [tm_alert_investigation]}}
   sanctions_officer:    {title: Sanctions officer, permissions: [work, sanctions_decisions], sees: {scope: all, case_types: [sanctions_hit]}}
   qa_reviewer:          {title: QA reviewer, permissions: [work, view_team]}
-  mlro:                 {title: MLRO, permissions: [work, view_team, reassign, view_restricted, restrict_case, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing]}
-  head_fiu:             {title: Head of financial crime, permissions: [work, view_team, reassign, manage_agents, view_restricted, restrict_case, resolve_entities, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing]}
+  mlro:                 {title: MLRO, permissions: [work, view_team, reassign, view_restricted, restrict_case, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing, tune_detection, approve_tuning]}
+  head_fiu:             {title: Head of financial crime, permissions: [work, view_team, reassign, manage_agents, view_restricted, restrict_case, resolve_entities, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing, tune_detection, approve_tuning]}
   relationship_manager: {title: Private banker, permissions: [], read_only: true, sees: {scope: all, case_types: [kyc_onboarding, kyc_refresh]}}
-  admin:                {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents, resolve_entities, manage_lists]}
+  admin:                {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents, resolve_entities, manage_lists, tune_detection]}
   restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
   auditor:              {title: Internal auditor, permissions: [view_team, view_restricted], read_only: true}
 

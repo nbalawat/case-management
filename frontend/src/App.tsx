@@ -25,6 +25,7 @@ import Reference from './pages/Reference'
 import Kyc from './pages/Kyc'
 import Sanctions from './pages/Sanctions'
 import Fraud from './pages/Fraud'
+import Detection from './pages/Detection'
 import Search from './components/Search'
 
 type Meta = { tenant: { id: string; name: string }; personas: Persona[]; default_person: string; sample_data: boolean }
@@ -46,7 +47,7 @@ const NAV = [
   ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/entities', 'Entities'], ['/kyc', 'KYC'], ['/sanctions', 'Sanctions'], ['/fraud', 'Fraud'], ['/filings', 'Reports'], ['/team', 'Team'], ['/agents', 'Agents'],
 ]
 // Setting the platform up, as opposed to working in it.
-const SETUP = [['/workflows', 'Workflows'], ['/reference', 'Lists'], ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations']]
+const SETUP = [['/workflows', 'Workflows'], ['/reference', 'Lists'], ['/detection', 'Detection'], ['/access', 'Access'], ['/data', 'Data'], ['/platform', 'Integrations']]
 
 /** The setup pages behind one menu, so the working pages keep the bar. It closes itself when the page changes. */
 function SetupMenu() {
@@ -54,7 +55,7 @@ function SetupMenu() {
   const here = SETUP.find(([to]) => pathname.startsWith(to))
   return (
     <details className="setup" key={pathname}>
-      <summary className={here ? 'active' : ''}>{here ? `Setup: ${here[1]}` : 'Setup'}</summary>
+      <summary className={here ? 'active' : ''}>Setup</summary>
       <div>{SETUP.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}</div>
     </details>
   )
@@ -152,6 +153,7 @@ export default function App() {
           <Route path="/kyc" element={<Kyc />} />
           <Route path="/sanctions" element={<Sanctions />} />
           <Route path="/fraud" element={<Fraud />} />
+          <Route path="/detection" element={<Detection />} />
           <Route path="/filings" element={<Filings />} />
           <Route path="/filings/:id" element={<Filing />} />
           <Route path="/customers/:id" element={<Customer />} />

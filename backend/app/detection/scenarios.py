@@ -8,7 +8,7 @@ import contextlib
 import contextvars
 import difflib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from ..domain.models import Transaction
@@ -49,6 +49,44 @@ def screening_against(w: Watch):
         _watch.reset(token)
 
 
+@dataclass(frozen=True)
+class Tuning:
+    """What one run detects with: a client's own settings per scenario, and the scenarios it has switched off.
+
+    A scenario the client has not touched runs on the defaults declared beside it."""
+
+    params: dict[str, dict] = field(default_factory=dict)
+    revisions: dict[str, int] = field(default_factory=dict)  # which of the client's versions each set of settings is
+    off: frozenset[str] = frozenset()
+
+
+_tuning: contextvars.ContextVar[Tuning | None] = contextvars.ContextVar("tuning", default=None)
+
+
+def tuning() -> Tuning:
+    return _tuning.get() or Tuning()
+
+
+@contextlib.contextmanager
+def tuned(t: Tuning):
+    token = _tuning.set(t)
+    try:
+        yield
+    finally:
+        _tuning.reset(token)
+
+
+def settings(name: str) -> dict:
+    """The settings a scenario runs on right now: its defaults, with the client's own values over them."""
+    return REGISTRY[name]["params"] | tuning().params.get(name, {})
+
+
+def version_of(name: str) -> str:
+    """The version an alert is stamped with: the scenario's own, then the client's revision of its settings if it has one."""
+    n = tuning().revisions.get(name, 0)
+    return f"{REGISTRY[name]['version']}/{n}" if n else REGISTRY[name]["version"]
+
+
 @dataclass
 class Hit:
     scenario: str
@@ -63,24 +101,27 @@ Scenario = Callable[[list[Transaction]], list[Hit]]
 REGISTRY: dict[str, dict] = {}
 
 
-def scenario(name: str, version: str, title: str, typology: str, params: dict):
+def scenario(name: str, version: str, title: str, typology: str, params: dict, limits: dict | None = None):
+    """Register a scenario. `limits` says, per setting, what it means and the range a client may move it within."""
     def deco(fn: Scenario) -> Scenario:
-        REGISTRY[name] = {"name": name, "version": version, "title": title, "typology": typology, "params": params, "fn": fn}
+        REGISTRY[name] = {"name": name, "version": version, "title": title, "typology": typology, "params": params, "limits": limits or {}, "fn": fn}
         return fn
     return deco
 
 
 @scenario("structuring", "1.2.0", "Cash structuring below reporting threshold", "Structuring",
-          {"min": 8000, "max": 9999.99, "count": 3, "days": 7})
+          {"min": 8000, "max": 9999.99, "count": 3, "days": 7},
+          {"min": ("Smallest cash deposit counted, in dollars", 1000, 9900), "count": ("Deposits needed to raise an alert", 2, 10),
+           "days": ("Days the deposits must fall within", 1, 30)})
 def structuring(txns: list[Transaction]) -> list[Hit]:
-    p = REGISTRY["structuring"]["params"]
+    p = settings("structuring")
     cash = [t for t in txns if t.channel == "cash" and t.direction == "in" and p["min"] <= t.amount <= p["max"]]
     hits, i = [], 0
     while i < len(cash):
         win = [t for t in cash[i:] if t.ts - cash[i].ts <= timedelta(days=p["days"])]
         if len(win) >= p["count"]:
             total = sum(t.amount for t in win)
-            hits.append(Hit("structuring", "1.2.0", cash[i].ts.strftime("%G-W%V"), min(0.55 + 0.08 * len(win), 0.97),
+            hits.append(Hit("structuring", version_of("structuring"), cash[i].ts.strftime("%G-W%V"), min(0.55 + 0.08 * len(win), 0.97),
                             f"{len(win)} cash deposits between ${p['min']:,} and $10,000 within {p['days']} days, totalling ${total:,.0f}.",
                             [t.id for t in win]))
             i += len(win)
@@ -90,9 +131,11 @@ def structuring(txns: list[Transaction]) -> list[Hit]:
 
 
 @scenario("rapid_movement", "1.0.3", "Rapid movement of funds", "Pass-through / mule account",
-          {"min_in": 20000, "out_ratio": 0.8, "hours": 48})
+          {"min_in": 20000, "out_ratio": 0.8, "hours": 48},
+          {"min_in": ("Smallest incoming payment counted, in dollars", 1000, 500000), "out_ratio": ("Share that must leave again", 0.3, 1.0),
+           "hours": ("Hours within which it must leave", 6, 240)})
 def rapid_movement(txns: list[Transaction]) -> list[Hit]:
-    p = REGISTRY["rapid_movement"]["params"]
+    p = settings("rapid_movement")
     hits = []
     for t in txns:
         if t.direction != "in" or t.amount < p["min_in"] or t.channel == "cash":
@@ -100,7 +143,7 @@ def rapid_movement(txns: list[Transaction]) -> list[Hit]:
         outs = [o for o in txns if o.direction == "out" and timedelta(0) <= o.ts - t.ts <= timedelta(hours=p["hours"])]
         moved = sum(o.amount for o in outs)
         if moved >= p["out_ratio"] * t.amount:
-            hits.append(Hit("rapid_movement", "1.0.3", t.id, min(0.6 + moved / t.amount * 0.2, 0.95),
+            hits.append(Hit("rapid_movement", version_of("rapid_movement"), t.id, min(0.6 + moved / t.amount * 0.2, 0.95),
                             f"${t.amount:,.0f} received from {t.counterparty or 'unknown'}; ${moved:,.0f} "
                             f"({moved / t.amount:.0%}) sent out within {p['hours']} hours.",
                             [t.id, *[o.id for o in outs]]))
@@ -108,9 +151,10 @@ def rapid_movement(txns: list[Transaction]) -> list[Hit]:
 
 
 @scenario("high_risk_geo", "2.1.0", "Wires to high-risk jurisdictions", "High-risk geography",
-          {"min_total": 10000, "days": 30})
+          {"min_total": 10000, "days": 30},
+          {"min_total": ("Smallest monthly total that raises an alert, in dollars", 1000, 250000)})
 def high_risk_geo(txns: list[Transaction]) -> list[Hit]:
-    p = REGISTRY["high_risk_geo"]["params"]
+    p = settings("high_risk_geo")
     wires = [t for t in txns if t.channel == "wire" and t.direction == "out" and t.counterparty_country in HIGH_RISK_COUNTRIES]
     by_month: dict[str, list[Transaction]] = {}
     for t in wires:
@@ -120,16 +164,16 @@ def high_risk_geo(txns: list[Transaction]) -> list[Hit]:
         total = sum(t.amount for t in ws)
         if total >= p["min_total"]:
             countries = ", ".join(sorted({t.counterparty_country for t in ws}))
-            hits.append(Hit("high_risk_geo", "2.1.0", month, min(0.5 + total / 200000, 0.9),
+            hits.append(Hit("high_risk_geo", version_of("high_risk_geo"), month, min(0.5 + total / 200000, 0.9),
                             f"{len(ws)} outbound wires totalling ${total:,.0f} to high-risk jurisdictions ({countries}) in {month}.",
                             [t.id for t in ws]))
     return hits
 
 
-@scenario("sanctions_name", "1.1.0", "Counterparty name matches watchlist", "Sanctions exposure", {"threshold": 0.86})
+@scenario("sanctions_name", "1.1.0", "Counterparty name matches watchlist", "Sanctions exposure", {"threshold": 0.86})  # its threshold is the client's screening rule, on Lists
 def sanctions_name(txns: list[Transaction]) -> list[Hit]:
     lists = watch()
-    th = lists.threshold or REGISTRY["sanctions_name"]["params"]["threshold"]
+    th = lists.threshold or settings("sanctions_name")["threshold"]
     hits = []
     for t in txns:
         if not t.counterparty:
@@ -140,7 +184,7 @@ def sanctions_name(txns: list[Transaction]) -> list[Hit]:
                 continue  # a person decided this name is not this entry
             r = difflib.SequenceMatcher(None, seen, w.lower()).ratio()
             if r >= th:
-                hits.append(Hit("sanctions_name", "1.1.0", t.id, round(r, 2),
+                hits.append(Hit("sanctions_name", version_of("sanctions_name"), t.id, round(r, 2),
                                 f"Counterparty '{t.counterparty}' matches watchlist entry '{w}' at {r:.0%} similarity on a ${t.amount:,.0f} {t.channel}.",
                                 [t.id]))
                 break
