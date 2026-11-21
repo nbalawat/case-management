@@ -42,7 +42,7 @@ def label(s: Session, list_id: str, code: str) -> str:
 
 def describe(s: Session) -> list[dict]:
     own = {r.id: r for r in s.scalars(select(CodeList))}
-    return [{"id": k, "title": v["title"], "about": v["about"], "fields": v.get("fields") or {}, "own": k in own, "codes": codes(s, k, include_retired=True),
+    return [{"id": k, "title": v["title"], "about": v["about"], "fields": v.get("fields") or {}, "closed": bool(v.get("closed")), "own": k in own, "codes": codes(s, k, include_retired=True),
              "updated_by": own[k].updated_by if k in own else None, "updated_at": own[k].updated_at.isoformat() if k in own else None}
             for k, v in library().items()]
 
@@ -54,6 +54,11 @@ def check(list_id: str, items: list) -> list[dict]:
     if not isinstance(items, list) or (not items and not optional):
         raise ReferenceError("A code list needs at least one code")
     seen, out = set(), []
+    spec = library()[list_id]
+    if spec.get("closed"):  # the platform tests for exactly these codes, so a client tunes them but cannot invent one
+        extra = sorted({str(c.get("code")) for c in items if isinstance(c, dict)} - {c["code"] for c in spec["codes"]})
+        if extra:
+            raise ReferenceError(f"This list is fixed by the platform; unknown code(s): {', '.join(extra)}")
     for c in items:
         if not isinstance(c, dict) or not _code.match(str(c.get("code") or "")):
             raise ReferenceError("Each code needs a short id: lower-case letters, digits and underscores, starting with a letter")
@@ -69,10 +74,12 @@ def check(list_id: str, items: list) -> list[dict]:
             if field not in c:
                 continue
             v = c[field]
-            ok = (isinstance(v, list) and all(isinstance(x, str) for x in v)) if kind == "list" else \
-                (isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0) if kind == "number" else isinstance(v, str)
+            number = isinstance(v, (int, float)) and not isinstance(v, bool)
+            ok = (isinstance(v, list) and all(isinstance(x, str) for x in v)) if kind == "list" else (number and v > 0) if kind == "number" else \
+                (number and v >= 0) if kind == "count" else isinstance(v, str)
             if not ok:
-                raise ReferenceError(f"Code '{c['code']}': {field.replace('_', ' ')} must be {'a list of names' if kind == 'list' else 'a positive number' if kind == 'number' else 'text'}")
+                must = {"list": "a list of names", "number": "a positive number", "count": "zero or a positive number"}.get(kind, "text")
+                raise ReferenceError(f"Code '{c['code']}': {field.replace('_', ' ')} must be {must}")
             clean[field] = v
         out.append(clean)
     if out and all(c.get("retired") for c in out) and not optional:
@@ -96,3 +103,8 @@ def replace(s: Session, list_id: str, items: list, persona: Persona) -> list[dic
         row.codes, row.updated_by, row.updated_at = clean, persona.id, now()
     s.flush()
     return clean
+
+
+def setting(s: Session, list_id: str, code: str, field: str, default=None):
+    """One field of one code in force, for lists that hold settings rather than choices."""
+    return next((c.get(field, default) for c in codes(s, list_id) if c["code"] == code), default)

@@ -21,5 +21,5 @@ test:
 seed:            ## Reset the demo data
 	cd backend && uv run python -m app.seed
 
-reset:           ## Docker: wipe the database volume
+reset:           ## Docker: wipe the database and document volumes
 	docker compose down -v

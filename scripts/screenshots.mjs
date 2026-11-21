@@ -163,6 +163,31 @@ await as('tara')
 await go('/team'); await page.getByText('Quality assurance findings').waitFor(); await shot('40-qa-findings')
 await as('omar')
 await go('/reference'); await page.getByText('Reasons for closing a case').waitFor(); await shot('41-lists')
+// KYC depth: the desk, a rating waiting for a second person, an ownership chart, documents with custody, and flow of funds.
+const kycDesk = await (await fetch(`${base}/api/kyc`, { headers: H })).json()
+const owned = name => kycDesk.structures.find(x => x.party_name.startsWith(name)).party_id
+await as('maya')
+await go('/kyc'); await page.getByText('Lower ratings waiting for a second person').waitFor(); await shot('42-kyc-desk')
+await go(`/customers/${kycDesk.pending_overrides[0].party_id}`); await page.locator('.scale').waitFor()
+await page.locator('section.card', { hasText: 'Risk rating' }).first().screenshot({ path: `${out}43-risk-rating-override.png` })
+await as('ivan')
+await go(`/customers/${owned('Northwind')}`); await page.locator('svg.own').waitFor(); await shot('44-customer-kyc')
+await page.locator('section.card', { hasText: 'Ownership and control' }).screenshot({ path: `${out}45-ownership.png` })
+const papers = kycDesk.documents.find(d => d.expired) ?? kycDesk.documents[0]
+await go(`/customers/${papers.party_id}`); await page.locator('table.docs').waitFor()
+await page.locator('table.docs button.cite').first().click(); await page.locator('.custody').waitFor()
+await page.locator('section.card', { hasText: 'Documents' }).last().screenshot({ path: `${out}46-documents.png` })
+// The case whose alerted payments show the most: money both in and out, ideally through a flagged firm.
+let moving = null, best = -1
+for (const c of fresh.filter(c => c.case_type === 'tm_alert_investigation').slice(0, 40)) {
+  const f = await (await fetch(`${base}/api/customers/${c.party_id}/flow?case_id=${c.id}`, { headers: H })).json()
+  const score = Math.min(f.sources?.length ?? 0, f.destinations?.length ?? 0) * 10 + (f.sources?.length ?? 0) + (f.destinations?.length ?? 0)
+    + 5 * [...(f.sources ?? []), ...(f.destinations ?? [])].filter(n => n.flags.length).length
+  if (score > best) { best = score; moving = c }
+}
+await as('maya')
+await go(`/cases/${moving.id}`); await page.locator('svg.flow').waitFor()
+await page.locator('section.card', { hasText: 'Flow of funds' }).screenshot({ path: `${out}47-flow-of-funds.png` })
 // A second client: different people, roles and workloads, and its own access policy to edit.
 await as('joy', 'kestrel')
 await go('/'); await shot('12-second-client-my-work')

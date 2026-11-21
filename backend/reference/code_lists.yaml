@@ -46,3 +46,79 @@ alert_hibernation:
   optional: true
   fields: {scenario: text, below: number, days: number}
   codes: []
+risk_factors:
+  title: Customer risk factors
+  about: >-
+    What raises a customer's risk score, and by how much. Each factor is tested against the customer's record; the
+    points of those that apply are added up. Change the points or switch a factor off; the tests themselves are part of the platform.
+  closed: true
+  fields: {points: number}
+  codes:
+    - {code: pep, label: Customer or a beneficial owner is a politically exposed person, points: 30}
+    - {code: high_risk_country, label: Customer or an owner is based in a higher-risk country, points: 25}
+    - {code: high_risk_business, label: Occupation or business in a higher-risk sector, points: 15}
+    - {code: opaque_ownership, label: A material share of ownership is not traced to a person, points: 25}
+    - {code: complex_ownership, label: Ownership runs through several layers of companies, points: 10}
+    - {code: nominee_or_trust, label: 'Ownership involves a nominee, trust or bearer arrangement', points: 15}
+    - {code: adverse_media, label: Adverse media names the customer, points: 15}
+    - {code: prior_report, label: A suspicious activity report has been filed on the customer, points: 30}
+    - {code: confirmed_alerts, label: Monitoring alerts were escalated in the last year, points: 10}
+    - {code: cash_intensive, label: A large share of activity is cash, points: 10}
+    - {code: cross_border, label: A large share of payments go to or come from abroad, points: 10}
+    - {code: unverified_identity, label: No verified identity document is held, points: 10}
+risk_bands:
+  title: Risk bands and review cycle
+  about: The score at which each rating starts, and how often a customer with that rating is reviewed.
+  closed: true
+  fields: {from_score: count, review_months: number}
+  codes:
+    - {code: low, label: Low, from_score: 0, review_months: 60}
+    - {code: medium, label: Medium, from_score: 25, review_months: 36}
+    - {code: high, label: High, from_score: 50, review_months: 12}
+risk_override_reasons:
+  title: Reasons for overriding a risk rating
+  about: Chosen when a person sets a rating different from the one the model gives.
+  codes:
+    - {code: mitigating_controls, label: Mitigating controls are in place and documented}
+    - {code: regulated_entity, label: 'Customer is itself regulated, listed or government-owned'}
+    - {code: information_outdated, label: The record behind a factor is out of date and being corrected}
+    - {code: relationship_knowledge, label: Knowledge of the relationship not captured by the model}
+    - {code: emerging_concern, label: Concern not yet reflected in the record}
+ownership_rules:
+  title: Ownership rules
+  about: When a person counts as a beneficial owner, and when a structure counts as complex.
+  closed: true
+  fields: {value: number}
+  codes:
+    - {code: beneficial_owner_percent, label: 'Share, direct or indirect, at which a person is a beneficial owner (percent)', value: 25}
+    - {code: complex_layers, label: Layers of companies at which a structure is complex, value: 3}
+document_types:
+  title: Document types
+  about: The kinds of document held as evidence. Types that expire are tracked, and an expired one triggers a review.
+  fields: {expires: text, proves: text}
+  codes:
+    - {code: passport, label: Passport, expires: 'yes', proves: identity}
+    - {code: national_id, label: National identity card, expires: 'yes', proves: identity}
+    - {code: driving_licence, label: Driving licence, expires: 'yes', proves: identity}
+    - {code: proof_of_address, label: Proof of address, expires: 'no', proves: address}
+    - {code: certificate_of_incorporation, label: Certificate of incorporation, expires: 'no', proves: identity}
+    - {code: ownership_register, label: Register of shareholders or beneficial owners, expires: 'no', proves: ownership}
+    - {code: source_of_funds, label: Source of funds evidence, expires: 'no', proves: funds}
+    - {code: source_of_wealth, label: Source of wealth evidence, expires: 'no', proves: wealth}
+    - {code: bank_statement, label: Bank statement, expires: 'no', proves: funds}
+    - {code: correspondence, label: Correspondence with the customer, expires: 'no', proves: other}
+kyc_triggers:
+  title: Events that trigger a KYC review
+  about: >-
+    What happens when something changes between periodic reviews. "open_review" opens a refresh case, or adds to the one
+    already open; "note" records the event on the customer without opening work.
+  closed: true
+  fields: {action: text}
+  codes:
+    - {code: document_expired, label: An identity document has expired, action: open_review}
+    - {code: document_expiring, label: An identity document expires within 30 days, action: note}
+    - {code: ownership_changed, label: The beneficial owners changed, action: open_review}
+    - {code: risk_increased, label: The risk rating went up, action: open_review}
+    - {code: report_filed, label: A suspicious activity report was filed, action: open_review}
+    - {code: true_match, label: A sanctions match was confirmed, action: open_review}
+    - {code: adverse_media, label: New adverse media names the customer, action: note}

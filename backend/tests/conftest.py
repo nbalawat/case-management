@@ -18,6 +18,7 @@ def _storage(tmp_path_factory):
     base = tmp_path_factory.mktemp("storage")
     object.__setattr__(settings, "lake_dir", base / "lake")
     object.__setattr__(settings, "quarantine_url", f"file://{base / 'quarantine'}")
+    object.__setattr__(settings, "evidence_url", f"file://{base / 'evidence'}")
     object.__setattr__(settings, "allow_memory_storage", True)
     yield base
 

@@ -609,7 +609,9 @@ def _rules_only(fn):
     @functools.wraps(fn)
     def inner(s, *a, **kw):
         # Ids are drawn from a stream fixed by the client, so which cases QA samples, and everything that follows, never varies.
-        with model_mode.suspended(), repeatable_ids(f"seed:{tenant_of(s)}:{ID_STREAM}"):
+        from .kyc import triggers  # history being back-filled is not news: perpetual KYC stays quiet except where the demo asks
+
+        with model_mode.suspended(), repeatable_ids(f"seed:{tenant_of(s)}:{ID_STREAM}"), triggers.suspended():
             return fn(s, *a, **kw)
     return inner
 
@@ -659,11 +661,13 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
         _seed_waiting_alerts(s, g.end, ordinary)
         _seed_duplicate_case(s, g.end, types)
     from .entities import resolution
+    from .kyc import demo as kyc_demo
 
+    extra = kyc_demo.seed(s, g.end)
     resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))
-    return {"parties": g.n, "transactions": len(g.txns), "alerts": len(alerts) + len(planted), "cases": total,
+    return {"parties": g.n + extra["parties"], "transactions": len(g.txns) + extra["transactions"], "alerts": len(alerts) + len(planted), "cases": total,
             "stage_breaches": sweep["stage_breaches"], "entities": resolved}
 
 
@@ -779,6 +783,12 @@ def _alder_own_workflow(s: Session) -> None:
         create_case(s, ct, p.id, "medium", created=now() - timedelta(hours=5), actor="kyc-scheduler")
 
 
+def _clear_evidence(tenant_id: str) -> None:
+    from .kyc import evidence
+
+    evidence.clear(tenant_id)
+
+
 def seed_demo() -> dict:
     """Onboard the demo clients through the same path the operator console uses, then fill each with its own data."""
     out = {}
@@ -787,6 +797,7 @@ def seed_demo() -> dict:
             onboard(s, **{k: v for k, v in client.items() if k != "profile"}, by="platform onboarding")
             set_filing(s, client["tenant_id"], DEMO_FILING[client["tenant_id"]])
             shutil.rmtree(settings.lake_dir / client["tenant_id"], ignore_errors=True)  # before seeding, which writes reports to the outbox
+            _clear_evidence(client["tenant_id"])
     for client in DEMO_CLIENTS:
         with session_scope(client["tenant_id"]) as s:
             out[client["tenant_id"]] = seed_tenant(s, PROFILES[client["profile"]])

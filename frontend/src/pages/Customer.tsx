@@ -3,6 +3,11 @@ import { fmtDate, fmtMoney } from '../api'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill, Priority } from '../components/ui'
 import NetworkGraph, { FLAG_LABEL, type Network } from '../components/NetworkGraph'
+import FlowOfFunds from '../components/FlowOfFunds'
+import RiskCard from '../components/kyc/RiskCard'
+import OwnershipCard from '../components/kyc/OwnershipCard'
+import EvidenceCard, { Triggers } from '../components/kyc/EvidenceCard'
+import type { Kyc } from '../components/kyc/types'
 
 type Counterparty = { entity_id: string; name: string; kind: string; party_id: string | null; flags: string[]; countries: string[]; txns: number; sent: number; received: number; last: string; spellings: number }
 type CaseRef = { id: string; type_title: string; state_label: string; open: boolean; priority: string; created: string; disposition: string | null; restricted: boolean; queue_label: string }
@@ -39,7 +44,9 @@ function Activity({ rows }: { rows: Profile['activity'] }) {
 export default function Customer() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { data, error } = useApi<Profile>(`/customers/${id}`)
+  const { data, error, reload } = useApi<Profile>(`/customers/${id}`)
+  const kyc = useApi<Kyc>(`/customers/${id}/kyc`)
+  const refresh = () => { kyc.reload(); reload() } // a new rating shows in the heading too
   if (!data) return <Loading error={error} />
   const { party: p, totals: t } = data
   const open = (c: Counterparty) => nav(c.party_id ? `/customers/${c.party_id}` : `/counterparties/${c.entity_id}`)
@@ -62,6 +69,15 @@ export default function Customer() {
         <Kpi label="Alerts" value={t.alerts} />
         <Kpi label="Cases" value={t.cases} sub={`${t.open_cases} open`} bad={t.open_cases > 0} />
       </div>
+      {kyc.data && <>
+        <div className="cols-2">
+          <RiskCard partyId={p.id} risk={kyc.data.risk} onChange={refresh} />
+          <Triggers triggers={kyc.data.triggers} />
+        </div>
+        {(p.kind !== 'person' || kyc.data.ownership.structure) && <OwnershipCard partyId={p.id} name={p.name} ownership={kyc.data.ownership} onChange={refresh} />}
+        <EvidenceCard partyId={p.id} view={kyc.data.evidence} onChange={refresh} />
+      </>}
+      <FlowOfFunds partyId={p.id} />
       {data.network && <Card title="Payment network"><NetworkGraph network={data.network} /></Card>}
       <div className="cols-2">
         <Card title="Connected customers">

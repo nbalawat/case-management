@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, daysUntil, fmtDate, fmtDateTime, fmtMoney, hoursUntil, words } from '../api'
 import { useApi } from '../useApi'
+import FlowOfFunds from '../components/FlowOfFunds'
+import EvidenceCard from '../components/kyc/EvidenceCard'
+import type { Kyc } from '../components/kyc/types'
 import { useNameOf, usePeople, usePersona } from '../App'
 import { Card, Loading, Pill, Priority, Sla, StageClock } from '../components/ui'
 import CaseExtras from '../components/CaseExtras'
@@ -31,6 +34,7 @@ export default function CaseWorkspace() {
   const { id } = useParams()
   const persona = usePersona()
   const { data, error, reload } = useApi<Detail>(`/cases/${id}`, [persona?.id])
+  const kyc = useApi<Kyc>(data ? `/customers/${data.party.id}/kyc` : null, [persona?.id])
   const [note, setNote] = useState('')
   const [reason, setReason] = useState('')
   const [restricting, setRestricting] = useState<null | 'restrict' | 'lift'>(null)
@@ -266,6 +270,8 @@ export default function CaseWorkspace() {
           </Card>
         </div>
       </div>
+      <FlowOfFunds partyId={party.id} caseId={c.id} />
+      {kyc.data && <EvidenceCard partyId={party.id} caseId={c.id} view={kyc.data.evidence} onChange={kyc.reload} />}
     </>
   )
 }

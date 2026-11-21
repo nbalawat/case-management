@@ -144,6 +144,7 @@ The full API reference is at <http://localhost:8000/docs>.
 | Alert intake | `POST /api/alerts` for outside engines, deduplicated, grouped per customer | Vendor-specific adapters |
 | Workflows | Six case types as versioned YAML: stages, queues, stage tasks, conditional steps, waiting stages, four-eyes, stage clocks with escalation, QA sampling with reopen. Checked and published from the UI. | Durable workflow engine (timers are swept, not scheduled), parallel branches, a drag-and-drop designer |
 | Casework at volume | Per-client code lists (closing reasons, QA criteria and weights, QA root causes, hibernation rules), edited on the Lists page and retired rather than deleted. Closing without a report needs a reason the client offers for that outcome. Bulk claim, reassign and move, where each case passes its own checks and refusals change nothing. Merging two open cases about one customer. QA scorecards with a pass mark, and a findings report by person, criterion, root cause and agent advice. Weak alerts that wait for a second alert, join its case, or close with the rule on record. | Approval of list changes by a second person, list versions, case splitting, undoing a merge, scheduled sweeps (waiting alerts close when the clock sweep runs) |
+| KYC depth | A risk rating per customer from the client's own factors, points and bands (edited on Lists), showing the evidence for each factor. Raising a rating takes effect at once; lowering one waits for a second person holding `approve_risk`, never the proposer. Ownership structures as versions: effective shares multiplied down every chain, beneficial owners at the client's threshold or by control, untraced shares reported, and flags for trusts and nominees, loops, depth, politically exposed or unverified owners. A document store behind the same storage interface as the pipelines (`EVIDENCE_URL`), with a SHA-256 fingerprint checked on every read, a tamper-evident custody log, verification, expiry, and redacted copies of text documents. Flow of funds per customer or per case under resolved names. Events between reviews (rating rose, owners changed, a document expired, a SAR was filed, a sanctions match confirmed) open or join a review, and a schedule shows who is due one. | Identity and document verification vendors, registry lookups for ownership, OCR and redaction of scans and PDFs, virus scanning of uploads, encryption keys per client, a customer portal for collecting documents. The periodic review backlog in the demo comes from synthetic onboarding dates. |
 | People and access | Each client's own versioned policy: roles, permissions, queues, people (who may hold several roles), read-only roles. Edited and published from the UI with checks: a change is refused if it would strand a workflow or lock everyone out. Every person at every kind of client is tested against every workflow step. | People and group membership synced from the client's identity provider (SCIM); today the provider proves who someone is and the policy on the Access page says what they may do. A form-based editor. |
 | Case visibility | Each role can be limited to its own queues, its own cases, or some case types; people keep cases they own or have worked on, and someone with several roles sees what any of them shows. Restricted cases are hidden from everyone not cleared, including their former owner, team leads and administrators, and cases opened from a restricted case inherit it. Enforced in the data layer, so lists, case pages, actions, the event feed, dashboards, the agent ledger and Ask all follow it; a hidden case answers "not found". Tested by signing in as every person at every client and checking every case against an independent statement of the rule. | Customers and transactions are not hidden by this rule, only cases and what hangs off them, so the Data pages and a customer lookup in Ask still show a customer whose case is restricted. Alerts closed by an agent before any case existed are visible to all. Rules by customer attribute (segment, country, relationship manager's own book). Break-glass access with a reason. Postgres row-level security as a second layer. A restricted case stays in its workflow, so someone cleared must also hold the role for the next step. |
 | Clients | Shared database with every row keyed by client. Isolation is enforced in the data layer: queries are filtered and writes stamped automatically, and statements that cannot be filtered are refused. Per-client case types and workflow versions. Templates, one-step onboarding, suspend, and an operator console that shows counts only. | Postgres row-level security as a second layer, dedicated databases or stamps per client (the choice is recorded, not acted on), per-client encryption keys, usage metering, offboarding and data export |
@@ -179,6 +180,8 @@ backend/app/
                copilot, lookback and tuning, oversight, model-backed mode
   ask/         ask anything: query vocabulary, read-only tools, model gateway and providers,
                answer loop with citation checks and the question record
+  kyc/         risk rating and governed overrides, ownership analysis, the document store, flow of funds,
+               review triggers and the KYC desk
   filing/      the neutral report, one renderer per regulator's format, checks, sending channels, the life of a report
   entities/    name comparison, entity resolution and its human desk, the payment network, profiles, search
   reporting/   dashboard metrics
@@ -189,7 +192,8 @@ backend/app/
   api/         HTTP routes (the UI uses only these)
 backend/case_types/   the workflow library: one YAML file per case type
 backend/agents/       the agent catalog: one declaration per agent
-backend/reference/     the starting code lists: closing reasons, QA criteria and root causes, hibernation rules
+backend/reference/     the starting code lists: closing reasons, QA criteria and root causes, hibernation rules,
+                       risk factors and bands, ownership rules, document types, review triggers
 backend/access/       starting access policies: permissions, roles, queues, people
 backend/templates/    client templates: a starting policy plus a set of case types
 frontend/src/         React + TypeScript UI
@@ -226,6 +230,12 @@ registry, and `ChatModel` for the model that answers questions), so later milest
     move across. Follow "weak alerts are waiting" to Alert intake to see what a hibernation rule is holding, and
     open a case for one. As Quinn Adeyemi, open the QA review, score it, and try to pass it below 80%. As Tara
     Singh, read Quality assurance findings on Team. As Omar Haddad, open Lists and retire a closing reason.
+19. **Knowing the customer, at Meridian.** As Maya Chen, open KYC: a lower rating for Halcyon Imports waits for
+    her, because Kai Nakamura proposed it and cannot approve it himself. Open Northwind Holdings: the second
+    version of its ownership put a Jersey trust on top, so no beneficial owner is identified and a review opened.
+    Press "Record a change", add a person behind the trust and press "Work it out" to see the answer before
+    saving. On Sable and Finch, the passport has expired: open the document to see its fingerprint and everyone
+    who touched it. On any monitoring case, Flow of funds shows only the payments behind its alerts.
 
 ## Milestones
 
@@ -264,10 +274,13 @@ direct connection to the regulators' systems.
 **10. Casework at volume (done).** Client code lists, closing reasons, bulk steps, case merge, QA scorecards and
 findings, alert hibernation. The demo data is now identical on every run.
 
-**11. Enterprise breadth.** KYC and workspace depth, fraud and sanctions depth, lookback projects, management
-reporting, governance views and detection tuning.
+**11. KYC depth (done).** Governed risk ratings, beneficial ownership, a document store with chain of custody,
+flow of funds, and reviews triggered by events as well as by the calendar.
 
-**12. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
+**12. Enterprise breadth.** Fraud and sanctions depth, lookback projects, management reporting, governance views
+and detection tuning.
+
+**13. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
 architecture: per-client stamps and the SaaS, dedicated, client-cloud and air-gapped deployment modes.
 
 ## Screenshots

@@ -34,14 +34,13 @@ def _review(s, monkeypatch, pid="P1"):
 
 # --- code lists ----------------------------------------------------------------------------------------------------------
 def test_every_client_starts_with_the_library_lists_and_can_replace_one(s):
-    assert [x["id"] for x in reference.describe(s)] == ["disposition_reasons", "qa_criteria", "qa_root_causes", "alert_hibernation"]
+    assert [x["id"] for x in reference.describe(s)][:4] == ["disposition_reasons", "qa_criteria", "qa_root_causes", "alert_hibernation"]
     assert not any(x["own"] for x in reference.describe(s)) and reference.codes(s, "alert_hibernation") == []
     mine = [*reference.codes(s, "qa_root_causes"), {"code": "system_outage", "label": "  A system was unavailable  "}]
     reference.replace(s, "qa_root_causes", mine, P["omar"])
     row = s.scalars(select(CodeList)).one()
     assert row.updated_by == "omar" and reference.codes(s, "qa_root_causes")[-1] == {"code": "system_outage", "label": "A system was unavailable"}
-    own = {x["id"]: x["own"] for x in reference.describe(s)}
-    assert own == {"disposition_reasons": False, "qa_criteria": False, "qa_root_causes": True, "alert_hibernation": False}
+    assert [x["id"] for x in reference.describe(s) if x["own"]] == ["qa_root_causes"]
 
 
 def test_a_retired_code_stays_readable_but_is_no_longer_offered(s):
@@ -399,7 +398,7 @@ def test_reference_lists_are_readable_by_all_and_editable_only_by_those_who_conf
         if t != tenant:
             continue
         r = client.get("/api/reference", headers=h(tenant, who))
-        assert r.status_code == 200 and len(r.json()["lists"]) == 4
+        assert r.status_code == 200 and len(r.json()["lists"]) == len(reference.library())
         can = "publish_workflow" in _permissions(tenant, who)
         assert r.json()["can_edit"] is can
         codes = next(x for x in r.json()["lists"] if x["id"] == "qa_root_causes")["codes"]

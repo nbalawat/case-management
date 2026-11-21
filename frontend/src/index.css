@@ -192,3 +192,28 @@ button.link{border:0;background:none;color:var(--brand);padding:0;min-height:0;t
 table.codes input:not([type=checkbox]){width:100%;min-width:90px;min-height:30px;padding:3px 8px}table.codes tr.retired td{color:var(--muted)}table.codes td{vertical-align:middle}
 .merge button{flex:none;white-space:nowrap}.merge+input,.card input[aria-label="Why these are one matter"]{width:100%;margin-top:6px}
 td button{white-space:nowrap}
+/* KYC: rating scale, ownership chart, documents, flow of funds */
+.scale{position:relative;height:46px;margin:6px 0 10px}.scale .band{position:absolute;top:18px;height:10px;box-sizing:border-box;border-right:2px solid var(--surface)}
+.scale .band.low{background:var(--good-bg);border-radius:5px 0 0 5px}.scale .band.medium{background:var(--warn-bg)}.scale .band.high{background:var(--crit-bg);border-radius:0 5px 5px 0;border-right:0}
+.scale .band span{position:absolute;top:13px;left:0;font-size:11.5px;color:var(--soft);white-space:nowrap}
+.scale .marker{position:absolute;top:0;width:2px;height:30px;background:var(--ink);transform:translateX(-1px)}.scale .marker b{position:absolute;top:-3px;left:6px;font-size:13px;line-height:1}
+table.factors{margin:6px 0}table.factors td,table.factors th{padding:5px 8px;font-size:13px}
+.override{border-radius:10px;padding:10px 12px;margin:10px 0;background:var(--brand-soft);font-size:13.5px}.override.pending{background:var(--warn-bg)}.override.refused,.override.withdrawn{background:#eef0f4}
+.override-form{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0}.override-form textarea{width:100%;box-sizing:border-box}
+.inline.wrap{align-items:center}.card-h .seg{margin:0}.kpis.slim{margin-bottom:10px}.kpis.slim .kpi b{font-size:20px}
+svg.own{display:block;margin:4px auto}.own-node rect{fill:var(--surface);stroke:#8b93a7;stroke-width:1.5}.own-node.customer rect{fill:var(--ink);stroke:var(--ink)}
+.own-node .nm{font-size:12px;font-weight:600;fill:var(--ink)}.own-node .sub{font-size:10.5px;fill:var(--soft)}.own-node.customer text{fill:#fff}
+.own-node.bo rect{stroke:var(--brand);stroke-width:2.5;fill:var(--brand-soft)}.own-node.trust rect,.own-node.nominee rect,.own-node.unknown rect{stroke:var(--serious);stroke-dasharray:5 3;fill:var(--serious-bg)}
+.own-node.pep rect{stroke:var(--serious);stroke-width:2.5}
+.own-link path{fill:none;stroke:#b6bccb;stroke-width:1.5}.own-link.control path{stroke-dasharray:5 4;stroke:var(--brand)}.own-link.loop path{stroke:var(--serious)}
+.own-link text{font-size:11.5px;font-weight:600;fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:5px}
+.own-flags{list-style:none;padding:0;margin:8px 0;font-size:13.5px}.own-flags li{padding:3px 0}
+.own-edit table td{padding:3px 6px 3px 0;border:0}.own-edit table th{padding:3px 6px 3px 0;font-size:12px}.own-edit input[type=number]{width:80px}.own-edit .inline input[type=search]{min-width:200px}
+table.docs tr.gone td{opacity:.55}tr.doc-detail td{background:#f8f9fb;padding:10px 14px}tr.doc-detail code{font-size:11.5px;word-break:break-all;color:var(--soft)}
+.custody{margin:8px 0;padding-left:18px;font-size:12.5px;color:var(--soft)}.custody b{text-transform:capitalize;color:var(--ink)}
+.redact{display:flex;gap:10px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);padding-top:8px;width:100%}
+.feed{list-style:none;padding:0;margin:0}.feed li{padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px}.feed li:last-child{border-bottom:0}.feed .pill{margin-right:6px}
+svg.flow{display:block;margin:6px auto}.ff path{opacity:.3;transition:opacity .12s}.ff.in path,.ff.in rect{fill:var(--series-1)}.ff.out path,.ff.out rect{fill:var(--series-2)}
+.ff:hover path{opacity:.55}.ff.dim{opacity:.35}.ff .nm{font-size:12px;fill:var(--ink)}.ff .sub{font-size:11px;fill:var(--soft)}
+.ff.flagged rect{stroke:var(--serious);stroke-width:2;paint-order:stroke}.ff.flagged .nm{font-weight:700}.ff.flagged .sub{fill:var(--serious)}
+.ff-mid.in{fill:var(--series-1)}.ff-mid.out{fill:var(--series-2)}

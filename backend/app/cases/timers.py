@@ -46,4 +46,7 @@ def run_timers(s: Session, at: datetime | None = None) -> dict:
     s.flush()
     from ..alerts.hub import sweep_hibernated
 
-    return {"stage_breaches": breached, "requests_overdue": overdue, "alerts_expired": sweep_hibernated(s, at), "at": at.isoformat()}
+    from ..kyc import triggers  # here, not at the top: perpetual KYC opens cases, so it imports this package
+
+    return {"stage_breaches": breached, "requests_overdue": overdue, "alerts_expired": sweep_hibernated(s, at), "kyc_triggers": triggers.scan(s, at),
+            "at": at.isoformat()}
