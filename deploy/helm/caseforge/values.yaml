@@ -9,7 +9,7 @@ image:
 imagePullSecrets: []
 
 # Secrets are never written into values. Name an existing Secret; every key in it becomes an environment variable.
-# It must hold DATABASE_URL, and may hold ANTHROPIC_API_KEY, KAFKA_CONFIG, SEARCH_CONFIG, GRAPH_URL, LAKE_CATALOG.
+# It must hold DATABASE_URL, and may hold TEMPORAL_ENCRYPTION_KEY, ANTHROPIC_API_KEY, KAFKA_CONFIG, SEARCH_CONFIG, GRAPH_URL, LAKE_CATALOG.
 existingSecret: ""
 
 publicUrl: http://localhost:8000
@@ -31,6 +31,13 @@ api:
 # What happens to a database from before versioned migrations existed that is too old to adopt. `refuse` stops with
 # an explanation. `rebuild` drops every table and starts again: it exists for demos and must never meet real data.
 schemaOnMismatch: refuse
+
+# Postgres row-level security keeps every client to its own rows in the database itself, under the application's own
+# filter. Requests run as this role (SET LOCAL ROLE), which the application creates with no superuser or BYPASSRLS
+# right, because Postgres lets those past every policy. The database user in the secret needs CREATEROLE once, or an
+# administrator creates the role (NOLOGIN NOBYPASSRLS) and grants it to that user. Empty: requests run as the user in
+# DATABASE_URL, and the health check says whether row-level security binds it.
+databaseRole: caseforge_app
 
 # Schema changes are versioned migrations. With the job on (the default), a hook runs `python -m app.migrate` before
 # each install and upgrade, and the pods refuse to start against a database that is behind. With it off, the pods
@@ -69,6 +76,11 @@ temporal:
   namespace: default    # the shared namespace (namespaceMode: shared)
   retentionDays: 30     # how long Temporal keeps a finished workflow's history (the case's own audit trail is in the database, for good)
   taskQueue: caseforge
+  # Payload encryption: everything a workflow carries is sealed with AES-GCM before Temporal sees it, with a key per namespace
+  # (so a key per client in per_client mode) derived from TEMPORAL_ENCRYPTION_KEY in existingSecret. auto: encrypt when the
+  # Secret holds the key. required: refuse to run without it. off: never. Raise keyVersion to rotate; older history stays readable.
+  encryption: auto
+  keyVersion: 1
   worker:
     replicas: 2
     resources:
@@ -129,6 +141,14 @@ networkPolicy:
   enabled: false        # when on: pods accept traffic only from the ingress namespace below, and only on the API port
   ingressNamespace: ingress-nginx
   monitoringNamespace: ""  # when set, Prometheus in this namespace may also scrape the metrics port
+
+backup:
+  enabled: false        # nightly backups and a weekly restore drill, written by the application to object storage
+  url: ""               # s3://bucket/prefix, abfs://container@account.dfs.core.windows.net/prefix, gs://bucket/prefix
+  schedule: "15 2 * * *"
+  drillSchedule: "45 3 * * 0"  # restores the latest backup into a scratch database and compares every table; empty: no drill
+  timeoutSeconds: 3600
+  resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {memory: 2Gi}}
 
 observability:
   metricsPort: 9100     # every pod serves Prometheus metrics here, a port no ingress routes to

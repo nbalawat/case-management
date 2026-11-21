@@ -58,6 +58,11 @@ class Settings:
     transit_token: str = os.getenv("TRANSIT_TOKEN", "")
     transit_mount: str = os.getenv("TRANSIT_MOUNT", "transit")
     transit_prefix: str = os.getenv("TRANSIT_PREFIX", "caseforge-")
+    # Regulator schemas. FinCEN's ship with the app. goAML schemas are published by each FIU, often on terms that forbid
+    # redistributing them, so the operator downloads the client's FIU schema and points this at the folder holding it.
+    goaml_schema_dir: Path = Path(os.getenv("GOAML_SCHEMA_DIR", ROOT / "data" / "schemas" / "goaml"))
+    # 1: a report that could not be checked against a schema is held back. 0: it can be sent, marked as not checked.
+    filing_require_schema: bool = os.getenv("FILING_REQUIRE_SCHEMA", "0") == "1"
     allow_memory_storage: bool = os.getenv("ALLOW_MEMORY_STORAGE", "0") == "1"
     pipeline_scheduler: bool = os.getenv("PIPELINE_SCHEDULER", "0") == "1"
     # demo: the client and the person come from request headers (the persona switch). oidc: only from a signed token.
@@ -86,6 +91,8 @@ class Settings:
     # History on the lake: a JSON object of Iceberg catalog properties. Unset: no lake. On a laptop, for example
     # {"type": "sql", "uri": "sqlite:///data/lake-catalog.db", "warehouse": "file:///abs/path/data/warehouse"}.
     lake_catalog: str = os.getenv("LAKE_CATALOG", "")
+    # Where backups go: any object store URL (file://, s3://, abfs://, gs://). Empty on a laptop: data/backups.
+    backup_url: str = os.getenv("BACKUP_URL", f"file://{ROOT / 'data' / 'backups'}")
     # The lake writer gathers this many messages, or waits this long, before writing: fewer, larger files.
     lake_flush_rows: int = int(os.getenv("LAKE_FLUSH_ROWS", "20000"))
     lake_flush_seconds: float = float(os.getenv("LAKE_FLUSH_SECONDS", "5"))
@@ -117,11 +124,18 @@ class Settings:
     temporal_step_seconds: float = float(os.getenv("TEMPORAL_STEP_SECONDS", "20"))
     # Due data pipelines are started by a Temporal schedule this often (replaces PIPELINE_SCHEDULER on Temporal).
     temporal_pipeline_seconds: float = float(os.getenv("TEMPORAL_PIPELINE_SECONDS", "60"))
+    # How often each client's regulatory inbox is read for the regulator's answers (a schedule per client on Temporal).
+    temporal_answers_seconds: float = float(os.getenv("TEMPORAL_ANSWERS_SECONDS", "300"))
     # 0: the worker creates no schedules (the sweep and due pipelines are then started some other way).
     temporal_schedules: bool = os.getenv("TEMPORAL_SCHEDULES", "1") == "1"
     # What workflow ids start with, before the client. Empty: EVENT_TOPIC_PREFIX. Two deployments sharing a Temporal
     # namespace need different ones.
     temporal_id_prefix: str = os.getenv("TEMPORAL_ID_PREFIX", "")
+    # Payload encryption (app/durable/encryption.py): auto encrypts when a master key is set, required refuses to run
+    # without one, off never encrypts. The key belongs in the deployment's Secret, never in values or the image.
+    temporal_encryption: str = os.getenv("TEMPORAL_ENCRYPTION", "auto")
+    temporal_encryption_key: str = os.getenv("TEMPORAL_ENCRYPTION_KEY", "")
+    temporal_key_version: int = int(os.getenv("TEMPORAL_KEY_VERSION", "1"))
     # Stream detection: the REST address of an Apache Flink cluster running the jobs in app/streamjobs. The platform
     # page shows whether each client's jobs are running.
     flink_url: str = os.getenv("FLINK_URL", "")
@@ -140,6 +154,11 @@ class Settings:
     # Bring the database to the newest migration when the application starts. Off where a separate step migrates
     # (the Helm chart): the application then refuses to start against a database that is behind.
     migrate_on_start: bool = os.getenv("MIGRATE_ON_START", "1") == "1"
+    # Postgres only. The role every request's transaction runs as (SET LOCAL ROLE), so that row-level security binds
+    # it even when DATABASE_URL names the tables' owner or a superuser, which RLS would otherwise let through. The
+    # application creates the role (no login, no superuser, no BYPASSRLS) and grants it the tables. Empty: requests run
+    # as the connecting user, and the health check reports whether that user is held by row-level security.
+    database_role: str = os.getenv("DATABASE_ROLE", "")
 
 
 settings = Settings()

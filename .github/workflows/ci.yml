@@ -124,7 +124,7 @@ jobs:
           TEST_TEMPORAL_URL: temporal://localhost:7233
           TEST_TRANSIT_ADDR: http://localhost:8200
           TEST_TRANSIT_TOKEN: ci-only
-        run: uv run pytest -q tests/test_postgres.py tests/test_keys.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
+        run: uv run pytest -q tests/test_postgres.py tests/test_rls.py tests/test_keys.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
 
   frontend:
     name: Frontend lint and build
@@ -175,6 +175,8 @@ jobs:
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set auth.mode=demo --set ingress.enabled=true --set ingress.host=h
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set eventBus.url=broker:9092
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.url=temporal:7233
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.encryption=sometimes
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set temporal.keyVersion=0
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set ingress.enabled=true
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e                                   # no key service
           refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.provider=local --set keys.transit.addr=x

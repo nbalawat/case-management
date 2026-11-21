@@ -4,6 +4,7 @@ import { switchClient } from '../shell/switchClient'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
 import ManagedServiceConsole from '../components/platform/ManagedServiceConsole'
+import BackupsCard from '../components/platform/BackupsCard'
 import HealthCard from '../components/platform/HealthCard'
 import ClientKeysCard from '../components/platform/ClientKeysCard'
 
@@ -153,6 +154,7 @@ export default function Clients() {
         <p className="muted small">This console shows counts only. It cannot list a customer, open a case or read a narrative. Your staff reach client data only through an engagement the client has agreed to, under the client's own access policy.</p>
       </Card>
       <HealthCard />
+      <BackupsCard />
       <Onboard onDone={reload} />
       <h2 id="managed-service">Managed service</h2>
       <ManagedServiceConsole />

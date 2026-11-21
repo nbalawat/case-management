@@ -72,6 +72,7 @@ policy says what they may do.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL` | SQLite under `data/` | The operational store; Postgres 16 in any real deployment |
+| `DATABASE_ROLE` | empty | Postgres only. The role every request's transaction runs as (`SET LOCAL ROLE`), so row-level security binds it even when `DATABASE_URL` names a superuser or the tables' owner. The application creates it (no login, no BYPASSRLS) with its grants at start. Compose and Helm set `caseforge_app`. Empty: requests run as the connecting user, and the health check says whether that user is held |
 | `SCHEMA_ON_MISMATCH` | `rebuild` | A database at another schema version: `rebuild` drops every table (demos only), `refuse` stops with an explanation. Helm sets `refuse` |
 | `MIGRATE_ON_START` | `1` | Migrate at start. Off where a separate step migrates (the Helm hook job) |
 | `DEMO_TENANTS` | `1` | Seed the three demo clients |
@@ -115,6 +116,12 @@ policy says what they may do.
 | `LAKE_CATALOG` | empty | JSON of Iceberg catalog properties (SQL catalog on a laptop, REST catalog in a deployment). Empty: no lake |
 | `LAKE_FLUSH_ROWS`, `LAKE_FLUSH_SECONDS` | `20000`, `5` | The lake writer gathers this many messages, or waits this long, before writing: fewer, larger files |
 | `DETECTION_HISTORY` | `operational` | `lake`: backtests and lookbacks read history from the lake (falls back when there is none) |
+
+### Backups
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BACKUP_URL` | `data/backups` | Where `python -m app.backup` writes and reads backups: any object store URL. Helm sets it from `backup.url` and schedules a nightly backup and a weekly restore drill |
 
 ### Observability
 

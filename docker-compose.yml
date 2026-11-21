@@ -23,6 +23,7 @@ services:
     build: .
     environment: &app-env
       DATABASE_URL: postgresql+psycopg://caseforge:caseforge-local-only@db:5432/caseforge
+      DATABASE_ROLE: caseforge_app                 # requests run as a role Postgres row-level security binds (app/rls.py)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # optional: a model behind the Ask page and the agents
       OPEN_MODEL_URL: ${OPEN_MODEL_URL:-}        # optional: an open-weight model on vLLM or Ollama, e.g. http://host.docker.internal:11434/v1
       OPEN_MODEL: ${OPEN_MODEL:-}
@@ -35,6 +36,8 @@ services:
       TEMPORAL_URL: ${TEMPORAL_URL:-}            # empty: case workflows run in the application and the sweep checks stage clocks
       WORKFLOW_ENGINE: ${WORKFLOW_ENGINE:-}      # empty: temporal when TEMPORAL_URL is set, builtin otherwise
       TEMPORAL_NAMESPACE_MODE: ${TEMPORAL_NAMESPACE_MODE:-per_client}  # each client's workflows in a namespace of its own
+      TEMPORAL_ENCRYPTION: ${TEMPORAL_ENCRYPTION:-auto}  # payloads sealed before Temporal sees them when a key is set
+      TEMPORAL_ENCRYPTION_KEY: ${TEMPORAL_ENCRYPTION_KEY:-}  # base64 of 32+ bytes; a key per client is derived from it
       FLINK_URL: ${FLINK_URL:-}                  # empty: no stream processor; scenarios run in the stream consumer
       FLINK_GATEWAY_URL: ${FLINK_GATEWAY_URL:-}  # Flink's SQL Gateway: start and stop jobs from the Integrations page
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}  # empty: no traces; make observability sends them to Jaeger

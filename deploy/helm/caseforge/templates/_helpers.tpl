@@ -25,6 +25,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if and (eq .Values.keys.provider "none") (not .Values.demoTenants) }}{{ fail "keys.provider=none stores customer documents unsealed; it is only allowed with demoTenants=true" }}{{ end -}}
 {{- if and .Values.eventBus.url (not (hasPrefix "kafka://" .Values.eventBus.url)) }}{{ fail "eventBus.url must start with kafka://" }}{{ end -}}
 {{- if and .Values.temporal.url (not (hasPrefix "temporal://" .Values.temporal.url)) }}{{ fail "temporal.url must start with temporal://" }}{{ end -}}
+{{- if not (has .Values.temporal.encryption (list "auto" "required" "off")) }}{{ fail "temporal.encryption must be auto, required or off" }}{{ end -}}
+{{- if lt (int .Values.temporal.keyVersion) 1 }}{{ fail "temporal.keyVersion starts at 1" }}{{ end -}}
 {{- if and .Values.search.url (not (hasPrefix "opensearch" .Values.search.url)) }}{{ fail "search.url must start with opensearch:// or opensearchs://" }}{{ end -}}
 {{- end -}}
 

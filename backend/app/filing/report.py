@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..customers import record
 from ..domain.models import Alert, Case, Party, Transaction
 from ..tenants.registry import runtime
 
@@ -31,11 +32,20 @@ def profile(tenant_id: str) -> dict:
 
 def _txn(t: Transaction) -> dict:
     return {"id": t.id, "ts": t.ts.isoformat(), "amount": round(t.amount, 2), "currency": t.currency, "direction": t.direction,
-            "channel": t.channel, "counterparty": t.counterparty, "counterparty_country": t.counterparty_country, "account_id": t.account_id}
+            "channel": t.channel, "counterparty": t.counterparty, "counterparty_country": t.counterparty_country, "account_id": t.account_id,
+            "counterparty_account": t.counterparty_account, "counterparty_institution": t.counterparty_institution, "purpose": t.purpose}
 
 
 def _subject(p: Party) -> dict:
+    """Everything a regulator asks about the subject. Numbers are written in full: this is the report itself."""
     return {"id": p.id, "kind": p.kind, "name": p.name, "country": p.country, "occupation": p.occupation,
+            "born": p.born.isoformat() if p.born else None, "nationality": p.nationality or "",
+            "address": {"line1": p.address_line1, "line2": p.address_line2, "city": p.city, "region": p.region, "postal_code": p.postal_code,
+                        "country": p.country},
+            "phone": p.phone, "email": p.email,
+            "identifiers": [{"kind": i.kind, "value": i.value, "issuer_country": i.issuer_country, "expires": i.expires.isoformat() if i.expires else None}
+                            for i in p.identifiers],
+            "missing": record.missing(p),
             "accounts": [{"id": a.id, "product": a.product, "status": a.status} for a in p.accounts]}
 
 
