@@ -87,7 +87,9 @@ def test_signing_in_leaves_only_an_httponly_cookie_in_the_browser(web):
     assert web.get("/api/me").json()["id"] == "maya"
     r = row()
     assert r.id == sessions.digest(web.cookies[sessions.COOKIE]) and r.id != web.cookies[sessions.COOKIE]  # only a hash is kept
-    assert "eyJ" not in r.access_sealed and r.refresh_sealed and r.realm == "meridian"  # tokens sealed at rest
+    token = sessions.unseal(r.access_sealed)  # tokens sealed at rest: the stored value is not the token
+    assert token.startswith("eyJ") and token not in r.access_sealed and token.split(".")[1] not in r.access_sealed
+    assert r.refresh_sealed and sessions.unseal(r.refresh_sealed) not in r.refresh_sealed and r.realm == "meridian"
 
 
 def test_platform_staff_sign_in_the_same_way(web):
