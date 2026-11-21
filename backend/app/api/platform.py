@@ -36,7 +36,15 @@ def _tenant_out(row: Tenant) -> dict:
             "deployment_label": DEPLOYMENTS.get(row.deployment, row.deployment), "status": row.status,
             "created": row.created.isoformat(), "case_types": list(rt.case_types), "people": len(rt.policy.people),
             "roles": len(rt.policy.roles), "queues": len(rt.policy.queues), "policy_version": rt.policy.version,
-            "identity": (rt.settings or {}).get("identity")}
+            "identity": (rt.settings or {}).get("identity"), "identity_declared": _declared(row.id)}
+
+
+def _declared(tenant_id: str) -> str | None:
+    """The issuer OIDC_CLIENTS declares for this client, used when none is registered here."""
+    from ..auth.identity import configured
+
+    p = configured().get(tenant_id)
+    return p.issuer if p else None
 
 
 @router.get("/overview")

@@ -8,6 +8,7 @@ import BackupsCard from '../components/platform/BackupsCard'
 import HealthCard from '../components/platform/HealthCard'
 import ClientKeysCard from '../components/platform/ClientKeysCard'
 import OffboardingCard from '../components/platform/OffboardingCard'
+import IdentityProvidersCard, { type Provider } from '../components/platform/IdentityProvidersCard'
 import UsageCard from '../components/platform/UsageCard'
 
 type ClientRow = {
@@ -15,6 +16,7 @@ type ClientRow = {
   case_types: string[]; people: number; roles: number; queues: number; policy_version: string
   open_cases: number; cases: number; sla_breached: number; alerts: number; transactions: number
   own_workflow_versions: number; policy_versions: number; last_activity: string | null
+  identity: Provider | null; identity_declared: string | null
 }
 type OverviewData = {
   tenants: ClientRow[]
@@ -160,6 +162,7 @@ export default function Clients() {
       <Onboard onDone={reload} />
       <h2 id="managed-service">Managed service</h2>
       <ManagedServiceConsole />
+      <IdentityProvidersCard clients={data.tenants} onChange={reload} />
       <ClientKeysCard />
       <UsageCard />
       <OffboardingCard clients={data.tenants} onChange={reload} />
