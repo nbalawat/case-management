@@ -24,6 +24,7 @@ BATCH = 1000
 # AGE wants the graph name as a constant in the statement, not a parameter. `{g}` is only ever filled from
 # graph_name(), which builds it from a checked client id. Every value travels as a parameter.
 _ROUTE = "SELECT * FROM cypher('{g}', $$ MATCH p = (a:Entity {{id: $a}})-[:LINK*{n}..{n}]-(b:Entity {{id: $b}}) RETURN p LIMIT 1 $$, %s) AS (p agtype)"
+_SHARED = "SELECT * FROM cypher('{g}', $$ MATCH (a:Entity {{id: $a}})-[:LINK]-(c:Entity)-[:LINK]-(o:Entity) WHERE o.id <> $a RETURN DISTINCT c.id, o.id $$, %s) AS (c agtype, o agtype)"
 _NODES = "SELECT * FROM cypher('{g}', $$ UNWIND $rows AS r CREATE (:Entity {{id: r}}) $$, %s) AS (x agtype)"
 _LINKS = "SELECT * FROM cypher('{g}', $$ UNWIND $rows AS r MATCH (a:Entity {{id: r[0]}}), (b:Entity {{id: r[1]}}) CREATE (a)-[:LINK]->(b) $$, %s) AS (x agtype)"
 
@@ -101,6 +102,19 @@ class AgeGraph:
                 if row:
                     return _ids(row[0])
         return None
+
+    def shared(self, tenant_id: str, start: str) -> list[tuple[str, str]]:
+        """Two steps out from one entity: each entity it is linked to, paired with every other entity linked to that one.
+
+        Common counterparties have no links in the graph, so nothing is reached through them.
+        """
+        name = graph_name(tenant_id)
+        with self._cursor() as cur:
+            if not self._exists(cur, name):
+                raise GraphError("This client's graph has not been built yet.")
+            cur.execute(f"SET LOCAL statement_timeout = {int(self.timeout_ms)}")
+            cur.execute(_SHARED.format(g=name), (json.dumps({"a": start}),), prepare=True)
+            return sorted((json.loads(c), json.loads(o)) for c, o in cur.fetchall())
 
     def size(self, tenant_id: str) -> tuple[int, int] | None:
         """Entities and links held for a client, or None when its graph has not been built."""
