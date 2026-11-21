@@ -258,3 +258,47 @@ def test_each_calendar_month_is_totalled_on_its_own_and_on_the_clients_threshold
     send(world, topics.TRANSACTIONS, [abroad(1, 3000, day=late - 1), abroad(2, 3000, day=early), abroad(3, 2500, day=early + 1)])
     found, _ = alerts(world, T, 1, seconds=60, day=early + 5)
     assert [(a["external_id"], a["txn_ids"]) for a in found] == [(f"P1:{first.strftime('%Y-%m')}", ["T2", "T3"])]
+
+
+# ---- started and stopped from the product, through a real SQL Gateway
+
+GATEWAY = os.getenv("TEST_FLINK_GATEWAY_URL", "")
+
+
+@pytest.mark.skipif(not GATEWAY.startswith("http"), reason="set TEST_FLINK_GATEWAY_URL to the cluster's SQL Gateway to run")
+def test_a_job_started_from_the_product_raises_alerts_and_a_restart_applies_new_settings(world, jobs):  # noqa: F811
+    from app.streamjobs import control
+    from test_detection_governance import MAYA
+
+    object.__setattr__(settings, "flink_gateway_url", GATEWAY)
+    try:
+        with world.tenant(T) as s:
+            first = control.start(s, "structuring", MAYA)
+            s.commit()
+        send(world, topics.TRANSACTIONS, [txn(i, day=i) for i in (1, 2, 3)])
+        found, _ = alerts(world, T, 1)
+        assert [a["txn_ids"] for a in found] == [["T1", "T2", "T3"]]
+        with world.tenant(T) as s:
+            assert status.view(s)["stream_jobs"]["jobs"][0] | {"since": None} == {
+                "job": "structuring", "title": "Cash structuring below reporting threshold", "scenario": "structuring", "source": "flink-structuring",
+                "engine_job_id": first.engine_job_id, "state": "RUNNING", "since": None, "also_in_application": True, "started_by": "maya",
+                "settings_changed": False}
+            live(s, params={"count": 2}, note="Two deposits are enough for this client from now on.")
+            assert status.view(s)["stream_jobs"]["jobs"][0]["settings_changed"] is True
+            second = control.restart(s, "structuring", MAYA)
+            s.commit()
+            assert second.engine_job_id != first.engine_job_id and second.params["count"] == 2
+        both, _ = alerts(world, T, 2, group="after-restart")  # the new job reads the topic from the start, on the new settings
+        assert [a["txn_ids"] for a in both] == [["T1", "T2", "T3"], ["T1", "T2"]]
+        with world.tenant(T) as s:
+            control.stop(s, "structuring", MAYA, "Test over.")
+            s.commit()
+            end = time.monotonic() + 30
+            while status.view(s)["stream_jobs"]["jobs"][0]["state"] == "RUNNING" and time.monotonic() < end:
+                time.sleep(1)
+            assert status.view(s)["stream_jobs"]["jobs"][0]["state"] in ("CANCELED", "CANCELLING")
+    finally:
+        object.__setattr__(settings, "flink_gateway_url", "")
+        for j in flink.overview():
+            if j["name"].startswith(settings.event_topic_prefix + " ") and j["state"] == "RUNNING":
+                flink.cancel(j["jid"])

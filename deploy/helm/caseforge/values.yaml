@@ -76,7 +76,8 @@ temporal:
       limits: {memory: 512Mi}
 
 flink:
-  url: ""               # http://flink-jobmanager:8081. Read-only: shows job status on the Integrations page.
+  url: ""               # http://flink-jobmanager:8081. Shows job status on the Integrations page.
+  gatewayUrl: ""        # http://flink-sql-gateway:8083. With it, jobs are started and stopped from that page.
 
 storage:
   evidenceUrl: ""       # s3://bucket/prefix, abfss://..., gs://... Required: pods keep nothing on local disk.

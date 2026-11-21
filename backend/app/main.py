@@ -64,7 +64,7 @@ async def lifespan(_: FastAPI):
         backbone[1].set()
 
 
-app = FastAPI(title="CaseForge demo API", version="0.23.0", lifespan=lifespan)
+app = FastAPI(title="CaseForge demo API", version="0.24.0", lifespan=lifespan)
 
 
 @app.exception_handler(workflow.EngineUnavailable)
