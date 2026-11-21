@@ -223,6 +223,11 @@ def test_the_worker_keeps_clocks_in_step_on_its_own(world):
         await asyncio.sleep(1)
         cid = await asyncio.to_thread(new_case, world, "A", 3)  # a case opened after the worker started
         try:
+            for _ in range(40):  # the worker notices the case at its next look, half a second or so later
+                if await temporal.running(client, T):
+                    break
+                await asyncio.sleep(0.25)
+            assert await temporal.running(client, T) == 1
             assert await result(client, T, cid) == "breached"
         finally:
             stop.set()

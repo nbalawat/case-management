@@ -27,7 +27,7 @@ jobs:
         run: uv run pytest -q
 
   services:
-    name: Backend on Postgres, Kafka, OpenSearch and Apache AGE
+    name: Backend on Postgres, Kafka, OpenSearch, Apache AGE and Temporal
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -67,6 +67,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - name: Start a Temporal development server
+        run: |
+          docker run -d --name temporal -p 7233:7233 temporalio/temporal:1.10.1 server start-dev --ip 0.0.0.0
+          for i in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/7233) 2>/dev/null && break; sleep 1; done
+          sleep 5
+          docker logs temporal | tail -5
       - name: The whole demo on Postgres, the event backbone on a real broker, search on a real engine
         working-directory: backend
         env:
@@ -74,7 +80,8 @@ jobs:
           TEST_KAFKA_URL: kafka://localhost:9092
           TEST_OPENSEARCH_URL: opensearch://localhost:9200
           TEST_AGE_URL: age://caseforge:ci-only@localhost:5455/graph
-        run: uv run pytest -q tests/test_postgres.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py
+          TEST_TEMPORAL_URL: temporal://localhost:7233
+        run: uv run pytest -q tests/test_postgres.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
 
   frontend:
     name: Frontend lint and build
