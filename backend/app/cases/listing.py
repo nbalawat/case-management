@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
-from ..domain.models import Alert, Case, Party
+from ..domain.models import Alert, Case, Party, now
 
 PRIORITY_RANK = case({"critical": 0, "high": 1, "medium": 2, "low": 3}, value=Case.priority, else_=4)
 # Sort keys the database can order by. The stage clock depends on each workflow's settings, so it is shown, not sorted.
@@ -22,6 +24,8 @@ SORTS = {
     "stage": Case.state, "type": Case.case_type, "owner": Case.owner, "queue": Case.queue, "stage_entered": Case.state_entered,
 }
 STATUSES = ("open", "closed", "all")
+DUES = ("overdue", "week")  # past the regulatory deadline, or due within seven days (overdue included)
+PERIOD = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")  # a day or a month, as dashboards drill into them
 MAX_PAGE = 200
 MAX_EXPORT = 50_000
 
@@ -35,6 +39,12 @@ class CaseQuery:
     states: tuple[str, ...] = ()
     owner: str | None = None  # a person id, "me" (resolved by the caller) or "unassigned"
     text: str = ""
+    # Drill-through filters, set by dashboards: a deadline window, alert scenarios, and the day or month a case
+    # was opened or closed.
+    due: str | None = None
+    scenarios: tuple[str, ...] = ()
+    opened: str = ""
+    closed_in: str = ""
     sort: tuple[tuple[str, bool], ...] = field(default=(("priority", False), ("deadline", False)))  # (key, descending)
     page: int = 1
     size: int = 50
@@ -45,6 +55,11 @@ class CaseQuery:
         unknown = [k for k, _ in self.sort if k not in SORTS]
         if unknown:
             raise ValueError(f"cannot sort by {', '.join(unknown)}; use {', '.join(SORTS)}")
+        if self.due and self.due not in DUES:
+            raise ValueError(f"due must be one of {', '.join(DUES)}")
+        for name in ("opened", "closed_in"):
+            if getattr(self, name) and not PERIOD.match(getattr(self, name)):
+                raise ValueError(f"{name} is a day (2026-11-21) or a month (2026-11)")
         if self.page < 1 or not 1 <= self.size <= MAX_PAGE:
             raise ValueError(f"page starts at 1 and size is between 1 and {MAX_PAGE}")
 
@@ -54,6 +69,16 @@ def parse_sort(raw: str | None) -> tuple[tuple[str, bool], ...]:
     if not raw:
         return CaseQuery().sort
     return tuple((k.lstrip("-"), k.startswith("-")) for k in raw.split(",") if k.strip())
+
+
+def period(value: str) -> tuple[datetime, datetime]:
+    """'2026-11-21' -> that day; '2026-11' -> that month. Half-open, so the end is the next period's start."""
+    if len(value) == 7:
+        start = datetime.strptime(value, "%Y-%m")
+        end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return start, end
+    start = datetime.strptime(value, "%Y-%m-%d")
+    return start, start + timedelta(days=1)
 
 
 def _base(q: CaseQuery, skip: str | None = None) -> Select:
@@ -70,6 +95,17 @@ def _base(q: CaseQuery, skip: str | None = None) -> Select:
             stmt = stmt.where(col.in_(values))
     if q.owner and skip != "owner":
         stmt = stmt.where(Case.owner.is_(None) if q.owner == "unassigned" else Case.owner == q.owner)
+    if q.due:
+        today = now()
+        stmt = stmt.where(Case.sla_due.is_not(None), (Case.sla_due < today) if q.due == "overdue" else (Case.sla_due <= today + timedelta(days=7)))
+    if q.scenarios:
+        stmt = stmt.where(Case.id.in_(select(Alert.case_id).where(Alert.scenario.in_(q.scenarios))))
+    if q.opened:
+        a, b = period(q.opened)
+        stmt = stmt.where(Case.created >= a, Case.created < b)
+    if q.closed_in:
+        a, b = period(q.closed_in)
+        stmt = stmt.where(Case.closed >= a, Case.closed < b)
     if q.text.strip():
         like = f"%{q.text.strip().lower()}%"
         stmt = stmt.where(or_(func.lower(Party.name).like(like), func.lower(Case.id).like(like), func.lower(Case.party_id).like(like)))

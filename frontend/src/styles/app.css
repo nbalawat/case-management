@@ -10,6 +10,7 @@
 @import "./shell.css" layer(components);
 @import "./grid.css" layer(components);
 @import "./workspace.css" layer(components);
+@import "./dashboard.css" layer(components);
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 

@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api, fmtMoney, words } from '../api'
 import { useApi } from '../useApi'
 import { Card, Kpi, Loading } from '../components/ui'
-import MonthBars from '../components/MonthBars'
+import MonthChart from '../components/dashboard/MonthChart'
+import { casesHref } from '../components/dashboard/drill'
 
 type Report = {
   period: string; partial: boolean; generated: string; periods: string[]
@@ -22,6 +23,8 @@ type Report = {
   sanctions: { decided: number; released: number; blocked: number; rejected: number }
   detection: { changes_live: number; lookbacks_open: number }
 }
+const FLOW = [{ key: 'opened', label: 'Opened' }, { key: 'closed', label: 'Closed' }]
+const BACKLOG = [{ key: 'backlog', label: 'Open cases' }]
 const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v * 100)}%`)
 const monthLabel = (m: string) => new Date(`${m}-15`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
@@ -30,6 +33,7 @@ export default function Mi() {
   const [period, setPeriod] = useState('')
   const { data, error } = useApi<Report>(`/mi${period ? `?period=${period}` : ''}`, [period])
   const [err, setErr] = useState<string | null>(null)
+  const nav = useNavigate()
   if (!data) return <Loading error={error} />
   const h = data.headline
   const get = (file: string) => api.download(`/mi/${file}?period=${data.period}`).catch(e => setErr(e.message))
@@ -46,20 +50,22 @@ export default function Mi() {
       </div>
       <div className="kpis">
         <Kpi label="Alerts raised" value={h.alerts} />
-        <Kpi label="Cases opened" value={h.opened} sub={`${h.closed} closed`} />
-        <Kpi label="Open at the end" value={h.backlog} />
+        <Kpi label="Cases opened" value={h.opened} sub={`${h.closed} closed`} to={casesHref({ status: 'all', opened: data.period })} />
+        <Kpi label="Open at the end" value={h.backlog} to="/cases" />
         <Kpi label="Median days to close" value={h.median_days ?? '–'} sub={`${pct(h.in_time)} inside their deadline`} />
-        <Kpi label="Ended in a filing or confirmed concern" value={h.productive} sub={`of ${h.closed} closed`} />
+        <Kpi label="Ended in a filing or confirmed concern" value={h.productive} sub={`of ${h.closed} closed`} to={casesHref({ status: 'closed', closed: data.period })} />
         <Kpi label="Reports sent to regulators" value={h.filings_sent} sub={h.filings_late ? `${h.filings_late} after the due date` : 'none late'} bad={h.filings_late > 0} />
         <Kpi label="Stage deadlines missed" value={h.stage_breaches} bad={h.stage_breaches > 0} />
       </div>
       <div className="cols-2">
-        <Card title="Cases opened and closed"><MonthBars data={data.trend} series={[{ key: 'opened', label: 'Opened', cls: 'in' }, { key: 'closed', label: 'Closed', cls: 'out' }]} /></Card>
-        <Card title="Open at each month end"><MonthBars data={data.trend} series={[{ key: 'backlog', label: 'Open cases', cls: 'in' }]} /></Card>
+        <Card title="Cases opened and closed" action={<span className="chart-hint">Click a bar for those cases</span>}>
+          <MonthChart data={data.trend} series={FLOW} label="Cases opened and closed by month"
+            onPick={(m, key) => nav(casesHref(key === 'opened' ? { status: 'all', opened: m } : { status: 'closed', closed: m }))} /></Card>
+        <Card title="Open at each month end"><MonthChart data={data.trend} series={BACKLOG} label="Open cases at each month end" /></Card>
       </div>
       <Card title="By kind of case">
         <div className="scroll"><table><thead><tr><th>Kind</th><th className="num">Opened</th><th className="num">Closed</th><th className="num">Open at the end</th><th className="num">Filing or confirmed concern</th><th className="num">Median days</th><th className="num">Inside deadline</th></tr></thead>
-          <tbody>{data.case_types.map(t => <tr key={t.case_type}><td>{t.title}</td><td className="num">{t.opened}</td><td className="num">{t.closed}</td><td className="num">{t.backlog}</td>
+          <tbody>{data.case_types.map(t => <tr key={t.case_type}><td><Link to={casesHref({ status: 'all', case_type: t.case_type, opened: data.period })} title="Cases of this kind opened this month">{t.title}</Link></td><td className="num">{t.opened}</td><td className="num">{t.closed}</td><td className="num">{t.backlog}</td>
             <td className="num">{t.productive}</td><td className="num">{t.median_days ?? '–'}</td><td className="num">{pct(t.in_time)}</td></tr>)}</tbody></table></div>
         {data.case_types.length === 0 && <p className="empty">No casework in this month.</p>}
       </Card>
