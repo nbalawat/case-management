@@ -23,6 +23,8 @@ def _storage(tmp_path_factory):
     object.__setattr__(settings, "lake_dir", base / "lake")
     object.__setattr__(settings, "quarantine_url", f"file://{base / 'quarantine'}")
     object.__setattr__(settings, "evidence_url", f"file://{base / 'evidence'}")
+    object.__setattr__(settings, "exports_url", f"file://{base / 'exports'}")
+    object.__setattr__(settings, "backup_url", f"file://{base / 'backups'}")
     object.__setattr__(settings, "keys_dir", base / "keys")  # each run gets its own keyring and master key
     object.__setattr__(settings, "allow_memory_storage", True)
     yield base

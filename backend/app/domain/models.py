@@ -875,24 +875,31 @@ class StreamStat(TenantScoped, Base):
 
 
 class Offboarding(Base):
-    """What remains of a client after it leaves: who closed it, when, and the fingerprint of the export it was given.
+    """A client leaving the platform: the export it was handed, and then what was erased and what remains.
 
-    A platform record, not tenant-scoped: the client's own rows are gone, and this is the provider's proof that they
-    were handed over and then removed.
+    A platform record, not tenant-scoped, so it outlives the client's own rows: it is the provider's proof that the
+    client's data was handed over, checked, and then removed. Status: exported, then handed_over once the bundle is
+    downloaded, then completed once everything is erased.
     """
 
     __tablename__ = "offboarding"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(40), index=True)
     name: Mapped[str] = mapped_column(String(120))
-    by: Mapped[str] = mapped_column(String(60))
-    at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    export_key: Mapped[str] = mapped_column(String(300))  # where the bundle was written, in the export store
+    status: Mapped[str] = mapped_column(String(20), default="exported")
+    exported_by: Mapped[str] = mapped_column(String(60))
+    exported_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    export_key: Mapped[str] = mapped_column(String(300))  # where the bundle is, in the export store
     export_sha256: Mapped[str] = mapped_column(String(64))
     export_bytes: Mapped[int] = mapped_column(Integer)
-    rows_deleted: Mapped[dict] = mapped_column(JSON, default=dict)  # table -> rows
-    documents: Mapped[int] = mapped_column(Integer, default=0)  # documents made unreadable by destroying the key
-    key: Mapped[str] = mapped_column(String(200), default="")  # what happened to the client's key
+    counts: Mapped[dict] = mapped_column(JSON, default=dict)  # table -> rows, and documents, as exported
+    downloaded_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    erased: Mapped[dict] = mapped_column(JSON, default=dict)  # system -> what was removed there
+    remains: Mapped[list] = mapped_column(JSON, default=list)  # what the platform could not remove, and why
+    error: Mapped[str] = mapped_column(Text, default="")  # the last attempt's failure, when it stopped part way
 
 
 class ProviderStaff(Base):

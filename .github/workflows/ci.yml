@@ -186,6 +186,9 @@ jobs:
           helm template stamp . $ARGS | grep -q 'MIGRATE_ON_START: "0"'
           helm template stamp . $ARGS --set migrations.job=false | grep -q 'MIGRATE_ON_START: "1"'
           if helm template stamp . $ARGS --set migrations.job=false | grep -q 'helm.sh/hook'; then echo "no hook expected"; exit 1; fi
+          # Offboarding bundles sit beside the documents unless placed elsewhere
+          helm template stamp . $ARGS | grep -q 'EXPORTS_URL: "s3://bucket/evidence-exports"'
+          helm template stamp . $ARGS --set storage.exportsUrl=s3://vault/exports | grep -q 'EXPORTS_URL: "s3://vault/exports"'
           # And the least it must accept
           helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.transit.addr=https://bao:8200 > /dev/null
           helm template demo . --set existingSecret=s --set demoTenants=true --set schemaOnMismatch=rebuild --set auth.mode=demo > /dev/null

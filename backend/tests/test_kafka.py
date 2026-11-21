@@ -229,3 +229,15 @@ def test_the_lake_is_filled_from_kafka_exactly_once(world, tmp_path):
     assert run(LakeSink(world.bus, store, group=group), 35) == 35  # the same 35 again, all recognised
     assert len(store.scan(T, "case_events")) == 30 and len(store.scan(OTHER, "case_events")) == 5
     assert len(store.marks(T, "case_events")) >= 1 and sum(store.marks(T, "case_events").values()) == 30
+
+
+def test_deleting_one_clients_topics_leaves_the_others(world):
+    """Offboarding erases a client's topics on the broker; another client's topics and messages stay."""
+    mine, theirs = [topics.topic(T, n) for n in topics.ALL], [topics.topic(OTHER, n) for n in topics.ALL]
+    world.bus.publish([Message(theirs[0], "k", b"kept")])
+    assert world.bus.delete_topics(mine + [topics.topic(T, "never-made")]) == len(mine)
+    deadline = time.monotonic() + 30  # the broker forgets a deleted topic shortly after it says so
+    while set(mine) & set(world.bus.topics()) and time.monotonic() < deadline:
+        time.sleep(0.5)
+    assert not set(mine) & set(world.bus.topics()) and set(theirs) <= set(world.bus.topics())
+    assert world.bus.delete_topics(mine) == 0  # running it again is harmless

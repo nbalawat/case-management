@@ -1,14 +1,14 @@
-"""offboarding record
+"""Offboarding: the record of a client handed its data and then erased
 
-Revision: 20261121192750
-Follows: 0026
+Revision: 20261121202024
+Follows: 0029
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = '20261121192750'
-down_revision = '0026'
+revision = '20261121202024'
+down_revision = '0029'
 branch_labels = None
 depends_on = None
 
@@ -19,14 +19,20 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=40), nullable=False),
     sa.Column('tenant_id', sa.String(length=40), nullable=False),
     sa.Column('name', sa.String(length=120), nullable=False),
-    sa.Column('by', sa.String(length=60), nullable=False),
-    sa.Column('at', sa.DateTime(), nullable=False),
+    sa.Column('status', sa.String(length=20), nullable=False),
+    sa.Column('exported_by', sa.String(length=60), nullable=False),
+    sa.Column('exported_at', sa.DateTime(), nullable=False),
     sa.Column('export_key', sa.String(length=300), nullable=False),
     sa.Column('export_sha256', sa.String(length=64), nullable=False),
     sa.Column('export_bytes', sa.Integer(), nullable=False),
-    sa.Column('rows_deleted', sa.JSON(), nullable=False),
-    sa.Column('documents', sa.Integer(), nullable=False),
-    sa.Column('key', sa.String(length=200), nullable=False),
+    sa.Column('counts', sa.JSON(), nullable=False),
+    sa.Column('downloaded_by', sa.String(length=60), nullable=True),
+    sa.Column('downloaded_at', sa.DateTime(), nullable=True),
+    sa.Column('completed_by', sa.String(length=60), nullable=True),
+    sa.Column('completed_at', sa.DateTime(), nullable=True),
+    sa.Column('erased', sa.JSON(), nullable=False),
+    sa.Column('remains', sa.JSON(), nullable=False),
+    sa.Column('error', sa.Text(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('offboarding', schema=None) as batch_op:

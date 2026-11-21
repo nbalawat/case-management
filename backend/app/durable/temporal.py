@@ -279,9 +279,10 @@ async def forget(base, tenant_id: str) -> dict:
 
     ns = namespaces.namespace_for(tenant_id)
     if not await namespaces.exists(base, ns):
-        return {"namespace": ns, "deleted_namespace": False, "workflows": 0}
-    client = for_namespace(base, ns)
-    for sid in (sweep_id(tenant_id), pipelines_id(tenant_id)):
+        return {"namespace": ns, "deleted_namespace": False, "schedules": 0, "workflows": 0}
+    client, prefix = for_namespace(base, ns), _prefix(tenant_id) + "."
+    schedules = [s.id async for s in await client.list_schedules() if s.id.startswith(prefix)]  # every one it has, whatever it is for
+    for sid in schedules:
         try:
             await client.get_schedule_handle(sid).delete()
         except RPCError as e:
@@ -289,8 +290,8 @@ async def forget(base, tenant_id: str) -> dict:
                 raise
     if namespaces.per_client():
         await base.operator_service.delete_namespace(DeleteNamespaceRequest(namespace=ns))
-        return {"namespace": ns, "deleted_namespace": True, "workflows": None}
-    prefix, n = _prefix(tenant_id) + ".", 0
+        return {"namespace": ns, "deleted_namespace": True, "schedules": len(schedules), "workflows": None}
+    n = 0
     async for wf in client.list_workflows():
         if not wf.id.startswith(prefix):
             continue
@@ -301,4 +302,4 @@ async def forget(base, tenant_id: str) -> dict:
         except RPCError as e:
             if e.status != RPCStatusCode.NOT_FOUND:
                 raise
-    return {"namespace": ns, "deleted_namespace": False, "workflows": n}
+    return {"namespace": ns, "deleted_namespace": False, "schedules": len(schedules), "workflows": n}

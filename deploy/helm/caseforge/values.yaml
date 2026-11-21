@@ -94,6 +94,7 @@ flink:
 storage:
   evidenceUrl: ""       # s3://bucket/prefix, abfss://..., gs://... Required: pods keep nothing on local disk.
   quarantineUrl: ""
+  exportsUrl: ""        # offboarding bundles, sealed under each client's key. Unset: <evidenceUrl>-exports in the same store.
 
 # Per-client keys: customer documents are sealed under their client's own key (envelope encryption, app/keys).
 #   transit  OpenBao or Vault Transit holds the keys. TRANSIT_TOKEN goes in existingSecret. Required unless demoTenants.

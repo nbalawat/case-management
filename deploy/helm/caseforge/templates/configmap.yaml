@@ -38,6 +38,9 @@ data:
   {{- with .Values.storage.evidenceUrl }}
   EVIDENCE_URL: {{ . | quote }}
   {{- end }}
+  {{- with (.Values.storage.exportsUrl | default (and .Values.storage.evidenceUrl (printf "%s-exports" (trimSuffix "/" .Values.storage.evidenceUrl)))) }}
+  EXPORTS_URL: {{ . | quote }}
+  {{- end }}
   {{- with .Values.storage.quarantineUrl }}
   QUARANTINE_URL: {{ . | quote }}
   {{- end }}

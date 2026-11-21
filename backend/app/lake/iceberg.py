@@ -133,6 +133,23 @@ class IcebergStore:
             out.append(TableInfo(name, total, len(t.history()), datetime.fromtimestamp(snap.timestamp_ms / 1000, timezone.utc).replace(tzinfo=None) if snap else None, t.location()))
         return out
 
+    def drop(self, tenant_id: str) -> int:
+        ns, n = self.namespace(tenant_id), 0
+        for name in TABLES:
+            ident = f"{ns}.{name}"
+            try:
+                purge = getattr(self._catalog, "purge_table", None)
+                (purge or self._catalog.drop_table)(ident)  # purge removes the data files as well as the entry
+                n += 1
+            except (NoSuchTableError, NoSuchNamespaceError):
+                pass
+            self._open.pop((tenant_id, name), None)
+        try:
+            self._catalog.drop_namespace(ns)
+        except NoSuchNamespaceError:
+            pass
+        return n
+
 
 _store: IcebergStore | None = None
 _for: str | None = None

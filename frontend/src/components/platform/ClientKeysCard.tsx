@@ -30,11 +30,11 @@ export default function ClientKeysCard() {
       <table><thead><tr><th>Client</th><th>Key</th><th>Documents</th><th>Created</th><th /></tr></thead>
         <tbody>{data.clients.map(c => (
           <tr key={c.tenant}><td><b>{c.name}</b><div className="muted small">{c.reference}</div></td>
-            <td>{c.error ? <Pill tone="critical">unavailable</Pill> : c.destroyed ? <Pill tone="critical">destroyed</Pill> : c.sealed ? <Pill tone="good">v{c.version}</Pill> : <Pill tone="warning">none</Pill>}
+            <td>{c.error ? <Pill tone="critical">unavailable</Pill> : c.destroyed ? <Pill tone="critical">destroyed</Pill> : c.sealed && c.version ? <Pill tone="good">v{c.version}</Pill> : c.sealed ? <Pill tone="neutral">not made yet</Pill> : <Pill tone="warning">none</Pill>}
               <div className="muted small">{c.error ?? (c.rotated ? `rotated ${fmtDateTime(c.rotated)}` : c.summary)}</div></td>
             <td>{c.documents.sealed} sealed{c.documents.not_sealed > 0 && <div className="muted small">{c.documents.not_sealed} from before sealing</div>}</td>
             <td className="small">{c.created ? fmtDateTime(c.created) : '–'}</td>
-            <td>{c.sealed && !c.destroyed && !c.error && <button disabled={busy === c.tenant} onClick={() => rotate(c)}>{busy === c.tenant ? 'Rotating…' : 'Rotate key'}</button>}</td></tr>))}</tbody></table>
+            <td>{c.sealed && !!c.version && !c.destroyed && !c.error && <button disabled={busy === c.tenant} onClick={() => rotate(c)}>{busy === c.tenant ? 'Rotating…' : 'Rotate key'}</button>}</td></tr>))}</tbody></table>
     </Card>
   )
 }

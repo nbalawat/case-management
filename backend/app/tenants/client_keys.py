@@ -34,16 +34,18 @@ def status(tenant: str) -> dict:
 
 
 def documents(tenant: str) -> tuple[int, int]:
-    """(sealed, not sealed) among the client's stored documents."""
-    store = evidence.store(tenant)
-    if not isinstance(store, SealedStore):
-        return 0, sum(1 for _ in store.list())
+    """(sealed, not sealed) among the client's stored documents, read as stored: counting never makes or needs a key."""
+    from ..config import settings
+    from ..storage import open_store
+
+    store = open_store(f"{settings.evidence_url.rstrip('/')}/{tenant}/")
     sealed = plain = 0
     for o in store.list():
-        if store.is_sealed(o.key):
-            sealed += 1
-        else:
-            plain += 1
+        with store.open(o.key) as f:
+            if keys.is_sealed(f.read(4)):
+                sealed += 1
+            else:
+                plain += 1
     return sealed, plain
 
 
