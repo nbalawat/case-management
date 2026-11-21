@@ -17,6 +17,8 @@ from ..domain.models import AgentRun, Alert, Case, Transaction, new_id, now
 from . import ledger, model_mode, policy as policies
 from .catalog import AgentSpec, catalog
 from .llm import LLMProvider, get_provider
+from .writer import ModelNarrativeWriter
+from ..tenancy import tenant_of
 from .steps import AGENTS, Context, Step, _f, decide
 from .tools import ToolDenied, Toolbox, extract, media_search
 from ..visibility import system_work
@@ -52,6 +54,7 @@ class Assessment:
     signals: list[tuple[str, float]] = field(default_factory=list)
     draft: str = ""
     shadow: dict | None = None
+    writer: str = ""  # what drafted the narrative: a model, or the template
 
 
 @system_work
@@ -102,8 +105,16 @@ def _narrative(ctx: Context, provider: LLMProvider) -> Step:
     ctx.use("case_findings", f"{len(ctx.facts.get('key_findings', []))} finding(s)")
     ctx.use("model_gateway", provider.name)
     draft = provider.write_narrative(ctx.facts)
-    return Step("narrative_writer", "Narrative draft", "Drafted a narrative from the cited findings.",
-                [_f(draft, sources=[f"Briefing for {ctx.case.id}"])], {"draft": draft})
+    outcome = getattr(provider, "last", None)
+    summary, extra = "Drafted a narrative from the cited findings.", {"draft": draft}
+    if outcome is not None:
+        extra |= {"written_by": outcome.by, "guidance": "kb:sar-decisioning#the-narrative"}
+        if outcome.fallback:
+            summary = f"Drafted from the template, because {outcome.fallback}."
+            extra |= {"fallback": outcome.fallback, "unverified": outcome.unverified}
+        else:
+            summary = f"{outcome.by} drafted the narrative from the cited findings; every figure and record id in it checked against them."
+    return Step("narrative_writer", "Narrative draft", summary, [_f(draft, sources=[f"Briefing for {ctx.case.id}"])], extra)
 
 
 def _qa(ctx: Context, steps: list[StepResult]) -> Step:
@@ -128,7 +139,7 @@ def assess(s: Session, case: Case, pol: policies.Policy | None = None, *, reques
     """Work out the briefing for a case under a policy. Reads only. `chat` overrides the configured model for the specialists."""
     pol = pol or policies.current(s)
     chat = chat or model_mode.chat_model(s, ref=case.id)
-    provider = provider or get_provider()
+    provider = provider or (ModelNarrativeWriter(chat, tenant_of(s)) if chat is not None else get_provider())
     ct = definition(case)
     declared = [a for a in ct.get("agents", {}).get("on_create", []) if a in catalog()]
     ctx = context(s, case)
@@ -167,7 +178,7 @@ def assess(s: Session, case: Case, pol: policies.Policy | None = None, *, reques
         out.shadow = {"name": pol.challenger["name"], "recommendation": rec, "confidence": conf,
                       "escalate_at": pol.challenger["decision"]["escalate_at"]}
     done = [st for st in out.steps if st.outcome == "done"]
-    ctx.facts.update(recommendation=out.recommendation, n_alerts=len(ctx.alerts), scenarios=sorted({a.scenario for a in ctx.alerts}),
+    ctx.facts.update(case_id=ctx.case.id, recommendation=out.recommendation, n_alerts=len(ctx.alerts), scenarios=sorted({a.scenario for a in ctx.alerts}),
                      party={"id": ctx.party.id, "name": ctx.party.name, "occupation": ctx.party.occupation,
                             "risk_rating": ctx.party.risk_rating, "onboarded": ctx.party.onboarded.date().isoformat()},
                      key_findings=[f for st in done if st.agent != "data_assembly" for f in st.findings])
@@ -175,7 +186,8 @@ def assess(s: Session, case: Case, pol: policies.Policy | None = None, *, reques
         spec, level, runs = gate("narrative_writer")
         if runs:
             step = _run_step(spec, level, ctx, lambda c: _narrative(c, provider))
-            step.model = provider.name
+            step.model = step.extra.get("written_by", provider.name)
+            out.writer = step.model
             out.draft = step.extra.pop("draft", "")
             out.steps.append(step)
     if "qa_critic" in declared:
@@ -192,7 +204,7 @@ def brief(s: Session, case: Case, provider: LLMProvider | None = None, ts: datet
     pol = policies.current(s)
     a = assess(s, case, pol, requested=requested_by is not None, provider=provider, chat=chat)
     at = ts or now()
-    run = AgentRun(id=new_id("run"), case_id=case.id, provider=(provider or get_provider()).name, started=at, finished=at,
+    run = AgentRun(id=new_id("run"), case_id=case.id, provider=a.writer or (provider or get_provider()).name, started=at, finished=at,
                    recommendation=a.recommendation, confidence=a.confidence, policy_version=pol.version, requested_by=requested_by,
                    shadow=a.shadow)
     run.steps = [st.shown() for st in a.steps if st.outcome != "skipped" or st.summary != "Off for this case type"]

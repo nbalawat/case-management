@@ -46,3 +46,23 @@ A fallback never happens silently in the middle of an answer: once tools have ru
 Every model reply writes a `model_usage` row (client, purpose, endpoint, model that served it, tokens, cost at the
 endpoint's configured price). `GET /api/ai` shows a client's set-up and this month's usage to people with the team
 view or the agent manager permission; the platform route shows the same per client to platform staff.
+
+## The narrative writer and the copilot
+
+When a client's policy gives the agents a model, two things use it. Neither can do anything a person has not done.
+
+- **Narrative writer.** The model drafts the case narrative from the facts the agents established, and from the
+  client's narrative guidance (`kb:sar-decisioning#the-narrative`, or the client's own version from the
+  [knowledge library](knowledge.md)). It gets no tools. Its draft is used only if:
+  - every figure matches a figure in the facts;
+  - every record id is one that a finding cites;
+  - it does not claim that anything was filed, sent or closed.
+
+  Otherwise the template writes the draft, and the briefing step says why. The run records which of the two wrote it.
+- **Copilot.** The model answers an investigator's questions about one case. It has four read-only tools scoped to
+  that case: the briefing, the transactions, the customer, and the knowledge library. The same three checks apply,
+  against what the tools returned. If the model is unavailable, declines, runs out of lookups or fails a check, the
+  rule-based copilot answers instead, with the reason shown. Drafts go to the investigator to edit. Each answer goes
+  in the agent ledger with the model that wrote it.
+
+With no model (the default), both work exactly as before, from templates and rules.
