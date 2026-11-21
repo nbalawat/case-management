@@ -108,3 +108,18 @@ def sanctions_name(txns: list[Transaction]) -> list[Hit]:
                                 [t.id]))
                 break
     return hits
+
+
+# Scenarios raised by engines outside this platform (overlay mode). They have no detection function here.
+EXTERNAL_SCENARIOS = {
+    "account_takeover": {"title": "Account takeover", "typology": "Fraud"},
+    "card_fraud": {"title": "Unauthorised card use", "typology": "Fraud"},
+}
+
+
+def describe(scenario: str) -> dict:
+    """Title and typology for any scenario id, including ones this platform does not run itself."""
+    known = REGISTRY.get(scenario) or EXTERNAL_SCENARIOS.get(scenario)
+    if known:
+        return {"title": known["title"], "typology": known["typology"]}
+    return {"title": scenario.replace("_", " ").capitalize(), "typology": "External"}

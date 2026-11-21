@@ -1,10 +1,9 @@
 """Database engine and session handling. SQLite by default, Postgres via DATABASE_URL."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -40,6 +39,32 @@ def init_db(eng=None) -> None:
     from .domain import models  # noqa: F401  (register tables)
 
     Base.metadata.create_all(eng or engine)
+
+
+SCHEMA_VERSION = 2
+
+
+def ensure_schema(eng=None) -> None:
+    """Demo-grade migration: if the stored schema is older than the code, rebuild it. The seed then refills it.
+
+    A real deployment uses versioned migrations; a demo database holds nothing worth migrating.
+    """
+    from sqlalchemy import inspect, text
+
+    eng = eng or engine
+    with eng.begin() as conn:
+        tables = inspect(conn).get_table_names()
+        current = conn.execute(text("SELECT version FROM schema_version")).scalar() if "schema_version" in tables else None
+        if tables and current != SCHEMA_VERSION:
+            from .domain import models  # noqa: F401
+
+            Base.metadata.drop_all(conn)
+            conn.execute(text("DROP TABLE IF EXISTS schema_version"))
+            tables = []
+        if "schema_version" not in tables:
+            conn.execute(text("CREATE TABLE schema_version (version INTEGER NOT NULL)"))
+            conn.execute(text("INSERT INTO schema_version (version) VALUES (:v)"), {"v": SCHEMA_VERSION})
+    init_db(eng)
 
 
 def get_session() -> Iterator[Session]:

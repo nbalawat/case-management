@@ -7,3 +7,9 @@ __pycache__/
 .pytest_cache/
 data/samples/*.csv
 .DS_Store
+# Only the screenshots the README uses are tracked; the script regenerates the rest.
+docs/screenshots/*
+!docs/screenshots/01-my-work.png
+!docs/screenshots/04-case-investigation.png
+!docs/screenshots/07-team.png
+!docs/screenshots/08-workflows.png

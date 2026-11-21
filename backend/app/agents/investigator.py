@@ -6,8 +6,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..cases.case_types import load_case_types
-from ..cases.service import record
+from ..cases.service import definition, record
 from ..domain.models import AgentRun, Alert, Case, Transaction, new_id, now
 from .llm import LLMProvider, get_provider
 from .steps import AGENTS, Context, Step, _f, decide
@@ -27,7 +26,7 @@ def _context(s: Session, case: Case) -> Context:
 
 def investigate(s: Session, case: Case, provider: LLMProvider | None = None, ts: datetime | None = None) -> AgentRun:
     provider = provider or get_provider()
-    ct = load_case_types()[case.case_type]
+    ct = definition(case)
     ctx = _context(s, case)
     run = AgentRun(id=new_id("run"), case_id=case.id, provider=provider.name, started=ts or now())
     steps: list[Step] = []

@@ -113,6 +113,34 @@ def typology_analyst(ctx: Context) -> Step:
     return Step("typology_analyst", "Typology analysis", "Mapped activity to money-laundering typologies and red flags.", f)
 
 
+def fraud_analyst(ctx: Context) -> Step:
+    f = []
+    night = [t for t in ctx.alerted if t.ts.hour < 6]
+    usual = [t.amount for t in ctx.history if t.direction == "out" and t not in ctx.alerted]
+    typical = sorted(usual)[len(usual) // 2] if usual else 0
+    seen = {t.counterparty for t in ctx.history if t not in ctx.alerted}
+    new = [t for t in ctx.alerted if t.counterparty and t.counterparty not in seen]
+    abroad = [t for t in ctx.alerted if t.counterparty_country != ctx.party.country]
+    if new:
+        f.append(_f(f"{len(new)} of {len(ctx.alerted)} disputed payments went to payees the customer has never paid before.", [t.id for t in new]))
+        ctx.signals.append(("payments to first-time payees", 0.25))
+    if night:
+        f.append(_f(f"{len(night)} payment(s) were made between midnight and 6 AM, outside the customer's usual hours.", [t.id for t in night]))
+        ctx.signals.append(("activity at unusual hours", 0.15))
+    if typical and ctx.alerted:
+        biggest = max(t.amount for t in ctx.alerted)
+        if biggest > 5 * typical:
+            f.append(_f(f"Largest disputed payment is ${biggest:,.0f}, against a typical payment of ${typical:,.0f}."))
+            ctx.signals.append(("amounts far above the customer's normal spending", 0.2))
+    if abroad:
+        f.append(_f(f"{len(abroad)} payment(s) went to payees outside {ctx.party.country}.", [t.id for t in abroad]))
+        ctx.signals.append(("payees abroad", 0.1))
+    if not new and not night:
+        f.append(_f("Disputed payments went to payees and at times that match the customer's own history."))
+        ctx.signals.append(("matches the customer's own payment pattern", -0.3))
+    return Step("fraud_analyst", "Fraud analysis", "Compared the disputed payments with the customer's normal behaviour.", f)
+
+
 def sanctions_adjudicator(ctx: Context) -> Step:
     import difflib
     f = []
@@ -141,4 +169,5 @@ AGENTS: dict[str, Callable[[Context], Step]] = {
     "entity_research": entity_research,
     "typology_analyst": typology_analyst,
     "sanctions_adjudicator": sanctions_adjudicator,
+    "fraud_analyst": fraud_analyst,
 }

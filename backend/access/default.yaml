@@ -1,0 +1,68 @@
+# Access policy: who can do what. This file is the whole access model; nothing about roles lives in code.
+# Case types grant workflow steps to roles; this file grants everything else and says who holds each role.
+# In a multi-client deployment every client has its own copy of this file.
+policy: default
+version: 1.0.0
+
+permissions:
+  work: Work cases - claim, complete tasks, write narratives, raise information requests
+  view_team: See team workload, queue backlogs and QA results
+  reassign: Reassign cases between members of a queue
+  run_timers: Run the stage-clock sweep on demand
+  publish_workflow: Publish new versions of case types
+  load_data: Load data feeds onto the platform
+
+queues:
+  aml-l1: AML alert triage (L1)
+  aml-l2: AML investigations (L2)
+  mlro: MLRO review
+  senior-approval: Head of FIU approval
+  sanctions-l1: Sanctions adjudication
+  sanctions-l2: Sanctions officer review
+  kyc: KYC and onboarding
+  kyc-edd: Enhanced due diligence
+  fraud: Fraud operations
+  fraud-approval: Fraud refund approval
+  qa: Quality assurance
+
+roles:
+  analyst:           {title: L1 alert analyst, permissions: [work]}
+  investigator:      {title: L2 investigator, permissions: [work]}
+  sanctions_officer: {title: Sanctions officer, permissions: [work]}
+  kyc_analyst:       {title: KYC analyst, permissions: [work]}
+  fraud_analyst:     {title: Fraud analyst, permissions: [work]}
+  qa_reviewer:       {title: QA reviewer, permissions: [work]}
+  mlro:              {title: MLRO / BSA officer, permissions: [work, view_team]}
+  head_fiu:          {title: Head of FIU, permissions: [work, view_team, reassign]}
+  team_lead:         {title: Operations team lead, permissions: [work, view_team, reassign, run_timers]}
+  admin:             {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data]}
+  auditor:           {title: Internal auditor, permissions: [view_team], read_only: true}
+
+# Demo users. A real deployment takes these from the client's identity provider.
+people:
+  - {id: ana, name: Ana Ruiz, role: analyst, queues: [aml-l1, sanctions-l1],
+     about: Triages monitoring alerts and first-line sanctions hits.}
+  - {id: ivan, name: Ivan Petrov, role: investigator, queues: [aml-l2],
+     about: Runs full investigations and drafts SAR narratives.}
+  - {id: lena, name: Lena Fischer, role: investigator, queues: [aml-l2],
+     about: Second investigator, so workload and four-eyes controls have someone to balance against.}
+  - {id: sofia, name: Sofia Marin, role: sanctions_officer, queues: [sanctions-l1, sanctions-l2],
+     about: Decides escalated sanctions matches and blocks payments.}
+  - {id: kai, name: Kai Nakamura, role: kyc_analyst, queues: [kyc],
+     about: Onboards customers and runs periodic refreshes.}
+  - {id: fran, name: Fran Dubois, role: fraud_analyst, queues: [fraud],
+     about: Works fraud claims against the clock and contacts customers.}
+  - {id: quinn, name: Quinn Adeyemi, role: qa_reviewer, queues: [qa],
+     about: Reviews a sample of closed cases and can send them back.}
+  - {id: tara, name: Tara Singh, role: team_lead, queues: [fraud-approval, kyc-edd],
+     about: Balances workload, reassigns cases and approves larger refunds.}
+  - {id: maya, name: Maya Chen, role: mlro, queues: [mlro, kyc-edd],
+     about: Approves and files SARs under four-eyes control.}
+  - {id: hugo, name: Hugo Laurent, role: head_fiu, queues: [senior-approval],
+     about: Second approval for high-value and politically exposed filings.}
+  - {id: omar, name: Omar Haddad, role: admin, queues: [],
+     about: Loads data and publishes workflow versions. Does not work cases.}
+  - {id: audra, name: Audra Klein, role: auditor, queues: [],
+     about: Read-only access to every case, decision and audit trail.}
+
+default_person: ivan

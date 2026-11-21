@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.agents.investigator import investigate
 from app.alerts.hub import ingest_external_alert, route_alerts
-from app.cases.service import TransitionError, save_narrative, transition
+from app.cases.service import TransitionError, complete_stage_tasks, save_narrative, transition
 from app.db import Base, make_engine
 from app.detection.engine import run_detection
 from app.domain.models import Account, CaseEvent, Filing, Party, Transaction
@@ -72,19 +72,24 @@ def test_alert_becomes_case_and_agent_recommends_with_citations(s):
 
 def test_workflow_guards_roles_four_eyes_and_files(s):
     case = _case(s)
-    ana, ivan, maya = PERSONAS["ana"], PERSONAS["ivan"], PERSONAS["maya"]
+    ana, ivan, lena, maya = (PERSONAS[k] for k in ("ana", "ivan", "lena", "maya"))
     with pytest.raises(TransitionError):
         transition(s, case, "filed", maya)  # not reachable from triage
+    with pytest.raises(TransitionError, match="required task"):
+        transition(s, case, "investigation", ana)  # stage tasks first
+    complete_stage_tasks(s, case, ana)
     transition(s, case, "investigation", ana)
+    complete_stage_tasks(s, case, ivan)
     with pytest.raises(TransitionError):
         transition(s, case, "sar_drafting", ana)  # wrong role
     transition(s, case, "sar_drafting", ivan)
-    with pytest.raises(TransitionError):
-        transition(s, case, "mlro_review", ivan)  # narrative required
+    complete_stage_tasks(s, case, ivan)
+    with pytest.raises(TransitionError, match="narrative"):
+        transition(s, case, "mlro_review", ivan)  # the agent draft does not count until a person saves it
     save_narrative(s, case, "Narrative text", ivan)
     transition(s, case, "mlro_review", ivan)
     with pytest.raises(TransitionError):
-        transition(s, case, "filed", ivan)  # only the MLRO files
+        transition(s, case, "filed", lena)  # only the MLRO files
     transition(s, case, "filed", maya)
     s.flush()
     assert case.disposition == "sar_filed" and s.query(Filing).count() == 1

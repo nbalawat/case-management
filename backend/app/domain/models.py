@@ -91,6 +91,11 @@ class Case(Base):
     narrative: Mapped[str] = mapped_column(Text, default="")
     drafted_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
     agent_recommendation: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    queue: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    state_entered: Mapped[datetime] = mapped_column(DateTime, default=now)
+    parent_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # Workflow working data: completed tasks, escalation markers. Replace the dict to persist a change.
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
     party: Mapped[Party] = relationship()
 
 
@@ -139,3 +144,34 @@ class Filing(Base):
     filed_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     sha256: Mapped[str] = mapped_column(String(64))
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class InfoRequest(Base):
+    """A request for information sent outside the investigating team (customer, branch, relationship manager)."""
+
+    __tablename__ = "info_request"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(40), index=True)
+    recipient: Mapped[str] = mapped_column(String(40))
+    question: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(12), default="open")  # open | answered
+    raised_by: Mapped[str] = mapped_column(String(40))
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    due: Mapped[datetime] = mapped_column(DateTime)
+    response: Mapped[str] = mapped_column(Text, default="")
+    answered: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    answered_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class WorkflowVersion(Base):
+    """A case type definition published from the workflow editor. Files on disk are the shipped baseline."""
+
+    __tablename__ = "workflow_version"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    case_type: Mapped[str] = mapped_column(String(60), index=True)
+    version: Mapped[str] = mapped_column(String(20))
+    source: Mapped[str] = mapped_column(Text)
+    published_by: Mapped[str] = mapped_column(String(40))
+    published: Mapped[datetime] = mapped_column(DateTime, default=now)
+    note: Mapped[str] = mapped_column(Text, default="")
+    __table_args__ = (Index("ux_workflow_version", "case_type", "version", unique=True),)

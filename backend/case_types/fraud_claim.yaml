@@ -1,0 +1,72 @@
+case_type: fraud_claim
+title: Fraud claim
+domain: Fraud
+version: 1.0.0
+scenarios: [account_takeover, card_fraud]
+initial_state: triage
+
+states:
+  triage:
+    label: Triage
+    queue: fraud
+    sla_hours: 2
+    tasks:
+      - {id: secure_account, label: Block card or freeze online access}
+      - {id: confirm_scope, label: Confirm which transactions are disputed}
+  customer_contact:
+    label: Awaiting customer
+    kind: wait
+    queue: fraud
+    sla_hours: 48
+  investigation:
+    label: Investigation
+    queue: fraud
+    sla_hours: 72
+    tasks:
+      - {id: device_review, label: Review device, location and login history}
+      - {id: liability, label: Liability assessment recorded}
+  refund_approval:
+    label: Refund approval
+    queue: fraud-approval
+    sla_hours: 24
+  refunded:        {label: Fraud confirmed and refunded, kind: closed, disposition: fraud_confirmed}
+  declined:        {label: Claim declined, kind: closed, disposition: claim_declined}
+  closed_no_fraud: {label: Closed, genuine activity, kind: closed, disposition: genuine}
+
+transitions:
+  - {from: triage, to: customer_contact, label: Contact customer, roles: [fraud_analyst], requires: [tasks, open_request]}
+  - {from: triage, to: investigation, label: Start investigation, roles: [fraud_analyst], requires: [tasks]}
+  - {from: triage, to: closed_no_fraud, label: Close as genuine, roles: [fraud_analyst], requires: [note]}
+  - {from: customer_contact, to: investigation, label: Customer responded, roles: [fraud_analyst], requires: [requests_answered]}
+  - {from: customer_contact, to: closed_no_fraud, label: Customer confirms activity, roles: [fraud_analyst], requires: [note]}
+  # Small losses: the analyst refunds straight away.
+  - from: investigation
+    to: refunded
+    label: Confirm fraud and refund
+    roles: [fraud_analyst]
+    requires: [tasks, note]
+    when: ["alerted_amount < 5000"]
+  # Larger losses need a lead's approval.
+  - from: investigation
+    to: refund_approval
+    label: Recommend refund
+    roles: [fraud_analyst]
+    requires: [tasks, note]
+    when: ["alerted_amount >= 5000"]
+  - {from: investigation, to: declined, label: Decline claim, roles: [fraud_analyst], requires: [tasks, note]}
+  - {from: refund_approval, to: refunded, label: Approve refund, roles: [team_lead], requires: [note], four_eyes: true}
+  - {from: refund_approval, to: investigation, label: Return to analyst, roles: [team_lead], requires: [note]}
+
+sla:
+  clock: Customer resolution deadline
+  due_days: 10
+escalation:
+  raise_priority: true
+  notify: team_lead
+qa:
+  sample_rate: 0.25
+  dispositions: [claim_declined, genuine]
+  reopen_to: investigation
+agents:
+  on_create: [data_assembly, fraud_analyst, qa_critic]
+  autonomy: L2

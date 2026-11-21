@@ -1,0 +1,66 @@
+case_type: kyc_onboarding
+title: Customer onboarding
+domain: KYC
+version: 1.0.0
+scenarios: []
+initial_state: document_review
+
+states:
+  document_review:
+    label: Document review
+    queue: kyc
+    sla_hours: 24
+    tasks:
+      - {id: identity, label: Identity verified against a government document}
+      - {id: address, label: Proof of address}
+      - {id: beneficial_owners, label: Beneficial owners identified, required: false}
+  awaiting_customer:
+    label: Awaiting customer
+    kind: wait
+    queue: kyc
+    sla_hours: 168
+  risk_assessment:
+    label: Risk assessment
+    queue: kyc
+    sla_hours: 24
+    tasks:
+      - {id: screening, label: Sanctions, PEP and adverse media screening}
+      - {id: expected_activity, label: Expected activity recorded}
+  edd_approval:
+    label: EDD approval
+    queue: kyc-edd
+    sla_hours: 72
+    tasks:
+      - {id: source_of_wealth, label: Source of wealth evidenced}
+  approved: {label: Account approved, kind: closed, disposition: onboarded}
+  declined: {label: Declined, kind: closed, disposition: declined}
+
+transitions:
+  - {from: document_review, to: awaiting_customer, label: Request missing documents, roles: [kyc_analyst], requires: [open_request]}
+  - {from: awaiting_customer, to: document_review, label: Documents received, roles: [kyc_analyst], requires: [requests_answered]}
+  - {from: document_review, to: risk_assessment, label: Documents complete, roles: [kyc_analyst], requires: [tasks]}
+  - from: risk_assessment
+    to: approved
+    label: Approve account
+    roles: [kyc_analyst]
+    requires: [tasks]
+    when: ["risk_rating != high", "pep == false"]
+  - from: risk_assessment
+    to: edd_approval
+    label: Send for EDD approval
+    roles: [kyc_analyst]
+    requires: [tasks]
+    when: [{any: ["risk_rating == high", "pep == true"]}]
+  - {from: risk_assessment, to: declined, label: Decline, roles: [kyc_analyst], requires: [note]}
+  - {from: edd_approval, to: approved, label: Approve high-risk account, roles: [mlro, team_lead], requires: [tasks, note], four_eyes: true}
+  - {from: edd_approval, to: declined, label: Decline, roles: [mlro, team_lead], requires: [note]}
+
+sla:
+  clock: Onboarding decision target
+  due_days: 5
+escalation:
+  raise_priority: true
+  notify: team_lead
+agents:
+  on_create: [data_assembly, entity_research]
+  autonomy: L2

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'caseforge.db'}")
     case_types_dir: Path = Path(os.getenv("CASE_TYPES_DIR", ROOT / "backend" / "case_types"))
+    access_policy: Path = Path(os.getenv("ACCESS_POLICY", ROOT / "backend" / "access" / "default.yaml"))
     samples_dir: Path = Path(os.getenv("SAMPLES_DIR", ROOT / "data" / "samples"))
     llm_provider: str = os.getenv("LLM_PROVIDER", "mock")
     tenant: str = os.getenv("TENANT", "demo-bank")

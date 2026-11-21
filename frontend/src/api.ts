@@ -1,5 +1,5 @@
 // Thin API client. The active persona travels in a header; a real deployment uses SSO tokens.
-export type Persona = { id: string; name: string; role: string; title: string }
+export type Persona = { id: string; name: string; role: string; title: string; about: string }
 
 let personaId = localStorage.getItem('persona') || 'ivan'
 export const getPersonaId = () => personaId
@@ -27,3 +27,5 @@ export const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-US'
 export const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 export const daysUntil = (iso: string | null) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000) : null)
+export const hoursUntil = (iso: string | null) => (iso ? Math.round((new Date(iso).getTime() - Date.now()) / 3600000) : null)
+export const words = (id: string) => id.replaceAll('_', ' ')
