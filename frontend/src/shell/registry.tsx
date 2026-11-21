@@ -5,7 +5,7 @@
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import {
-  BarChart3, Bot, Boxes, ClipboardList, CreditCard, Database, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
+  BarChart3, BookOpen, Bot, Boxes, ClipboardList, CreditCard, Database, FileText, FolderOpen, IdCard, Inbox, LayoutDashboard, ListChecks, ListFilter, Network, Plug,
   PencilRuler, Radar, ScrollText, ShieldAlert, ShieldCheck, Siren, Sparkles, TableProperties, Users, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { anyOf, can, desk, everyone, readOnly, type Rule } from './access'
@@ -67,6 +67,9 @@ export const MODULES: Module[] = [
   // Investigate
   { id: 'ask', path: '/ask', label: 'Ask', description: 'Ask any question about your caseload in plain language', icon: Sparkles, group: 'investigate',
     page: page(() => import('../pages/Ask')), visible: everyone, keywords: ['question', 'ai', 'agent'] },
+  { id: 'knowledge', path: '/knowledge', label: 'Knowledge library', description: 'Typologies, policies and procedures that Ask and the agents cite', icon: BookOpen, group: 'investigate',
+    page: page(() => import('../pages/Knowledge')), visible: everyone, keywords: ['policy', 'procedure', 'typology', 'red flags'],
+    children: [{ path: '/knowledge/:doc', page: page(() => import('../pages/Knowledge')) }] },
   { id: 'entities', path: '/entities', label: 'Entities', description: 'Customers, counterparties and possible duplicates', icon: Network, group: 'investigate',
     page: page(() => import('../pages/Entities')), visible: everyone, keywords: ['customer', 'counterparty', 'resolution', 'network'],
     children: [{ path: '/customers/:id', page: page(() => import('../pages/Customer')) }, { path: '/counterparties/:id', page: page(() => import('../pages/Counterparty')) }] },

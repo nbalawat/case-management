@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..domain.models import AgentRun, Alert, Case, CaseEvent, InfoRequest, Party
+from .. import knowledge
 from ..domain.personas import Persona, policy_of
 from ..tenancy import tenant_of
 from ..visibility import find_case
@@ -156,6 +157,23 @@ def _calculate(ctx: ToolContext, a: dict) -> ToolResult:
     expr = str(a.get("expression", ""))
     value = calculator.evaluate(expr)
     return ToolResult({"expression": expr, "value": value}, summary=f"{expr} = {value}")
+
+
+KINDS = ("typology", "policy", "procedure", "regulation")
+
+
+def _policy_search(ctx: ToolContext, a: dict) -> ToolResult:
+    q = str(a.get("query", "")).strip()
+    if len(q) < 3:
+        raise QueryError("Give a few words to search for, for example 'structuring indicators'")
+    kind = a.get("kind")
+    if kind is not None and kind not in KINDS:
+        raise QueryError(f"kind must be one of {', '.join(KINDS)}")
+    hits = knowledge.search(tenant_of(ctx.s), q, kind=kind, scenario=a.get("scenario"), limit=a.get("limit", 4))
+    refs = [{"kind": "policy", "id": h["id"], "case_id": None, "customer_id": None, "label": f"{h['title']}: {h['section']}",
+             "link": knowledge.link(h["id"]), "excerpt": h["text"][:600]} for h in hits]
+    return ToolResult({"query": q, "passages": hits, "matching": len(hits)}, records=refs,
+                      summary=f"{len(hits)} passage(s) for '{q}'")
 
 
 def _case(ctx: ToolContext, a: dict) -> ToolResult:
@@ -325,6 +343,18 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "Look up customers by name (or part of one) or id: profile, risk, and all of their cases.",
          {"type": "object", "additionalProperties": False, "required": ["name_or_id"], "properties": {"name_or_id": {"type": "string"}}},
          _customer),
+    Tool("policy_search",
+         "Search the knowledge library: typologies (what a pattern looks like, its indicators and mitigating factors), "
+         "the client's policies and procedures, and regulatory requirements. Use it for 'what does policy say', 'what are "
+         "the signs of', 'what should I do when' and 'when must we file' questions, and to back a recommendation with the rule "
+         "behind it. Each passage has an id like kb:structuring#indicators; cite that id when you rely on the passage. "
+         "The library answers what the rules are; the other tools answer what is in the records.",
+         {"type": "object", "additionalProperties": False, "required": ["query"], "properties": {
+             "query": {"type": "string", "maxLength": 300},
+             "kind": {"type": "string", "enum": list(KINDS)},
+             "scenario": {"type": "string", "description": "Only passages about this alert scenario, for example structuring"},
+             "limit": {"type": "integer", "minimum": 1, "maximum": 10}}},
+         _policy_search),
     Tool("team_workload",
          "Open work per person and per queue, with what is past its stage clock. Only for roles that hold the team view.",
          {"type": "object", "additionalProperties": False, "properties": {}},

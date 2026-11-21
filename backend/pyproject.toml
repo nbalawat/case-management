@@ -21,6 +21,7 @@ dependencies = [
   # 49 and later ship no Intel macOS wheel, and building from source needs a recent Rust.
   "cryptography>=44,<49",
   "prometheus-client>=0.21",
+  "mcp>=1.20",
 ]
 
 [dependency-groups]

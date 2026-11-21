@@ -14,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from .api.access import router as access_router
 from .api.agents import router as agents_router
 from .api.ai import router as ai_router
+from .api.knowledge import router as knowledge_router
+from .mcp import http as mcp_http
 from .api.ask import router as ask_router
 from .api.auth import router as auth_router
 from .api.backbone import router as backbone_router
@@ -69,7 +71,8 @@ async def lifespan(_: FastAPI):
         from .backbone import worker
 
         backbone = worker.start_in_process()
-    yield
+    async with mcp_running():  # the MCP server's request handling (stateless; see app/mcp/http.py)
+        yield
     if task:
         task.cancel()
     if backbone:
@@ -86,6 +89,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allo
 for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, backbone_router, navigation_router, case_list_router, decisions_router, forms_router, lake_router, composer_router):
     app.include_router(r, dependencies=[Depends(signed_in)])
 app.include_router(ai_router, dependencies=[Depends(signed_in)])  # the model gateway's set-up and usage
+app.include_router(knowledge_router, dependencies=[Depends(signed_in)])  # the library Ask and the agents cite
+mcp_running = mcp_http.mount(app)  # Ask's tools for MCP clients at /mcp, signed in like the rest of the API
 app.include_router(auth_router)
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1
 observability.install(app)  # /healthz, /readyz, /metrics, request ids, structured logs, traces when configured
