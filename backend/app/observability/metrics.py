@@ -147,13 +147,26 @@ def metrics() -> Response:
 _serving: int | None = None
 
 
-def serve(port: int) -> None:
-    """The metrics on their own port, apart from the API: for the workers, and for the API pods in a deployment."""
+def serve(port: int) -> bool:
+    """The metrics on their own port, apart from the API: for the workers, and for the API pods in a deployment.
+
+    A second worker started beside the first in one container finds the port taken. It works on without serving
+    metrics, and says so, rather than failing to start: give each process its own METRICS_PORT to scrape it."""
     global _serving
+    import errno
+
     from prometheus_client import start_http_server
 
     if _serving == port:
-        return
-    start_http_server(port, registry=REGISTRY)
+        return True
+    try:
+        start_http_server(port, registry=REGISTRY)
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE:
+            raise
+        log.warning("Port %d is already serving metrics for another process here, so this one serves none. "
+                    "Set METRICS_PORT to a free port for each process that should be scraped.", port)
+        return False
     _serving = port
     log.info("Metrics on :%d/metrics", port)
+    return True

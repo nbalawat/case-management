@@ -4,13 +4,16 @@ import { usePeople } from '../shell/people'
 import { useApi } from '../useApi'
 import { Card, Loading, Pill } from '../components/ui'
 import ManagedServiceCard from '../components/access/ManagedServiceCard'
+import { BreakGlassCard } from '../components/access/BreakGlass'
 
 type Policy = {
   policy: { name: string; version: string }
   permissions: { id: string; label: string }[]
-  roles: { id: string; title: string; permissions: string[]; read_only: boolean; people: string[]; sees: string; limited: boolean; restricted: boolean }[]
+  roles: { id: string; title: string; permissions: string[]; read_only: boolean; people: string[]; sees: string; limited: boolean; restricted: boolean; customers: string; customer_facing: boolean }[]
   queues: { id: string; label: string; members: string[] }[]
-  people: { id: string; name: string; title: string; roles: string[]; queues: string[]; read_only: boolean; sees: string[]; restricted: boolean; org?: string }[]
+  people: { id: string; name: string; title: string; roles: string[]; queues: string[]; read_only: boolean; sees: string[]; restricted: boolean; org?: string; customers: string[]; customer_facing: boolean }[]
+  tipping_off: { case_types: string[]; filings_hidden: boolean }
+  break_glass: { hours: number; restricted: boolean } | null
 }
 type AccessData = Policy & {
   tenant: { id: string; name: string }; yaml: string; can_edit: boolean
@@ -86,11 +89,14 @@ export default function Access() {
         <ul className="legend-list">{data.permissions.map(p => <li key={p.id}><b>{words(p.id)}</b> {p.label.split(' - ')[1] ?? p.label}</li>)}</ul>
       </Card>
       <Card title="What each role can see" action={<span className="muted small">Applied in the data layer to every list, number, search and answer</span>}>
-        <table><thead><tr><th>Role</th><th>Cases they can see</th><th>Restricted cases</th></tr></thead>
+        <table><thead><tr><th>Role</th><th>Cases they can see</th><th>Customers they reach</th><th>Restricted cases</th></tr></thead>
           <tbody>{data.roles.map(r => (
             <tr key={r.id}><td><b>{r.title}</b></td>
               <td>{r.limited ? <Pill tone="warning">limited</Pill> : <Pill tone="good">all</Pill>}{r.sees}</td>
+              <td>{r.customer_facing && <Pill tone="serious">customer-facing</Pill>}{r.customers}</td>
               <td>{r.restricted ? <Pill tone="critical">cleared</Pill> : <span className="muted">Hidden</span>}</td></tr>))}</tbody></table>
+        <p className="small"><b>Tipping-off.</b> Customer-facing roles never see {data.tipping_off.case_types.map(t => words(t)).join(' or ') || 'any investigation'} cases{data.tipping_off.filings_hidden ? ', nor any regulatory report,' : ''} even for their own customers, so they cannot let a customer know they are suspected.
+          {' '}<b>Customers.</b> A customer out of a person's reach does not exist for them, nor do its accounts, transactions, cases or reports, and owning a case does not lift that.</p>
         <p className="muted small">Whatever the limit, people keep sight of cases they own or have worked on. Someone with several roles sees what any of them shows. A restricted case is hidden from everyone who is not cleared, whatever their role. An automated test signs in as every person at every client and checks each case against this table.</p>
       </Card>
       <Card title="Workflow steps by role">
@@ -113,13 +119,15 @@ export default function Access() {
               <tr key={p.id}><td><b>{p.name}</b>{p.org === 'provider' && <Pill tone="serious">provider</Pill>}<div className="muted small">{p.title}</div></td>
                 <td>{p.roles.map(r => <Pill key={r} tone={p.read_only ? 'warning' : 'human'}>{roleTitle(r)}</Pill>)}</td>
                 <td className="small">{p.queues.map(queueLabel).join(', ') || <span className="muted">None</span>}</td>
-                <td className="small">{p.sees.join('; ')}{p.restricted && <Pill tone="critical">restricted</Pill>}</td></tr>))}</tbody></table>
+                <td className="small">{p.sees.join('; ')}{p.restricted && <Pill tone="critical">restricted</Pill>}
+                  {p.customers[0] !== 'Every customer' && <div className="muted">{p.customers.join('; ')}</div>}{p.customer_facing && <Pill tone="serious">customer-facing</Pill>}</td></tr>))}</tbody></table>
         </Card>
         <Card title="Queues and their members">
           <table><thead><tr><th>Queue</th><th>Members</th></tr></thead>
             <tbody>{data.queues.map(q => <tr key={q.id}><td><b>{q.label}</b><div className="muted small">{q.id}</div></td><td>{q.members.join(', ') || <span className="muted">Nobody</span>}</td></tr>)}</tbody></table>
         </Card>
       </div>
+      <BreakGlassCard key={`bg-${data.policy.version}`} hours={data.break_glass?.hours ?? null} restricted={data.break_glass?.restricted ?? false} />
       <ManagedServiceCard key={data.policy.version} />
       <Editor data={data} onPublished={reload} />
     </>

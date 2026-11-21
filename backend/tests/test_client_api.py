@@ -201,7 +201,7 @@ def test_onboarding_a_client_from_the_console_and_suspending_it(client):
     body = {"id": "northwind", "name": "Northwind Credit Union", "template": "fintech_payments", "region": "us-west", "sample_data": True}
     assert client.post("/api/platform/tenants/check", json=body, headers=OP).json() == {
         "ok": True, "case_types": ["fraud_claim", "tm_alert_investigation", "sanctions_hit", "scam_reimbursement", "chargeback",
-                       "info_request_314a", "subpoena", "lookback"], "people": 8, "roles": 10, "queues": 8}
+                       "info_request_314a", "subpoena", "lookback"], "people": 9, "roles": 11, "queues": 8}
     for bad, message in ((body | {"id": "meridian"}, "already exists"), (body | {"id": "No"}, "Client id"),
                          (body | {"case_types": ["kyc_refresh"]}, "unknown queue"), (body | {"template": "x"}, "Unknown template")):
         assert message in client.post("/api/platform/tenants/check", json=bad, headers=OP).json()["error"]
@@ -230,3 +230,31 @@ def test_the_operator_can_switch_case_types_but_not_from_under_open_cases(client
     assert r.status_code == 422 and "Open cases still use" in r.json()["detail"]
     r = client.put("/api/platform/tenants/alder/case-types", json={"case_types": ["fraud_claim"]}, headers=OP)
     assert r.status_code == 422 and "unknown queue" in r.json()["detail"]
+
+
+# --- the oracle for customer rules, written from the policy's meaning and nothing else --------------------------------
+def reaches(tenant, who, party: dict) -> bool:
+    """Whether this person's roles reach a customer {booking, country, segment, rm}, by the YAML alone."""
+    raw = PEOPLE[tenant]
+    person = next(p for p in raw["people"] if p["id"] == who)
+    roles = person.get("roles") or [person["role"]]
+    where = party.get("booking") or party["country"]
+
+    def meet(a, b):
+        return b if a is None else a if b is None else set(a) & set(b)
+
+    for r in roles:
+        c = raw["roles"][r].get("customers") or {}
+        j, sg = meet(c.get("jurisdictions"), person.get("jurisdictions")), meet(c.get("segments"), person.get("segments"))
+        if (j is None or where in j) and (sg is None or party["segment"] in sg) and (c.get("book", "any") != "own" or party["rm"] == who):
+            return True
+    return False
+
+
+def hidden_types(tenant, who) -> set:
+    """Case types tipping-off rules hide from this person: all the confidential ones if any of their roles faces customers."""
+    raw = PEOPLE[tenant]
+    person = next(p for p in raw["people"] if p["id"] == who)
+    roles = person.get("roles") or [person["role"]]
+    facing = any(raw["roles"][r].get("customer_facing") for r in roles)
+    return set((raw.get("tipping_off") or {}).get("case_types", ["tm_alert_investigation"])) if facing else set()

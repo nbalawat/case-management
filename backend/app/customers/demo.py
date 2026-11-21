@@ -35,6 +35,8 @@ ABROAD = {"GB": [("London", "", "EC2A"), ("Manchester", "", "M1")], "DE": [("Ber
           "CH": [("Geneva", "", "1201")], "FR": [("Paris", "", "75008")], "CY": [("Limassol", "", "3036")], "PA": [("Panama City", "", "0801")]}
 FOREIGN_NATIONALITIES = ["GB", "DE", "FR", "IN", "BR", "NG", "MX", "PH", "CN", "PL", "IT", "GH"]
 BOOKED = {"alder": "LU"}  # where each demo client books its relationships; others book in the US
+# A second booking centre, for every fourth customer, so jurisdiction-scoped access has something to hold back.
+SECOND_BOOKING = {"meridian": "CA", "kestrel": "IE", "alder": "CH"}
 RELATIONSHIP_MANAGERS = {"meridian": "rosa", "alder": "gwen", "kestrel": "noor"}
 # Two firms whose names differ only a little but who are, in this story, one firm: they pay into the same account.
 SAME_FIRM = {"meridian trading partners intl": "meridian trade partners", "orion global consultants": "orion global consulting"}
@@ -105,7 +107,9 @@ def enrich_party(p: Party, tenant_id: str, managers: tuple[str, ...], today: dat
     if not p.email:
         local = ".".join(names.tokens(p.name)[:2]) or p.id.lower()
         p.email = f"{local}@{'example.com' if p.kind == 'person' else local.replace('.', '') + '.example'}"
-    p.booking_jurisdiction = p.booking_jurisdiction or BOOKED.get(tenant_id, "US")
+    if not p.booking_jurisdiction:  # from the id, not the generator, so no other synthetic value moves
+        second = SECOND_BOOKING.get(tenant_id) if int(hashlib.sha1(f"booking|{tenant_id}|{p.id}".encode()).hexdigest(), 16) % 4 == 0 else None
+        p.booking_jurisdiction = second or BOOKED.get(tenant_id, "US")
     if p.relationship_manager is None and managers and p.segment in ("business", "private"):
         p.relationship_manager = managers[r.randrange(len(managers))]
     have = {(i.kind, i.normalized) for i in p.identifiers}

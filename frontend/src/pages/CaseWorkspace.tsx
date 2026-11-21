@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BreakGlassPanel } from '../components/access/BreakGlass'
 import { useParams } from 'react-router-dom'
 import { usePersona } from '../shell/people'
 import { useApi } from '../useApi'
@@ -44,7 +45,7 @@ export default function CaseWorkspace() {
   const [request, setRequest] = useState<RequestDraft>(NEW_REQUEST)
   const [tick, setTick] = useState(0) // bumps after every action so the side panels reload too
   const [tab, goTo] = useTabParam(TABS) as [Tab, (t: Tab) => void]
-  if (!data) return <Loading error={error} />
+  if (!data) return error ? <BreakGlassPanel kind="case" target={id!} error={error} onOpened={reload} /> : <Loading />
   const { case: c, party } = data
 
   const act: Act = async (fn, ok) => {

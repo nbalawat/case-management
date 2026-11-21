@@ -34,6 +34,7 @@ def raw(client):
         with appdb.session_scope(t) as s:
             cases = {c.id: c for c in s.scalars(select(m.Case))}
             out[t] = {"cases": cases, "parties": {p.id for p in s.scalars(select(m.Party))},
+                      "party_rows": {p.id: p for p in s.scalars(select(m.Party))},
                       "rows": {oid: list(s.scalars(select(o.entity))) for oid, o in catalog.objects().items()}}
             s.expunge_all()
     return out
@@ -49,6 +50,20 @@ def _rid(oid, row):
     return str(row.id)
 
 
+def _reached(asker, party) -> bool:
+    """The attribute rule, restated from the policy: any one of the person's reaches admits the customer."""
+    where = party.booking_jurisdiction or party.country
+    for c in asker.customers:
+        if c.jurisdictions is not None and where not in c.jurisdictions:
+            continue
+        if c.segments is not None and party.segment not in c.segments:
+            continue
+        if c.book and party.relationship_manager != asker.id:
+            continue
+        return True
+    return False
+
+
 def expected(raw_t, oid, cases_seen: set[str], asker) -> set[str]:
     """The ids of `oid` records this person may see, by the rule in scope.py, computed from raw rows."""
     viewer = viewer_of(asker)
@@ -57,6 +72,8 @@ def expected(raw_t, oid, cases_seen: set[str], asker) -> set[str]:
     else:
         parties = {raw_t["cases"][c].party_id for c in cases_seen} | {
             a.party_id for a in raw_t["rows"]["alerts"] if a.case_id is None or a.case_id in cases_seen}
+    if asker.customers is not None:  # customer reach is a hard line: only customers whose attributes a role reaches
+        parties = {pid for pid in parties if pid in raw_t["party_rows"] and _reached(asker, raw_t["party_rows"][pid])}
     out = set()
     for r in raw_t["rows"][oid]:
         case_id = getattr(r, "case_id", None)
