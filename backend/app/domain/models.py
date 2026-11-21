@@ -997,3 +997,5 @@ class AccessGrant(TenantScoped, Base):
 
 from ..backbone import outbox as _outbox  # noqa: E402,F401  registers the hook that fills the outbox
 from ..ai import usage as _ai_usage  # noqa: E402,F401  registers the model usage table
+
+from ..public import models as _public  # noqa: E402,F401  the public API's tables

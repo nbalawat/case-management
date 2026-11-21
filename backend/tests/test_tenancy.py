@@ -9,6 +9,7 @@ from app.alerts.hub import ingest_external_alert
 from app.db import Base, session_scope
 from app.domain import models as m
 from app.ai.usage import ModelUsage
+from app.public import models as pm
 from app.tenancy import SCOPED, TenantError, tenant_of
 
 A, B = "alpha", "bravo"
@@ -68,6 +69,13 @@ FACTORY = {
     "MatchCandidate": lambda k: m.MatchCandidate(id=f"mc-{k}", kind="counterparty_variant", left_key="same a", right_key="same b",
                                                  left_name="A", right_name="B", score=0.9),
     "AskLog": lambda k: m.AskLog(id=f"q-{k}", conversation_id=f"ask-{k}", asked_by="x", role="analyst", question="q"),
+    "ApiClient": lambda k: pm.ApiClient(id=f"cfc_{k}", name="App", roles=["analyst"], scopes=["cases:read"], created_by="x"),
+    "ApiClientSecret": lambda k: pm.ApiClientSecret(id=f"sec-{k}", client_id=f"cfc_{k}", digest=f"d-{k}", hint="abcd"),
+    "ApiToken": lambda k: pm.ApiToken(id=f"tok-{k}", digest=f"t-{k}", client_id=f"cfc_{k}", expires=NOW),
+    "ApiIdempotency": lambda k: pm.ApiIdempotency(caller="app:x", key="same-key", fingerprint="f"),
+    "ApiCall": lambda k: pm.ApiCall(request_id="r", caller="app:x", caller_kind="app", method="GET", route="/cases", status=200),
+    "WebhookEndpoint": lambda k: pm.WebhookEndpoint(id=f"whk-{k}", client_id="app:x", url="https://example.com", secret="s", created_by="x"),
+    "WebhookDelivery": lambda k: pm.WebhookDelivery(id=f"msg-{k}", endpoint_id=f"whk-{k}", event_id="same-event", event_type="t", payload="{}"),
     "Engagement": lambda k: m.Engagement(id=f"eng-{k}", staff_id="priya", roles=["analyst"], ends=NOW, proposed_by="x"),
     "AccessGrant": lambda k: m.AccessGrant(id=f"brk-{k}", person="x", kind="case", target=f"case-{k}", reason="r", ends=NOW),
     "AccessEvent": lambda k: m.AccessEvent(actor="x", org="provider", kind="provider.request"),
