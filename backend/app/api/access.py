@@ -22,14 +22,19 @@ def describe_policy(policy: AccessPolicy, titles: dict[str, str] | None = None) 
 
     return {
         "policy": {"name": policy.name, "version": policy.version},
+        "tipping_off": {"case_types": sorted(policy.tipping_off.case_types), "filings_hidden": policy.tipping_off.filings},
+        "break_glass": {"hours": policy.break_glass.hours, "restricted": policy.break_glass.restricted} if policy.break_glass else None,
         "permissions": [{"id": k, "label": v} for k, v in policy.permissions.items()],
         "roles": [{"id": r.id, "title": r.title, "permissions": sorted(r.permissions), "read_only": r.read_only,
                    "sees": sees(None if r.sees is None else (r.sees,))[0], "limited": r.sees is not None,
                    "restricted": "view_restricted" in r.permissions,
+                   "customers": r.customers.describe() if r.customers else "Every customer", "customer_facing": r.customer_facing,
                    "people": [p.name for p in policy.holders(r.id)]} for r in policy.roles.values()],
         "queues": [{"id": q, "label": label, "members": [p.name for p in policy.queue_members(q)]} for q, label in policy.queues.items()],
         "people": [{"id": p.id, "name": p.name, "title": p.title, "roles": list(p.roles), "queues": list(p.queues),
-                    "read_only": p.read_only, "sees": sees(p.views), "restricted": p.can("view_restricted"), "org": p.org} for p in policy.people.values()],
+                    "read_only": p.read_only, "sees": sees(p.views), "restricted": p.can("view_restricted"), "org": p.org,
+                    "customers": ["Every customer"] if p.customers is None else [c.describe() for c in p.customers],
+                    "customer_facing": p.customer_facing} for p in policy.people.values()],
     }
 
 

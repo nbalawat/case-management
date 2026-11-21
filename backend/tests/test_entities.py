@@ -14,7 +14,7 @@ from app.entities import graph, names, profile, resolution, search
 from app.entities.resolution import customer_entity_id as cust
 from app.tenants import registry
 from support import PERSONAS, T
-from test_client_api import CLIENTS, EVERYONE, _auditor, _permissions, everything, h
+from test_client_api import CLIENTS, EVERYONE, _auditor, _permissions, everything, h, reaches
 
 NOW = m.now()
 
@@ -343,7 +343,13 @@ def test_everyone_can_look_and_only_people_with_the_permission_can_decide(client
     with appdb.session_scope(tenant) as s:
         busy = s.execute(select(m.Case.party_id, func.count()).group_by(m.Case.party_id).order_by(func.count().desc())).first()[0]
         name = s.scalars(select(m.Party.name).where(m.Party.id == busy)).one()
+        p = s.scalars(select(m.Party).where(m.Party.id == busy)).one()
+        reach = reaches(tenant, who, {"booking": p.booking_jurisdiction, "country": p.country, "segment": p.segment, "rm": p.relationship_manager})
     me = client.get(f"/api/customers/{busy}", headers=hdr)
+    if not reach:  # a customer out of this person's reach does not exist for them
+        assert me.status_code == 404
+        assert busy not in {c["id"] for c in client.get("/api/search", params={"q": name}, headers=hdr).json()["groups"]["customer"]}
+        return
     assert me.status_code == 200 and {c["id"] for c in me.json()["cases"]} <= mine
     found = client.get("/api/search", params={"q": name}, headers=hdr).json()
     assert busy in {c["id"] for c in found["groups"]["customer"]} and {c["id"] for c in found["groups"]["case"]} <= mine

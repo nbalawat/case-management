@@ -22,7 +22,7 @@ from app.domain.access import AccessPolicyError, parse_policy
 from app.tenants import access_admin
 from support import PERSONAS, T
 from test_access_per_client import _draft
-from test_client_api import CLIENTS, EVERYONE, OP, PEOPLE, _auditor, _permissions, everything, h
+from test_client_api import CLIENTS, EVERYONE, OP, PEOPLE, _auditor, _permissions, everything, h, hidden_types, reaches
 
 TYPES = ["tm_alert_investigation", "sanctions_hit", "fraud_claim", "kyc_refresh"]
 QUEUES = ["aml-l1", "aml-l2", "fraud", "kyc"]
@@ -121,7 +121,9 @@ def test_each_role_at_the_reference_client_sees_what_its_policy_says(s, desk):
     expect = {"ana": {tm, sanc},  # her queues: first-line monitoring and sanctions
               "ivan": {tm}, "lena": {tm}, "sofia": {sanc}, "kai": {kyc}, "fran": {fraud},
               "quinn": {tm, sanc, fraud, kyc}, "tara": {tm, sanc, fraud, kyc}, "maya": {tm, sanc, fraud, kyc}, "hugo": {tm, sanc, fraud, kyc},
-              "omar": {tm, sanc, fraud, kyc}, "audra": {tm, sanc, fraud, kyc}}
+              "omar": {tm, sanc, fraud, kyc}, "audra": {tm, sanc, fraud, kyc},
+              "noah": {tm},  # P1 is booked in the US, his jurisdiction
+              "rosa": set()}  # customer-facing, and P1 is not in her book
     assert set(expect) == set(PERSONAS)
     for who, want in expect.items():
         assert _ids(_as(s, who)) == want, who
@@ -287,11 +289,13 @@ def world(client):
     out = {}
     for t in CLIENTS:
         with appdb.session_scope(t) as s:
+            parties = {p.id: {"booking": p.booking_jurisdiction, "country": p.country, "segment": p.segment, "rm": p.relationship_manager}
+                       for p in s.scalars(select(m.Party))}
             cases = {c.id: _row(c) | {"open": c.closed is None, "parent": c.parent_id, "party": c.party_id} for c in s.scalars(select(m.Case))}
             actors = {cid: set() for cid in cases}
             for e in s.scalars(select(m.CaseEvent).where(m.CaseEvent.actor_kind == "human")):
                 actors[e.case_id].add(e.actor)
-        out[t] = {"cases": cases, "actors": actors}
+        out[t] = {"cases": cases, "actors": actors, "parties": parties}
     return out
 
 
@@ -300,9 +304,11 @@ def _expected(world, tenant, who) -> set[str]:
     person = next(p for p in raw["people"] if p["id"] == who)
     roles = person.get("roles") or [person["role"]]
     sees = [None if raw["roles"][r].get("sees") in (None, "all") else raw["roles"][r]["sees"] for r in roles]
+    hidden = hidden_types(tenant, who)
     return {cid for cid, c in world[tenant]["cases"].items() if may_see(
         roles_see=sees, queues=person.get("queues", []), holds_view_restricted="view_restricted" in _permissions(tenant, who),
-        who=who, case=c, actors=world[tenant]["actors"][cid])}
+        who=who, case=c, actors=world[tenant]["actors"][cid])
+        and c["case_type"] not in hidden and reaches(tenant, who, world[tenant]["parties"][c["party"]])}
 
 
 def _listed(client, tenant, who, status="all"):
@@ -471,3 +477,18 @@ def test_the_access_page_says_in_words_what_each_role_sees(client):
     assert people["lena"]["restricted"] and len(people["lena"]["sees"]) == 2 and people["audra"]["sees"] == ["Every case"]
     assert {p["id"] for p in page["permissions"]} >= {"view_restricted", "restrict_case"}
     assert yaml.safe_load(page["yaml"])["roles"]["analyst"]["sees"] == {"scope": "queues"}
+
+
+
+def test_a_query_that_joins_cases_under_an_alias_is_filtered_on_the_alias(world):
+    """The filter follows the case table under an alias, so a join through aliased(Case) shows the same cases as a plain query."""
+    from sqlalchemy.orm import aliased
+
+    from app.tenants import registry
+
+    with appdb.session_scope("meridian") as s:
+        visibility.bind_viewer(s, registry.runtime("meridian").policy.people["noah"])
+        plain = set(s.scalars(select(m.Case.id)))
+        other = aliased(m.Case)
+        joined = set(s.scalars(select(other.id).join(m.CaseEvent, m.CaseEvent.case_id == other.id)))
+    assert plain == _expected(world, "meridian", "noah") and joined and joined <= plain
