@@ -302,3 +302,67 @@ def test_a_job_started_from_the_product_raises_alerts_and_a_restart_applies_new_
         for j in flink.overview():
             if j["name"].startswith(settings.event_topic_prefix + " ") and j["state"] == "RUNNING":
                 flink.cancel(j["jid"])
+
+
+# ---- name screening, with the function Flink SQL lacks (deploy/flink/udf, built into TEST_FLINK_HOME/lib as caseforge-udf.jar)
+
+ODD = "O'Brien; Sons -- ${X} 𝒜G"  # a listed name with everything in it that could break out of a SQL string
+
+
+def paid(i, to, **over):
+    return txn(i, **({"amount": 25000, "direction": "out", "channel": "wire", "counterparty": to} | over))
+
+
+def alike(a, b):
+    import difflib
+
+    return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+def test_a_payment_to_a_name_close_to_a_listed_one_raises_an_alert_scored_as_the_application_scores_it(world, jobs):  # noqa: F811
+    from app.detection.scenarios import DEMO_WATCHLIST
+
+    names = [[n, f"e{i}"] for i, n in enumerate([*DEMO_WATCHLIST, ODD])]
+    jobs(job="sanctions_name", params={"names": names, "exempt": [["volkov maritime trading co", "e0"]]})
+    send(world, topics.TRANSACTIONS, [
+        paid(1, "Volkov Maritime Trading Co"), paid(2, "VOLKOV  Maritime Trading  Co"),   # a person ruled this pair out, however it is spaced
+        paid(3, "Darya Shiping Lines"), paid(4, "Harbour Cafe"), paid(5, ""),
+        paid(6, ODD.lower() + "x", party="P2", amount=1200.4, channel="ach"), paid(7, "Volkov Maritime Trading")])
+    found, raw = alerts(world, T, 3, seconds=60)
+    r3, r6 = alike("Darya Shiping Lines", "Darya Shipping Lines"), alike(ODD + "x", ODD)
+    assert 0.86 <= r3 < 1 and 0.86 <= r6 < 1
+    assert sorted(found, key=lambda a: a["external_id"]) == [
+        {"source": "flink-sanctions-name", "external_id": "T3", "scenario": "sanctions_name", "party_id": "P1", "score": round(r3, 2),
+         "explanation": f"Counterparty 'Darya Shiping Lines' matches watchlist entry 'Darya Shipping Lines' at {r3:.0%} similarity on a $25000 wire.",
+         "txn_ids": ["T3"]},
+        {"source": "flink-sanctions-name", "external_id": "T6", "scenario": "sanctions_name", "party_id": "P2", "score": round(r6, 2),
+         "explanation": f"Counterparty '{ODD.lower()}x' matches watchlist entry '{ODD}' at {r6:.0%} similarity on a $1200 ach.", "txn_ids": ["T6"]},
+        {"source": "flink-sanctions-name", "external_id": "T7", "scenario": "sanctions_name", "party_id": "P1", "score": 1.0,
+         "explanation": "Counterparty 'Volkov Maritime Trading' matches watchlist entry 'Volkov Maritime Trading' at 100% similarity on a $25000 wire.",
+         "txn_ids": ["T7"]}]
+    assert {x.key for x in raw} == {"P1", "P2"}
+    more, _ = alerts(world, T, 4, seconds=20)
+    assert len(more) == 3  # the ruled-out pair, the unlisted name and the payment with no name raised nothing
+
+
+@pytest.mark.skipif(not GATEWAY.startswith("http"), reason="set TEST_FLINK_GATEWAY_URL to the cluster's SQL Gateway to run")
+def test_name_screening_started_from_the_product_screens_against_the_clients_own_lists(world, jobs):  # noqa: F811
+    from app.sanctions import lists
+    from app.streamjobs import control
+    from test_detection_governance import MAYA
+
+    object.__setattr__(settings, "flink_gateway_url", GATEWAY)
+    try:
+        with world.tenant(T) as s:
+            lists.load(s, "eu_list", [{"ref": "E1", "name": "Beta Shipping", "aliases": ["Beta Ship Lines"]}], MAYA, name="EU list")
+            run = control.start(s, "sanctions_name", MAYA)
+            s.commit()
+            assert run.params["names"] == 6 and "list_fingerprint" in run.params
+        send(world, topics.TRANSACTIONS, [paid(1, "Beta Shiping"), paid(2, "Gamma Oil"), paid(3, "Zarin Exchange Hause")])
+        found, _ = alerts(world, T, 2, seconds=60)
+        assert sorted((a["external_id"], a["explanation"].split("'")[3]) for a in found) == [("T1", "Beta Shipping"), ("T3", "Zarin Exchange House")]
+        with world.tenant(T) as s:
+            control.stop(s, "sanctions_name", MAYA, "Test over.")
+            s.commit()
+    finally:
+        object.__setattr__(settings, "flink_gateway_url", "")

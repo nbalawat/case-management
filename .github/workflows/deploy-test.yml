@@ -54,7 +54,12 @@ jobs:
           helm install kyverno kyverno/kyverno --version "$KYVERNO_CHART" -n kyverno --create-namespace --wait --timeout 10m \
             --set admissionController.replicas=1 --set backgroundController.replicas=1 \
             --set cleanupController.replicas=1 --set reportsController.replicas=1
-          helm install policies deploy/helm/caseforge-policies --wait --set podSecurity.action=Enforce
+          # Helm's wait can return while Kyverno's webhook still refuses connections, so try the policies a few times.
+          for attempt in 1 2 3 4 5 6; do
+            helm upgrade --install policies deploy/helm/caseforge-policies --wait --set podSecurity.action=Enforce && break
+            [ "$attempt" = 6 ] && exit 1
+            echo "Kyverno's webhook is not answering yet (attempt $attempt); retrying in 15s"; sleep 15
+          done
           kubectl wait --for=condition=Ready clusterpolicy --all --timeout=5m
       - name: Postgres for the stamp (a stand-in for the managed database)
         run: |
