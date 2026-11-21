@@ -225,6 +225,7 @@ run offline (a planner and rule-based agents), which is also how the air-gapped 
 | Models | Anthropic API behind a provider-neutral gateway; offline fallbacks |
 | Front end | React 19, TypeScript, Vite, Tailwind, Radix, cmdk, TanStack Table, Apache ECharts |
 | Delivery | Docker, Docker Compose profiles, Helm 3, GitHub Actions |
+| Infrastructure | OpenTofu for AWS, Azure and GCP behind one stamp contract; Argo CD, Kyverno, External Secrets, Traefik, cert-manager; Strimzi, OpenSearch and Flink operators |
 
 Every engine dependency is an optional group in `backend/pyproject.toml`, so an image carries only the drivers its
 deployment uses.
@@ -315,6 +316,15 @@ helm install acme deploy/helm/caseforge -n acme -f deploy/helm/caseforge/modes/c
   --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::123456789012:role/caseforge
 ```
 
+**From an empty cloud account.** [`infra/`](infra/README.md) holds OpenTofu for all three clouds behind one stamp
+contract, so the Kubernetes layer never names a cloud. Each cloud has layered stacks (bootstrap, platform, add-ons,
+stamp): a network, a private EKS, AKS or GKE cluster, a registry and keys once per environment, then per stamp a
+Postgres, buckets (optionally WORM), its own key and workload identity, and managed or in-cluster Kafka and search. A
+cloud-neutral in-cluster layer installs the operators, Kyverno policies and each stamp's namespace, secrets and Argo
+CD applications; a stamp's image tag is a line in Git, changed by pull request. GitHub Actions signs in to each cloud
+through OIDC only. All of it is validated, unit-tested against mocked providers, linted and security-scanned, and
+none of it has yet been applied to a real cloud account.
+
 On Azure the storage URL becomes `abfss://evidence@<account>.dfs.core.windows.net/caseforge` and the annotation
 `azure.workload.identity/client-id`; on GCP, `gs://acme-caseforge/evidence` and `iam.gke.io/gcp-service-account`.
 Today only Anthropic's API is implemented as a hosted model provider; the others in the table are slots behind the
@@ -360,7 +370,8 @@ frontend/src/
   shell/         module registry (one entry per page), role-shaped sidebar, command palette, account menu
   components/    kit (Radix, cmdk, Tailwind), data grid, case workspace, charts, layout
   pages/         one file per page
-deploy/          Helm chart, Debezium connector, Flink image and notes
+deploy/          Helm chart, Debezium connector, Flink image and notes, per-environment stamp releases
+infra/           OpenTofu per cloud behind one stamp contract, and the in-cluster platform layer
 ```
 
 ## Documentation
@@ -370,6 +381,7 @@ deploy/          Helm chart, Debezium connector, Flink image and notes
 | [Demo guide](docs/demo-guide.md) | A 22-step tour by persona, plus connecting a model and overlay mode |
 | [Configuration reference](docs/configuration.md) | Every setting, and what each client configures where |
 | [Data model](docs/data-model.md) | The tables, how tenancy keys them, and the event topics |
+| [Infrastructure as code](infra/README.md) | Standing up AWS, Azure or GCP and onboarding stamps with OpenTofu and Argo CD |
 | [Helm chart](deploy/helm/caseforge/README.md) | Installing a stamp on Kubernetes, the four modes, what the chart refuses |
 | [Stream detection on Flink](deploy/flink/README.md) | Running the Flink jobs and their limits |
 | API reference | <http://localhost:8000/docs> on a running app |
