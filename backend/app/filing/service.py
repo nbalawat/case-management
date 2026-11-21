@@ -17,6 +17,7 @@ from ..domain.personas import Persona, policy_of
 from ..tenancy import tenant_of
 from ..visibility import system_work
 from . import report as reports
+from . import validation
 from .formats import FORMATS, SUSPICION_KIND, Format, format_for
 from .transmit import CHANNELS, TransmitError
 
@@ -27,6 +28,10 @@ CONTINUING_DAYS = 120  # activity that carries on is reported again within 120 d
 
 class FilingError(Exception):
     pass
+
+
+class SendFailed(FilingError):
+    """The report was ready but the channel did not take it. Unlike a refusal, trying again later may work."""
 
 
 # Kinds of report built outside this module register how to rebuild one: kind -> (session, filing, timestamp) -> (format, body).
@@ -43,9 +48,12 @@ def _note(s: Session, f: Filing, persona_id: str, what: str, ts: datetime, **det
 
 
 def _write(f: Filing, fmt: Format, report: dict) -> None:
+    """Render the report, then check it twice: against what the regulator says in words, and against its published schema."""
     f.payload, f.format = report, fmt.id
-    f.problems = fmt.check(report)
     f.document = fmt.render(report)
+    checked = validation.validate(fmt.id, report.get("institution") or {}, f.document)
+    f.validation = checked.to_dict()
+    f.problems = fmt.check(report) + validation.problems(checked)
     f.sha256 = hashlib.sha256(f.document.encode()).hexdigest()
 
 
@@ -149,7 +157,9 @@ def submit(s: Session, filing_id: str, persona: Persona, ts: datetime | None = N
         raise FilingError(f"Client sign-off: reports are sent to the regulator by the client's own officers, not the {ms.provider} team")
     _send(s, f, persona, ts)
     if f.status != "submitted":
-        raise FilingError(f.history[-1].get("reason") or "; ".join(f.problems))
+        if f.history and f.history[-1].get("what") == "send_failed":
+            raise SendFailed(f.history[-1].get("reason") or "The channel did not take the report")
+        raise FilingError("; ".join(f.problems) or "The report was not sent")
     return f
 
 
@@ -218,7 +228,7 @@ def row(f: Filing, names: dict[str, str] | None = None) -> dict:
             "submitted_by": f.submitted_by, "submitted_at": f.submitted_at.isoformat() if f.submitted_at else None, "channel": f.channel,
             "receipt": f.receipt, "reference": f.reference, "answered_at": f.answered_at.isoformat() if f.answered_at else None,
             "rejection": f.rejection, "amends_id": f.amends_id, "problems": f.problems, "sha256": f.sha256,
-            "continuing_review_due": continuing.isoformat() if continuing else None}
+            "continuing_review_due": continuing.isoformat() if continuing else None, "validation": f.validation or {}}
 
 
 def detail(s: Session, filing_id: str) -> dict:

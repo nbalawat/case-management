@@ -11,7 +11,6 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
-import app.db as appdb
 from app.alerts.hub import ingest_external_alert
 from app.backbone import outbox, relay, status, streams, topics
 from app.backbone.bus import BusError, MemoryBus, Message, connect, reset_memory
@@ -22,7 +21,7 @@ from app.domain import models as m
 from app.tenancy import TenantError
 from app.tenants import registry
 from app.tenants.onboarding import set_status
-from conftest import Db
+from conftest import Db, app_database
 from support import T
 
 OTHER = "kestrel"
@@ -34,18 +33,16 @@ def world():
     """Two clients on an empty platform, with the application's own session factory pointed at it and a fresh in-process bus."""
     saved = registry.swap({})
     db = Db()
-    old = appdb.engine, appdb.SessionLocal
-    appdb.engine, appdb.SessionLocal = db.engine, sessionmaker(bind=db.engine, expire_on_commit=False)
-    for k, v in {"event_bus_url": "memory://", "outbox_publisher": "relay", "stream_unknown_customer": "reject", "event_topic_prefix": "caseforge"}.items():
-        object.__setattr__(settings, k, v)
-    reset_memory()
-    db.onboard(T)
-    db.onboard(OTHER)
-    db.bus = connect()
-    yield db
-    reset_memory()
-    object.__setattr__(settings, "event_bus_url", "")
-    appdb.engine, appdb.SessionLocal = old
+    with app_database(db.engine, sessionmaker(bind=db.engine, expire_on_commit=False)):
+        for k, v in {"event_bus_url": "memory://", "outbox_publisher": "relay", "stream_unknown_customer": "reject", "event_topic_prefix": "caseforge"}.items():
+            object.__setattr__(settings, k, v)
+        reset_memory()
+        db.onboard(T)
+        db.onboard(OTHER)
+        db.bus = connect()
+        yield db
+        reset_memory()
+        object.__setattr__(settings, "event_bus_url", "")
     registry.swap(saved)
 
 

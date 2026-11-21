@@ -25,7 +25,7 @@ def body(kind="SAR", institution=US, narrative="Cash deposits were kept under th
     txns = [{"id": f"t{i}", "ts": f"2026-01-0{i}T10:00:00", "amount": 9000.0 + i, "currency": "USD", "direction": "in" if i < 4 else "out",
              "channel": "cash", "counterparty": "" if i < 4 else "Volkov Maritime Trading", "counterparty_country": "RU", "account_id": "A1"} for i in (1, 2, 3, 4)]
     return {"kind": kind, "case_id": "case-1", "prepared_at": "2026-02-01T09:30:00", "institution": dict(institution),
-            "subject": {"id": "C1", "kind": "person", "name": "Ada Maria Stone", "country": "US", "occupation": "florist",
+            "subject": {"id": "C1", "kind": "person", "name": "Ada Maria Stone", "country": "US", "occupation": "florist", "born": "1980-02-03",
                         "accounts": [{"id": "A1", "product": "checking", "status": "open"}]},
             "activity": {"from": "2026-01-01", "to": "2026-01-04", "total": 36010.0, "currency": "USD", "count": 4, "channels": ["cash"],
                          "categories": [{"key": "structuring", "group": "structuring", "label": "Below threshold"}]} | activity,
@@ -36,8 +36,7 @@ def body(kind="SAR", institution=US, narrative="Cash deposits were kept under th
 def test_a_fincen_sar_is_well_formed_and_says_what_the_report_says():
     root = ET.fromstring(fincen.render_sar(body()).encode())
     assert root.tag == f"{{{fincen.NS}}}EFilingBatchXML" and root.findtext("fc2:FormTypeCode", namespaces=FC) == "SARX"
-    assert root.attrib == {"ActivityCount": "1", "TotalAmount": "36010", "PartyCount": "6", "ActivityNarrativeInformationCount": "1",
-                           "SuspiciousActivityClassificationCount": "1"}
+    assert root.attrib == {"ActivityCount": "1", "TotalAmount": "36010", "PartyCount": "6", "ActivityAttachmentCount": "0", "AttachmentCount": "0"}
     act = root.find("fc2:Activity", FC)
     assert act.findtext("fc2:FilingDateText", namespaces=FC) == "20260201"
     assert act.find("fc2:ActivityAssociation/fc2:InitialReportIndicator", FC).text == "Y"
@@ -52,7 +51,8 @@ def test_a_fincen_sar_is_well_formed_and_says_what_the_report_says():
     sa = act.find("fc2:SuspiciousActivity", FC)
     assert (sa.findtext("fc2:SuspiciousActivityFromDateText", namespaces=FC), sa.findtext("fc2:SuspiciousActivityToDateText", namespaces=FC),
             sa.findtext("fc2:TotalSuspiciousAmountText", namespaces=FC)) == ("20260101", "20260104", "36010")
-    assert sa.findtext("fc2:SuspiciousActivityClassification/fc2:SuspiciousActivityTypeID", namespaces=FC) == "11"
+    assert sa.findtext("fc2:SuspiciousActivityClassification/fc2:SuspiciousActivityTypeID", namespaces=FC) == "1"
+    assert sa.findtext("fc2:SuspiciousActivityClassification/fc2:SuspiciousActivitySubtypeID", namespaces=FC) == "114"  # below the CTR threshold
     assert act.findtext("fc2:ActivityNarrativeInformation/fc2:ActivityNarrativeText", namespaces=FC).startswith("Cash deposits")
 
 
@@ -67,7 +67,6 @@ def test_a_long_narrative_is_split_into_parts_and_an_amendment_names_the_origina
     parts = doc.findall(".//fc2:ActivityNarrativeInformation", FC)
     assert [len(p.findtext("fc2:ActivityNarrativeText", namespaces=FC)) for p in parts] == [4000, 4000, 1000]
     assert [p.findtext("fc2:ActivityNarrativeSequenceNumber", namespaces=FC) for p in parts] == ["1", "2", "3"]
-    assert doc.attrib["ActivityNarrativeInformationCount"] == "3"
     assert doc.findtext(".//fc2:EFilingPriorDocumentNumber", namespaces=FC) == "31000123456789"
     assert doc.find(".//fc2:CorrectsAmendsPriorReportIndicator", FC).text == "Y" and doc.find(".//fc2:InitialReportIndicator", FC) is None
 
@@ -78,21 +77,23 @@ def test_a_fincen_ctr_totals_cash_in_and_out_and_lists_each_movement():
     cta = root.find(".//fc2:CurrencyTransactionActivity", FC)
     assert (cta.findtext("fc2:TotalCashInReceiveAmountText", namespaces=FC), cta.findtext("fc2:TotalCashOutAmountText", namespaces=FC)) == ("27006", "9004")
     kinds = [d.findtext("fc2:CurrencyTransactionActivityDetailTypeCode", namespaces=FC) for d in cta.findall("fc2:CurrencyTransactionActivityDetail", FC)]
-    assert kinds == ["55", "55", "55", "34"] and root.attrib["CurrencyTransactionActivityDetailCount"] == "4"
+    amounts = [d.findtext("fc2:DetailTransactionAmountText", namespaces=FC) for d in cta.findall("fc2:CurrencyTransactionActivityDetail", FC)]
+    assert (kinds, amounts) == (["55", "56"], ["27006", "9004"])  # deposits and withdrawals, each totalled for the day
     assert [p.findtext("fc2:ActivityPartyTypeCode", namespaces=FC) for p in root.findall(".//fc2:Activity/fc2:Party", FC)][-1] == "50"
 
 
 def test_a_goaml_str_puts_our_customer_on_the_right_side_of_each_transaction():
     root = ET.fromstring(goaml.render_str(body("STR", LU)).encode())
     assert (root.tag, root.findtext("rentity_id"), root.findtext("report_code"), root.findtext("entity_reference")) == ("report", "4471", "STR", "case-1")
-    assert root.findtext("reason").startswith("Cash deposits") and root.findtext("location/country_code") == "LU"
+    assert root.findtext("reason").startswith("Cash deposits") and root.findtext("currency_code_local") == "EUR"
     txns = root.findall("transaction")
-    assert len(txns) == 4 and txns[0].findtext("amount_local") == "9001.00" and txns[0].findtext("transmode_code") == "CASH"
+    assert len(txns) == 4 and txns[0].findtext("amount_local") == "8280.92" and txns[0].findtext("transmode_code") == "A"
+    assert txns[0].findtext("t_from/from_foreign_currency/foreign_amount") == "9001.00"  # dollars, converted to the FIU's euros at the profile's rate
     assert txns[0].find("t_to_my_client") is not None and txns[0].find("t_from") is not None  # money in: the customer receives
     assert txns[3].find("t_from_my_client") is not None and txns[3].findtext("t_to/to_entity/name") == "Volkov Maritime Trading"
     assert txns[3].findtext("t_from_my_client/from_account/signatory/t_person/last_name") == "Stone"
-    assert [i.text for i in root.findall("report_indicators/indicator")] == ["STRUCT"]
-    assert ET.fromstring(goaml.render_ctr(body("CTR", LU)).encode()).find("reason") is None
+    assert [i.text for i in root.findall("report_indicators/indicator")] == ["002TS-TxnSmurfing"]
+    assert ET.fromstring(goaml.render_ctr(body("CTR", LU)).encode()).findtext("reason")  # the CRF wants a reason on cash reports too (REJ-REA02)
 
 
 def test_text_that_looks_like_markup_is_escaped_not_injected():
@@ -176,7 +177,14 @@ def test_filing_a_case_writes_the_report_in_the_clients_format_and_sends_it(s, _
 
 def test_the_same_case_at_a_goaml_client_becomes_an_str(s):
     _profile("goaml", LU)
-    _, f = _filed(s)
+    case, f = _filed(s)
+    assert (f.kind, f.format, f.status) == ("STR", "goaml_str_xml", "prepared") and "date of birth" in f.problems[0]  # goAML insists on it
+    from datetime import date
+
+    for p in s.scalars(select(m.Party)):
+        p.born = date(1980, 2, 3)
+    filing.recheck(s, f.id, PERSONAS["maya"])
+    f = filing.submit(s, f.id, PERSONAS["maya"])
     assert (f.kind, f.format, f.status) == ("STR", "goaml_str_xml", "submitted") and f.id.startswith("str-")
     assert ET.fromstring(f.document.encode()).findtext("report_code") == "STR"
 

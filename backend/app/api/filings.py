@@ -99,3 +99,14 @@ class AmendIn(BaseModel):
 @router.post("/{filing_id}/amend")
 def amend(filing_id: str, body: AmendIn, s: Session = Depends(get_session), p: Persona = Depends(require(SUBMIT))):
     return _do(service.amend, s, filing_id, p, body.narrative)
+
+
+@router.post("/answers/collect")
+def collect_answers(s: Session = Depends(get_session), p: Persona = Depends(require(SUBMIT))):
+    """Read the regulator's answers that the client's secure transfer has dropped in its inbox, and record each one."""
+    from ..filing import answers
+
+    try:
+        return answers.collect(s, p)
+    except answers.AnswerError as e:
+        raise HTTPException(409, str(e)) from None
