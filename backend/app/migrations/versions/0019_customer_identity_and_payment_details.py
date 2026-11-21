@@ -1,7 +1,7 @@
 """customer identity and payment details
 
-Revision: 0018
-Follows: 0017
+Revision: 0019
+Follows: 0018
 """
 from alembic import op
 import sqlalchemy as sa

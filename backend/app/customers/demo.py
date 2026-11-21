@@ -62,7 +62,9 @@ def _address(r: random.Random, country: str) -> dict:
 def _identifiers(r: random.Random, p: Party, nationality: str, today: date) -> list[tuple[str, str, str, date | None]]:
     """(kind, value, issuing country, expiry) for one customer."""
     if p.kind == "company":
-        out = [("company_registration", f"{p.country}-{_digits(r, 8)}", p.country, None)]
+        # Registration numbers in each register's own form: Luxembourg RCS numbers look like B123456.
+        reg = f"B{r.randint(10000, 299999)}" if p.country == "LU" else f"{p.country}-{_digits(r, 8)}"
+        out = [("company_registration", reg, p.country, None)]
         if p.country == "US":
             out.append(("ein", f"00-{_digits(r, 7)}", "US", None))
         else:

@@ -285,6 +285,7 @@ class Filing(TenantScoped, Base):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)  # the report in neutral form, before any format
     document: Mapped[str] = mapped_column(Text, default="")
     problems: Mapped[list] = mapped_column(JSON, default=list)  # what stops it being sent
+    validation: Mapped[dict] = mapped_column(JSON, default=dict)  # the schema it was checked against, and what that found
     submitted_by: Mapped[str] = mapped_column(String(40), default="")
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     channel: Mapped[str] = mapped_column(String(30), default="")

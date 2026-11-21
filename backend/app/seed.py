@@ -659,6 +659,7 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     # Fraud is planted after settling, so "35 minutes ago" stays 35 minutes ago.
     planted = _plant_fraud(g, g.r.sample(ordinary, profile.fraud)) if "fraud_claim" in types else []
     s.flush()
+    customers_demo.seed(s, g.end)  # complete records before reports are written from them; run again at the end for later customers
     alerts = run_detection(s)
     cases = route_alerts(s, alerts)
     for c in cases:
@@ -693,7 +694,7 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     from .governance import demo as governance_demo
 
     governance_demo.seed(s, g.end)
-    customers_demo.seed(s, g.end)  # last, so it fills in every customer the steps above made
+    customers_demo.seed(s, g.end)  # again, for the customers the steps above added; it never overwrites
     resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))
@@ -785,7 +786,7 @@ DEMO_FILING = {
         "name": "Kestrel Payments Inc", "tax_id": "98-7654321", "address": "40 Mission Row", "city": "San Francisco", "state": "CA",
         "postal_code": "94105", "country": "US", "regulator_code": "9", "contact_office": "Compliance", "contact_phone": "415-555-0190"}},
     "alder": {"regime": "goaml", "channel": "outbox", "institution": {
-        "name": "Alder Private Bank SA", "tax_id": "LU12345678", "reporting_entity_id": "4471", "address": "12 Rue de l'Eau", "city": "Luxembourg",
+        "name": "Alder Private Bank SA", "tax_id": "LU12345678", "reporting_entity_id": "4471", "swift": "ALDRLULL", "address": "12 Rue de l'Eau", "city": "Luxembourg",
         "country": "LU", "contact_office": "Financial Crime Compliance", "contact_phone": "+352 555 0117"}},
 }
 

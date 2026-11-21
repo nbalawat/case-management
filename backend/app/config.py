@@ -29,6 +29,11 @@ class Settings:
     quarantine_url: str = os.getenv("QUARANTINE_URL", f"file://{ROOT / 'data' / 'quarantine'}")
     # Customer documents. Each client's files live under evidence_url/<client>/; any object store URL works (s3://, abfs://, gs://).
     evidence_url: str = os.getenv("EVIDENCE_URL", f"file://{ROOT / 'data' / 'evidence'}")
+    # Regulator schemas. FinCEN's ship with the app. goAML schemas are published by each FIU, often on terms that forbid
+    # redistributing them, so the operator downloads the client's FIU schema and points this at the folder holding it.
+    goaml_schema_dir: Path = Path(os.getenv("GOAML_SCHEMA_DIR", ROOT / "data" / "schemas" / "goaml"))
+    # 1: a report that could not be checked against a schema is held back. 0: it can be sent, marked as not checked.
+    filing_require_schema: bool = os.getenv("FILING_REQUIRE_SCHEMA", "0") == "1"
     allow_memory_storage: bool = os.getenv("ALLOW_MEMORY_STORAGE", "0") == "1"
     pipeline_scheduler: bool = os.getenv("PIPELINE_SCHEDULER", "0") == "1"
     # demo: the client and the person come from request headers (the persona switch). oidc: only from a signed token.
