@@ -37,6 +37,7 @@ from .api.platform import router as platform_router
 from .api.routes import router
 from .api.work import router as work_router
 from .api.workflows import router as workflows_router
+from .api.composer import router as composer_router
 from . import workflow
 from .config import ROOT, settings
 from .db import ensure_schema, session_scope
@@ -82,7 +83,7 @@ app = FastAPI(title="CaseForge demo API", version="0.26.0", lifespan=lifespan)
 async def _engine_unavailable(_: Request, e: workflow.EngineUnavailable) -> JSONResponse:
     return JSONResponse({"detail": str(e)}, status_code=503, headers={"Retry-After": "5"})
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
-for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, backbone_router, navigation_router, case_list_router, decisions_router, forms_router, lake_router):
+for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router, governance_router, backbone_router, navigation_router, case_list_router, decisions_router, forms_router, lake_router, composer_router):
     app.include_router(r, dependencies=[Depends(signed_in)])
 app.include_router(ai_router, dependencies=[Depends(signed_in)])  # the model gateway's set-up and usage
 app.include_router(auth_router)

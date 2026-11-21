@@ -25,6 +25,16 @@ class TransitionError(Exception):
 ON_CLOSED: list[Callable[[Session, Case, dict, Persona, datetime], None]] = []
 # Asked before a case may close: (session, case) -> why not, or None. A hold still in force is one such reason.
 CLOSE_GUARDS: list[Callable[[Session, Case], str | None]] = []
+# Requirements other modules add to the ones built in, such as a completed form: name -> (session, case, transition) -> why not, or None.
+REQUIREMENT_CHECKS: dict[str, Callable[[Session, Case, dict], str | None]] = {}
+
+
+def register_requirement(name: str, label: str, check: Callable[[Session, Case, dict], str | None]) -> None:
+    """Add something a step can require. The designer offers it and publishing accepts it from then on."""
+    from .case_types import REQUIREMENTS
+
+    REQUIREMENTS[name] = label
+    REQUIREMENT_CHECKS[name] = check
 
 
 def definition(case: Case) -> dict:
@@ -54,6 +64,11 @@ def create_case(s: Session, case_type: dict, party_id: str, priority: str, creat
     record(s, c.id, actor, "system", "case.created",
            {"case_type": c.case_type, "version": c.type_version, "state": c.state, "priority": priority,
             "queue": c.queue, "parent_id": parent_id}, ts=created)
+    if case_type["states"][initial].get("on_enter"):
+        from .effects import run_on_enter
+
+        s.flush()
+        run_on_enter(s, c, case_type, initial, created)
     return c
 
 
@@ -63,8 +78,11 @@ def facts(s: Session, case: Case) -> dict:
     alerts = list(s.scalars(select(Alert).where(Alert.case_id == case.id)))
     ids = {i for a in alerts for i in a.txn_ids}
     amount = s.scalar(select(func.coalesce(func.sum(Transaction.amount), 0.0)).where(Transaction.id.in_(ids))) if ids else 0.0
-    return {"alerted_amount": round(float(amount or 0), 2), "alerts": len(alerts), "risk_rating": case.party.risk_rating,
-            "pep": bool(case.party.pep), "priority": case.priority, "agent_recommendation": case.agent_recommendation or ""}
+    out = {"alerted_amount": round(float(amount or 0), 2), "alerts": len(alerts), "risk_rating": case.party.risk_rating,
+           "pep": bool(case.party.pep), "priority": case.priority, "agent_recommendation": case.agent_recommendation or ""}
+    for name, provider in conditions.PROVIDERS.items():
+        out[name] = provider.read(s, case)
+    return out
 
 
 # --- stage tasks -----------------------------------------------------------------
@@ -136,6 +154,11 @@ def _blocked(s: Session, case: Case, t: dict, persona: Persona, note: str | None
             return why
     if note is not None and "note" in req and not note.strip():
         return "A rationale note is required"
+    for name in req:
+        check = REQUIREMENT_CHECKS.get(name)
+        why = check(s, case, t) if check else None
+        if why:
+            return why
     if definition(case)["states"][t["to"]].get("kind") == "closed":
         for guard in CLOSE_GUARDS:
             why = guard(s, case)
@@ -234,6 +257,10 @@ def enter_state(s: Session, case: Case, defn: dict, state: str, ts: datetime, ac
         if case.owner and queue and case.owner not in {p.id for p in queue_members(case.tenant_id, queue)}:
             record(s, case.id, "workflow", "system", "case.handed_off", {"from_owner": case.owner, "queue": queue}, ts=ts)
             case.owner = None
+    if target.get("on_enter"):
+        from .effects import run_on_enter
+
+        run_on_enter(s, case, defn, state, ts)
 
 
 @system_work
