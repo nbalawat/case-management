@@ -1,0 +1,9 @@
+/* The customer record: identity facts and the correction form. */
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0 0 12px; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 14px; margin-bottom: 12px; }
+.form-grid .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+.form-grid .field.wide { grid-column: 1 / -1; }
+.form-grid .inline { grid-column: 1 / -1; }
+td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; }

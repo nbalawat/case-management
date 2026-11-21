@@ -20,6 +20,7 @@ dependencies = [
   "jsonschema>=4.23",
   # 49 and later ship no Intel macOS wheel, and building from source needs a recent Rust.
   "cryptography>=44,<49",
+  "xmlschema>=4.3.2",
   "prometheus-client>=0.21",
 ]
 
