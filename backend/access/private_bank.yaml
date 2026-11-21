@@ -40,10 +40,10 @@ queues:
 # 'sees' sees every case. Whatever the limit, people keep sight of cases they own or have acted on, and a person
 # with several roles sees what any of them shows. Restricted cases need 'view_restricted' on top.
 roles:
-  kyc_analyst:          {title: Due diligence analyst, permissions: [work], sees: {scope: all, case_types: [kyc_onboarding, kyc_refresh]}}
+  kyc_analyst:          {title: Due diligence analyst, permissions: [work], sees: {scope: all, case_types: [kyc_onboarding, kyc_refresh, edd_review, customer_exit]}}
   team_lead:            {title: Head of client due diligence, permissions: [work, view_team, reassign, run_timers, resolve_entities]}
   analyst:              {title: Alert analyst, permissions: [work], sees: {scope: queues}}
-  investigator:         {title: Investigator, permissions: [work, resolve_entities, break_glass], sees: {scope: all, case_types: [tm_alert_investigation]}}
+  investigator:         {title: Investigator, permissions: [work, resolve_entities, break_glass], sees: {scope: all, case_types: [tm_alert_investigation, info_request_314a, subpoena, lookback]}}
   sanctions_officer:    {title: Sanctions officer, permissions: [work, sanctions_decisions], sees: {scope: all, case_types: [sanctions_hit]}}
   qa_reviewer:          {title: QA reviewer, permissions: [work, view_team]}
   mlro:                 {title: MLRO, permissions: [work, view_team, reassign, view_restricted, restrict_case, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing, tune_detection, approve_tuning, certify_access]}

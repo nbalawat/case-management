@@ -254,8 +254,9 @@ def test_the_check_refuses_a_customer_facing_person_in_a_queue_where_suspicion_a
         next(p for p in raw["people"] if p["id"] == "rosa")["queues"] = ["aml-l1"]
     with pytest.raises(AccessPolicyError, match="Rosa Bianchi is customer-facing but is in the queue 'AML alert triage"):
         access_admin.check(s, _draft(edit=edit))
-    out = access_admin.check(s, _draft(edit=lambda r: r.update(tipping_off={"case_types": ["chargeback"]})))
-    assert any("does not run: chargeback" in w for w in out["warnings"])
+    # the reference client runs every library case type, so name one it does not run
+    out = access_admin.check(s, _draft(edit=lambda r: r.update(tipping_off={"case_types": ["trade_surveillance"]})))
+    assert any("does not run: trade_surveillance" in w for w in out["warnings"])
 
 
 # --- tipping-off and customer reach in the reference client -------------------------------------------------------------

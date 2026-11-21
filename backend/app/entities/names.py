@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from anyascii import anyascii
+
 # Legal forms carry no identity: "Volkov Maritime Trading Co" and "Volkov Maritime Trading" are the same firm.
 LEGAL_FORMS = {"llc", "ltd", "limited", "inc", "incorporated", "co", "corp", "corporation", "company", "plc", "gmbh", "ag", "sa", "sarl", "srl",
                "bv", "nv", "oy", "ab", "as", "pte", "pty", "fze", "fzc", "llp", "lp", "kg", "spa", "sas", "jsc", "ooo"}
@@ -13,8 +15,24 @@ _dotted = re.compile(r"(?<![a-z0-9])(?:[a-z]\.){2,}")  # "L.L.C." and "S.A." are
 
 
 def fold(text: str) -> str:
-    """Lower case, accents removed: 'Tomás Bergström' and 'tomas bergstrom' compare equal."""
-    return "".join(c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c)).lower()
+    """Lower case, accents removed, other scripts written in Latin letters.
+
+    'Tomás Bergström' and 'tomas bergstrom' compare equal, and so do 'Владимир Петров' and 'Vladimir Petrov'.
+    Transliteration is anyascii's (ISC licence): one fixed reading per character, so it is a starting point for a
+    match, never proof of one. Scripts written without vowels (Arabic, Hebrew) come out as consonants and will rarely
+    match a Latin spelling; those need a list of known spellings, which this does not have.
+    """
+    text = text or ""
+    if not text.isascii():  # a Chinese or Korean character is a syllable of its own: 王伟 is 'wang wei', not 'wangwei'
+        text = "".join(f" {anyascii(c)} " if _syllabic(c) else c for c in text)
+    plain = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+    if not plain.isascii():
+        plain = "".join(c if c.isascii() else anyascii(c) for c in plain)
+    return plain.lower()
+
+
+def _syllabic(c: str) -> bool:
+    return unicodedata.name(c, "").startswith(("CJK UNIFIED", "HANGUL SYLLABLE"))
 
 
 def tokens(name: str) -> list[str]:

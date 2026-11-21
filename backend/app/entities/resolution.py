@@ -3,7 +3,8 @@
 Three questions, three levels of caution:
   * Are two spellings of a counterparty the same firm?  Very close spellings merge by themselves; close ones go to a person.
   * Is a counterparty one of our own customers?         Always a person's call: a name alone is weak evidence.
-  * Are two customer records the same person?           Always a person's call, and only proposed when more than the name agrees.
+  * Are two customer records the same party?            Always a person's call, and only proposed when more than the name agrees:
+                                                         a shared ID number, birth date, address or phone (see evidence.py).
 
 A run rebuilds entities and the money between them from the transactions, and re-applies every decision a person has
 made. Decisions are stored against names, not against generated ids, so they survive any number of runs.
@@ -15,7 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..detection.scenarios import HIGH_RISK_COUNTRIES
 from ..sanctions import lists
@@ -24,7 +25,7 @@ from ..domain.personas import Persona
 from ..tenancy import tenant_of
 from ..tenants.registry import runtime
 from ..visibility import system_work
-from . import names
+from . import evidence, names
 
 DEFAULTS = {"auto_merge_at": 0.96, "review_at": 0.82, "duplicate_customer_at": 0.80, "watchlist_at": 0.90}
 KINDS = {"counterparty_variant": "Two spellings of one counterparty?", "customer_as_counterparty": "Is this counterparty our own customer?",
@@ -50,6 +51,10 @@ def customer_entity_id(party_id: str) -> str:
 
 def _pair(a: str, b: str) -> tuple[str, str]:
     return (a, b) if a <= b else (b, a)
+
+
+def _masked(account: str) -> str:
+    return f"ending {account[-4:]}" if len(account) > 4 else account
 
 
 def _candidate_id(kind: str, left: str, right: str) -> str:
@@ -91,7 +96,7 @@ def resolve(s: Session) -> dict:
     tenant = tenant_of(s)
     limits = thresholds(tenant)
     decided = _decisions(s)
-    parties = list(s.scalars(select(Party)))
+    parties = list(s.scalars(select(Party).options(selectinload(Party.identifiers))))
     by_party_key: dict[str, list[Party]] = defaultdict(list)
     for p in parties:
         by_party_key[names.key(p.name)].append(p)
@@ -135,6 +140,28 @@ def resolve(s: Session) -> dict:
                     union.join(a, b)
                 elif score >= limits["review_at"]:
                     found[("counterparty_variant", f"cp:{pair[0]}", f"cp:{pair[1]}")] = (pair[0], pair[1], score, [f"Names are {score:.0%} alike"])
+    # Two spellings paid into the same account are probably one firm, however differently they are written. A shared
+    # account can also be a payment agent's, so it is a question for a person, never a merge by itself.
+    by_account: dict[str, set[str]] = defaultdict(set)
+    for name, account in s.execute(select(Transaction.counterparty, Transaction.counterparty_account).distinct()
+                                   .where(Transaction.counterparty != "", Transaction.counterparty_account != "")):
+        if name in spellings and spellings[name].key:
+            by_account[account].add(spellings[name].key)
+    for account, members in sorted(by_account.items()):
+        ordered = sorted(members)
+        if len(ordered) > 20:  # a clearing or omnibus account: everyone pays into it
+            continue
+        for i, a in enumerate(ordered):
+            for b in ordered[i + 1:]:
+                ckey = ("counterparty_variant", f"cp:{a}", f"cp:{b}")
+                if union.find(a) == union.find(b) or decided.get(ckey) == "different":
+                    continue
+                if decided.get(ckey) == "same":
+                    union.join(a, b)
+                    continue
+                score = names.similarity(a, b)
+                reasons = ([f"Names are {score:.0%} alike"] if score >= limits["review_at"] else []) + [f"Both are paid into account {_masked(account)}"]
+                found[ckey] = (a, b, min(max(score, limits["review_at"]) + 0.05, 0.95), reasons)
     # Once spellings have merged, ask about each pair of firms once, and never about two a person has already told apart.
     told_apart = {_pair(union.find(a), union.find(b)) for a, b in apart}
     best: dict[tuple[str, str], tuple] = {}
@@ -214,32 +241,33 @@ def resolve(s: Session) -> dict:
         s.add(EntityEdge(party_id=pid, entity_id=target, txns=e["txns"], sent=round(e["sent"], 2), received=round(e["received"], 2),
                          first=e["first"], last=e["last"], channels=sorted(e["channels"])))
 
-    # 5. Customer records that may be one person: the name must match, and something else must agree as well.
+    # 5. Customer records that may be one party. Compared only when they share a name, a strong identifier, a birthday
+    #    and surname, a phone, an email or an address; proposed only when more than the name agrees (see evidence).
     partners: dict[str, set[str]] = defaultdict(set)
     hubs = {t for t, who in degree.items() if len(who) >= common_at}
     for (pid, target) in edges:
         if target not in hubs:
             partners[pid].add(target)
-    for group in by_party_key.values():
-        for i, a in enumerate(group[:8]):
-            for b in group[i + 1:8]:
-                left, right = sorted([a, b], key=lambda p: p.id)
-                ckey = ("duplicate_customer", f"party:{left.id}", f"party:{right.id}")
+    facts = {p.id: evidence.facts_of(p) for p in parties}
+    by_block: dict[str, list[str]] = defaultdict(list)
+    for pid in sorted(facts):
+        for b in evidence.blocks(facts[pid]):
+            by_block[b].append(pid)
+    compared: set[tuple[str, str]] = set()
+    for members in by_block.values():
+        if len(members) > evidence.MAX_BLOCK:
+            continue
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                if (a, b) in compared:
+                    continue
+                compared.add((a, b))
+                ckey = ("duplicate_customer", f"party:{a}", f"party:{b}")
                 if ckey in decided:
                     continue
-                reasons, score = ["Same name"], 0.60
-                if a.country == b.country:
-                    reasons.append("Same country")
-                    score += 0.05
-                if a.occupation and a.occupation == b.occupation:
-                    reasons.append("Same occupation")
-                    score += 0.20
-                shared = partners[a.id] & partners[b.id]
-                if shared:
-                    reasons.append(f"Both transact with {len(shared)} of the same uncommon counterparties")
-                    score += 0.15
-                if score >= limits["duplicate_customer_at"]:
-                    found[ckey] = (f"{left.name} ({left.id})", f"{right.name} ({right.id})", round(min(score, 0.99), 2), reasons)
+                v = evidence.compare(facts[a], facts[b], len(partners[a] & partners[b]))
+                if v.score >= limits["duplicate_customer_at"]:
+                    found[ckey] = (f"{facts[a].name} ({a})", f"{facts[b].name} ({b})", v.score, v.reasons)
 
     # 6. Open questions: keep the ones still true, drop the ones the data no longer supports, add the new.
     existing = {(c.kind, c.left_key, c.right_key): c for c in s.scalars(select(MatchCandidate).where(MatchCandidate.status == "open"))}

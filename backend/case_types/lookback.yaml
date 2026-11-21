@@ -1,0 +1,44 @@
+case_type: lookback
+title: Lookback review
+domain: AML
+version: 1.0.0
+scenarios: []
+initial_state: scoping
+
+# A look back over a customer's past activity, after a rule change, a regulator's finding or new information.
+# Each customer in a lookback is one case; the lookback programme itself lives on the Tuning page.
+states:
+  scoping:
+    label: Scoping
+    queue: aml-l2
+    sla_hours: 72
+    tasks:
+      - {id: period, label: Review period and population recorded}
+      - {id: data, label: Transaction data for the period complete}
+  review:
+    label: Activity review
+    queue: aml-l2
+    sla_hours: 240
+    tasks:
+      - {id: patterns, label: Activity reviewed against the scenarios in scope}
+      - {id: prior_cases, label: Earlier cases and filings on the customer considered}
+  mlro_review:
+    label: MLRO review
+    queue: mlro
+    sla_hours: 72
+  no_findings: {label: No further action, kind: closed, disposition: no_findings}
+  referred:    {label: Referred for investigation or filing, kind: closed, disposition: referred}
+
+transitions:
+  - {from: scoping, to: review, label: Start the review, roles: [investigator], requires: [tasks]}
+  - {from: review, to: mlro_review, label: Send for MLRO review, roles: [investigator], requires: [tasks, note]}
+  - {from: mlro_review, to: no_findings, label: Close with no findings, roles: [mlro], requires: [note]}
+  - {from: mlro_review, to: referred, label: Refer for investigation or a SAR, roles: [mlro], requires: [note]}
+  - {from: mlro_review, to: review, label: Return for more work, roles: [mlro], requires: [note]}
+
+sla:
+  clock: Lookback deadline
+  due_days: 60
+agents:
+  on_create: [data_assembly, entity_research]
+  autonomy: L1

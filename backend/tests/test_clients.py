@@ -188,7 +188,7 @@ def test_case_types_can_be_switched_per_client_but_not_from_under_open_cases(db)
         with pytest.raises(OnboardingError, match="unknown case type"):
             onboarding.set_case_types(p, "bravo", ["nope"])
         p.commit()
-    assert set(load_case_types("alpha")) == {"tm_alert_investigation", "sanctions_hit"} and len(load_case_types("bravo")) == 6
+    assert set(load_case_types("alpha")) == {"tm_alert_investigation", "sanctions_hit"} and len(load_case_types("bravo")) == 13
     with db.platform() as p:
         onboarding.hydrate(p)
     assert set(load_case_types("alpha")) == {"tm_alert_investigation", "sanctions_hit"}
