@@ -16,6 +16,7 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql+psycopg://caseforge:caseforge-local-only@db:5432/caseforge
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # optional: a model behind the Ask page
     ports: ["8000:8000"]
     depends_on:
       db: {condition: service_healthy}

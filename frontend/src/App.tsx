@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
-import { api, getPersonaId, setPersonaId, type Persona } from './api'
+import { api, getPersonaId, getTenantId, isOperator, OPERATOR, setPersonaId, setTenantId, type Persona } from './api'
 import MyWork from './pages/MyWork'
+import Ask from './pages/Ask'
 import Overview from './pages/Overview'
 import Cases from './pages/Cases'
 import CaseWorkspace from './pages/CaseWorkspace'
@@ -10,32 +11,87 @@ import Onboarding from './pages/Onboarding'
 import Workflows from './pages/Workflows'
 import Access from './pages/Access'
 import Platform from './pages/Platform'
+import Clients from './pages/Clients'
 
-type Meta = { tenant: string; personas: Persona[]; sample_data: boolean }
-type People = { persona: Persona | null; nameOf: (id: string | null | undefined) => string }
-const PeopleContext = createContext<People>({ persona: null, nameOf: id => id ?? '' })
+type Meta = { tenant: { id: string; name: string }; personas: Persona[]; default_person: string; sample_data: boolean }
+type Client = { id: string; name: string; status: string }
+type People = {
+  persona: Persona | null
+  nameOf: (id: string | null | undefined) => string
+  /** Whether the signed-in person holds a permission, and who does if they do not. */
+  can: (permission: string) => boolean
+  holder: (permission: string) => string
+}
+const PeopleContext = createContext<People>({ persona: null, nameOf: id => id ?? '', can: () => false, holder: () => '' })
+export const usePeople = () => useContext(PeopleContext)
 export const usePersona = () => useContext(PeopleContext).persona
 /** Turns a user id from the API into a display name. */
 export const useNameOf = () => useContext(PeopleContext).nameOf
 
 const NAV = [
-  ['/', 'My work'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/team', 'Team'], ['/workflows', 'Workflows'],
-  ['/access', 'Access'], ['/onboarding', 'Data onboarding'], ['/platform', 'Integrations and scale'],
+  ['/', 'My work'], ['/ask', 'Ask'], ['/overview', 'Overview'], ['/cases', 'Cases'], ['/team', 'Team'], ['/workflows', 'Workflows'],
+  ['/access', 'Access'], ['/onboarding', 'Data'], ['/platform', 'Integrations'],
 ]
 
+/** Switching client is a clean break: nothing from one client may linger on screen for the next. */
+export function switchClient(id: string) {
+  setTenantId(id)
+  window.location.assign('/')
+}
+
+function ClientPicker({ clients }: { clients: Client[] }) {
+  return (
+    <label className="persona">
+      <span>Client</span>
+      <select value={getTenantId()} onChange={e => switchClient(e.target.value)}>
+        {clients.map(c => <option key={c.id} value={c.id} disabled={c.status !== 'live'}>{c.name}{c.status !== 'live' ? ' (suspended)' : ''}</option>)}
+        <option value={OPERATOR}>All clients · operator console</option>
+      </select>
+    </label>
+  )
+}
+
 export default function App() {
+  const operator = isOperator()
+  const [clients, setClients] = useState<Client[]>([])
   const [meta, setMeta] = useState<Meta | null>(null)
   const [pid, setPid] = useState(getPersonaId())
-  useEffect(() => { api.get<Meta>('/meta').then(setMeta).catch(() => setMeta(null)) }, [])
+  useEffect(() => { api.get<Client[]>('/tenants').then(setClients).catch(() => setClients([])) }, [])
+  useEffect(() => {
+    if (operator) return
+    api.get<Meta>('/meta').then(m => {
+      if (!m.personas.some(p => p.id === getPersonaId())) { setPersonaId(m.default_person); setPid(m.default_person) }
+      setMeta(m)
+    }).catch(() => { if (getTenantId() !== 'meridian') switchClient('meridian') }) // the stored client no longer exists
+  }, [operator])
   const people = useMemo<People>(() => {
-    const byId = new Map((meta?.personas ?? []).map(p => [p.id, p]))
-    return { persona: byId.get(pid) ?? null, nameOf: id => (id ? byId.get(id)?.name ?? id : '') }
+    const all = meta?.personas ?? []
+    const byId = new Map(all.map(p => [p.id, p]))
+    const persona = byId.get(pid) ?? null
+    return {
+      persona, nameOf: id => (id ? byId.get(id)?.name ?? id : ''),
+      can: permission => !!persona?.permissions.includes(permission),
+      holder: permission => { const p = all.find(x => x.permissions.includes(permission)); return p ? `${p.name} (${p.title})` : 'nobody' },
+    }
   }, [meta, pid])
+  if (operator) return (
+    <>
+      <header className="top operator">
+        <div className="brand"><span className="mark" aria-hidden />CaseForge</div>
+        <nav><NavLink to="/" end>Clients</NavLink></nav>
+        <ClientPicker clients={clients} />
+        <span className="persona"><span>Signed in as</span><b>Olivia Grant · Platform operations</b></span>
+      </header>
+      <div className="sample">Operator console. Platform staff see how each client is running, in counts only. Client data is visible only inside that client, under its own access policy.</div>
+      <main><Routes><Route path="*" element={<Clients />} /></Routes></main>
+    </>
+  )
   return (
     <PeopleContext.Provider value={people}>
       <header className="top">
         <div className="brand"><span className="mark" aria-hidden />CaseForge</div>
         <nav>{NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}</nav>
+        <ClientPicker clients={clients} />
         <label className="persona">
           <span>Signed in as</span>
           <select value={pid} onChange={e => { setPersonaId(e.target.value); setPid(e.target.value) }}>
@@ -43,10 +99,11 @@ export default function App() {
           </select>
         </label>
       </header>
-      {meta?.sample_data && <div className="sample">Demo environment. All customers, companies and transactions are synthetic. Switch person at the top right to see the platform through each role.</div>}
-      <main key={pid}>
+      {meta?.sample_data && <div className="sample">Demo environment for <b>{meta.tenant.name}</b>. All customers, companies and transactions are synthetic. Switch client or person at the top right: each client has its own people, roles, workflows and data.</div>}
+      {meta && people.persona && <main key={pid}>
         <Routes>
           <Route path="/" element={<MyWork />} />
+          <Route path="/ask" element={<Ask />} />
           <Route path="/overview" element={<Overview />} />
           <Route path="/cases" element={<Cases />} />
           <Route path="/cases/:id" element={<CaseWorkspace />} />
@@ -56,7 +113,7 @@ export default function App() {
           <Route path="/access" element={<Access />} />
           <Route path="/platform" element={<Platform />} />
         </Routes>
-      </main>
+      </main>}
     </PeopleContext.Provider>
   )
 }

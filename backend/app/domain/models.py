@@ -1,13 +1,18 @@
-"""Canonical data model shared by every workload (KYC, monitoring, fraud, sanctions)."""
+"""Canonical data model shared by every workload (KYC, monitoring, fraud, sanctions).
+
+Every business table carries `tenant_id` through TenantScoped. Customer, account and transaction ids come
+from the client's own systems, so they are only unique within a client: their keys include the tenant.
+"""
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
+from ..tenancy import TenantKeyed, TenantScoped
 
 
 def now() -> datetime:
@@ -18,7 +23,22 @@ def new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
 
 
-class Party(Base):
+class Tenant(Base):
+    """A client of the platform. The only business table that is not tenant-scoped."""
+
+    __tablename__ = "tenant"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)  # short slug, used in URLs and headers
+    name: Mapped[str] = mapped_column(String(120))
+    template: Mapped[str] = mapped_column(String(40))
+    region: Mapped[str] = mapped_column(String(40), default="us-east")
+    deployment: Mapped[str] = mapped_column(String(20), default="pooled")  # pooled | dedicated | client-cloud
+    status: Mapped[str] = mapped_column(String(20), default="live")  # onboarding | live | suspended
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    case_types: Mapped[list] = mapped_column(JSON, default=list)  # which library case types this client uses
+    settings: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class Party(TenantKeyed, Base):
     __tablename__ = "party"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     kind: Mapped[str] = mapped_column(String(20), default="person")
@@ -31,19 +51,24 @@ class Party(Base):
     accounts: Mapped[list["Account"]] = relationship(back_populates="party")
 
 
-class Account(Base):
+def party_fk() -> ForeignKeyConstraint:
+    return ForeignKeyConstraint(["tenant_id", "party_id"], ["party.tenant_id", "party.id"])
+
+
+class Account(TenantKeyed, Base):
     __tablename__ = "account"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), index=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
+    __table_args__ = (party_fk(),)
     product: Mapped[str] = mapped_column(String(40), default="checking")
     status: Mapped[str] = mapped_column(String(20), default="open")
     party: Mapped[Party] = relationship(back_populates="accounts")
 
 
-class Transaction(Base):
+class Transaction(TenantKeyed, Base):
     __tablename__ = "txn"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    account_id: Mapped[str] = mapped_column(ForeignKey("account.id"))
+    account_id: Mapped[str] = mapped_column(String(40))
     party_id: Mapped[str] = mapped_column(String(40))
     ts: Mapped[datetime] = mapped_column(DateTime)
     amount: Mapped[float] = mapped_column(Float)
@@ -55,17 +80,18 @@ class Transaction(Base):
     feed_id: Mapped[str] = mapped_column(String(40), default="seed")
     # Relationships also tell the unit of work to insert parents before children.
     account: Mapped[Account] = relationship()
-    __table_args__ = (Index("ix_txn_party_ts", "party_id", "ts"),)
+    __table_args__ = (ForeignKeyConstraint(["tenant_id", "account_id"], ["account.tenant_id", "account.id"]),
+                      Index("ix_txn_party_ts", "tenant_id", "party_id", "ts"))
 
 
-class Alert(Base):
+class Alert(TenantScoped, Base):
     __tablename__ = "alert"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    dedupe_key: Mapped[str] = mapped_column(String(120), unique=True)
+    dedupe_key: Mapped[str] = mapped_column(String(120))
     source: Mapped[str] = mapped_column(String(40), default="caseforge-detection")
     scenario: Mapped[str] = mapped_column(String(60), index=True)
     scenario_version: Mapped[str] = mapped_column(String(20))
-    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), index=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
     score: Mapped[float] = mapped_column(Float)
     explanation: Mapped[str] = mapped_column(Text)
     txn_ids: Mapped[list] = mapped_column(JSON, default=list)
@@ -73,15 +99,16 @@ class Alert(Base):
     case_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     created: Mapped[datetime] = mapped_column(DateTime, default=now)
     party: Mapped[Party] = relationship()
+    __table_args__ = (party_fk(), UniqueConstraint("tenant_id", "dedupe_key"))
 
 
-class Case(Base):
+class Case(TenantScoped, Base):
     __tablename__ = "case"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     case_type: Mapped[str] = mapped_column(String(60), index=True)
     type_version: Mapped[str] = mapped_column(String(20))
     state: Mapped[str] = mapped_column(String(40), index=True)
-    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), index=True)
+    party_id: Mapped[str] = mapped_column(String(40), index=True)
     priority: Mapped[str] = mapped_column(String(10), default="medium")
     owner: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created: Mapped[datetime] = mapped_column(DateTime, default=now)
@@ -97,9 +124,10 @@ class Case(Base):
     # Workflow working data: completed tasks, escalation markers. Replace the dict to persist a change.
     data: Mapped[dict] = mapped_column(JSON, default=dict)
     party: Mapped[Party] = relationship()
+    __table_args__ = (party_fk(),)
 
 
-class CaseEvent(Base):
+class CaseEvent(TenantScoped, Base):
     """Append-only audit trail. Rows are never updated or deleted by the application."""
 
     __tablename__ = "case_event"
@@ -112,7 +140,7 @@ class CaseEvent(Base):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
-class AgentRun(Base):
+class AgentRun(TenantScoped, Base):
     __tablename__ = "agent_run"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     case_id: Mapped[str] = mapped_column(String(40), index=True)
@@ -124,7 +152,7 @@ class AgentRun(Base):
     steps: Mapped[list] = mapped_column(JSON, default=list)
 
 
-class Feed(Base):
+class Feed(TenantScoped, Base):
     __tablename__ = "feed"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
@@ -135,7 +163,7 @@ class Feed(Base):
     stats: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
-class Filing(Base):
+class Filing(TenantScoped, Base):
     __tablename__ = "filing"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     case_id: Mapped[str] = mapped_column(String(40), index=True)
@@ -146,7 +174,7 @@ class Filing(Base):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
-class InfoRequest(Base):
+class InfoRequest(TenantScoped, Base):
     """A request for information sent outside the investigating team (customer, branch, relationship manager)."""
 
     __tablename__ = "info_request"
@@ -163,7 +191,7 @@ class InfoRequest(Base):
     answered_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
-class WorkflowVersion(Base):
+class WorkflowVersion(TenantScoped, Base):
     """A case type definition published from the workflow editor. Files on disk are the shipped baseline."""
 
     __tablename__ = "workflow_version"
@@ -174,4 +202,37 @@ class WorkflowVersion(Base):
     published_by: Mapped[str] = mapped_column(String(40))
     published: Mapped[datetime] = mapped_column(DateTime, default=now)
     note: Mapped[str] = mapped_column(Text, default="")
-    __table_args__ = (Index("ux_workflow_version", "case_type", "version", unique=True),)
+    __table_args__ = (Index("ux_workflow_version", "tenant_id", "case_type", "version", unique=True),)
+
+
+class AccessPolicyVersion(TenantScoped, Base):
+    """A client's access policy as published. The newest row is the one in force."""
+
+    __tablename__ = "access_policy_version"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    version: Mapped[str] = mapped_column(String(20))
+    source: Mapped[str] = mapped_column(Text)
+    published_by: Mapped[str] = mapped_column(String(40))
+    published: Mapped[datetime] = mapped_column(DateTime, default=now)
+    note: Mapped[str] = mapped_column(Text, default="")
+    __table_args__ = (Index("ux_access_policy_version", "tenant_id", "version", unique=True),)
+
+
+class AskLog(TenantScoped, Base):
+    """One question put to "ask anything": who asked, what was looked up, what was answered. Never updated."""
+
+    __tablename__ = "ask_log"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(40), index=True)
+    asked_by: Mapped[str] = mapped_column(String(40), index=True)
+    role: Mapped[str] = mapped_column(String(40))
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(12), default="answered")  # answered | refused | incomplete | failed
+    provider: Mapped[str] = mapped_column(String(80), default="")
+    steps: Mapped[list] = mapped_column(JSON, default=list)  # each lookup: tool, inputs, outcome
+    cited: Mapped[list] = mapped_column(JSON, default=list)
+    unverified: Mapped[list] = mapped_column(JSON, default=list)
+    usage: Mapped[dict] = mapped_column(JSON, default=dict)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)

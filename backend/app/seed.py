@@ -6,20 +6,27 @@ import random
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from dataclasses import dataclass
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .agents.investigator import investigate
 from .alerts.hub import ingest_external_alert, route_alerts
-from .cases import assignments, requests
-from .cases.case_types import load_case_types, reset_published
-from .cases.service import allowed_transitions, complete_stage_tasks, create_case, save_narrative, transition
+from .cases import assignments, conditions, publishing, requests
+from .cases.case_types import library, load_case_types
+from .cases.service import (TransitionError, applicable_targets, complete_stage_tasks, create_case, definition, facts,
+                            save_narrative, transition)
 from .cases.timers import run_timers
 from .config import settings
 from .db import Base, engine, ensure_schema, session_scope
 from .detection.engine import run_detection
-from .domain.models import Account, Case, Party, Transaction, WorkflowVersion, now
-from .domain.personas import PERSONAS
+from .domain.access import Persona
+from .domain.models import Account, Case, Party, Transaction, now
+from .domain.personas import policy_of
+from .tenancy import tenant_of
+from .tenants.onboarding import onboard
+from .tenants.registry import reset
 
 FIRST = ["Elena", "Marcus", "Priya", "Tomás", "Aisha", "Daniel", "Mei", "Jonas", "Fatima", "Lucas", "Ingrid", "Kwame", "Sofia",
          "Hiro", "Nadia", "Owen", "Leila", "Viktor", "Carmen", "Arjun", "Greta", "Samuel", "Yara", "Felix", "Noor", "Callum"]
@@ -118,29 +125,62 @@ class Gen:
 
 
 class Desk:
-    """Plays the demo personas: claims a case, ticks the stage tasks, takes the step. Every guard still applies."""
+    """Plays a client's own people: claims a case, ticks the stage tasks, takes the step. Every guard still applies.
+
+    Nobody is named here. For each step the desk asks the client's access policy and workflow who may take it,
+    so the same script works for any client however its roles, queues and people are set up.
+    """
 
     def __init__(self, s: Session, g: Gen):
         self.s, self.g = s, g
+        self.policy = policy_of(tenant_of(s))
 
-    def step(self, c: Case, to: str, who: str, at: datetime, note: str = "") -> datetime:
+    def who(self, c: Case, to: str, salt: int = 0) -> Persona:
+        f = facts(self.s, c)
+        t = next((x for x in definition(c)["transitions"]
+                  if x["from"] == c.state and x["to"] == to and conditions.evaluate(x.get("when"), f)), None)
+        if t is None:
+            raise TransitionError(f"No step from {c.state} to {to} applies to this case")
+
+        def may(p: Persona) -> bool:
+            second = not t.get("four_eyes") or (c.drafted_by != p.id and (c.data or {}).get("last_actor") != p.id)
+            return p.holds(t["roles"]) and not p.read_only and second
+
+        able = [p for p in self.policy.people.values() if may(p)]
+        if not able:
+            raise TransitionError(f"Nobody at this client can take '{t['label']}' on this case")
+        members = [p for p in able if c.queue in p.queues] or able
+        return next((p for p in members if p.id == c.owner), members[salt % len(members)])
+
+    def member(self, c: Case, salt: int = 0) -> Persona:
+        members = self.policy.queue_members(c.queue)
+        return next((p for p in members if p.id == c.owner), members[salt % len(members)])
+
+    def step(self, c: Case, to: str, at: datetime, note: str = "", salt: int = 0, tasks: bool = True) -> datetime:
         at = min(at, self.g.end - timedelta(minutes=self.g.r.randint(3, 50)))
-        p = PERSONAS[who]
+        p = self.who(c, to, salt)
         if c.queue in p.queues and c.owner != p.id:
             assignments.claim(self.s, c, p, ts=at - timedelta(minutes=20))
-        complete_stage_tasks(self.s, c, p, ts=at - timedelta(minutes=5))
+        if tasks:
+            complete_stage_tasks(self.s, c, p, ts=at - timedelta(minutes=5))
         transition(self.s, c, to, p, note, ts=at)
         return at
 
-    def own(self, c: Case, who: str, at: datetime) -> None:
-        assignments.claim(self.s, c, PERSONAS[who], ts=min(at, self.g.end - timedelta(minutes=30)))
+    def own(self, c: Case, at: datetime, salt: int = 0) -> Persona:
+        p = self.member(c, salt)
+        assignments.claim(self.s, c, p, ts=min(at, self.g.end - timedelta(minutes=30)))
+        return p
 
-    def ask(self, c: Case, who: str, recipient: str, question: str, at: datetime, due_days: int = 5, answer: str | None = None,
+    def ask(self, c: Case, recipient: str, question: str, at: datetime, due_days: int = 5, answer: str | None = None,
             answered_after_h: int = 30):
-        r = requests.raise_request(self.s, c, PERSONAS[who], recipient, question, due_days, ts=at)
+        p = self.member(c)
+        r = requests.raise_request(self.s, c, p, recipient, question, due_days, ts=at)
         if answer:
-            requests.answer_request(self.s, r, PERSONAS[who], answer, ts=min(at + timedelta(hours=answered_after_h), self.g.end - timedelta(minutes=40)))
+            self.answer(r, c, answer, at + timedelta(hours=answered_after_h))
         return r
+
+    def answer(self, r, c: Case, text: str, at: datetime) -> None:
+        requests.answer_request(self.s, r, self.member(c), text, ts=min(at, self.g.end - timedelta(minutes=40)))
 
 
 def _work_monitoring(d: Desk, cases: list[Case]) -> None:
@@ -148,134 +188,140 @@ def _work_monitoring(d: Desk, cases: list[Case]) -> None:
     g = d.g
     for n, c in enumerate(cases):
         age_h = (g.end - c.created).total_seconds() / 3600
-        l2 = "ivan" if n % 2 else "lena"
         follow = g.r.random() < 0.88
         escalate = (c.agent_recommendation == "escalate") == follow
         t = c.created + timedelta(hours=g.r.randint(2, 20))
         if c.case_type == "sanctions_hit":
             if age_h < 30:
                 if age_h > 8:
-                    d.own(c, "ana", c.created + timedelta(hours=1))
+                    d.own(c, c.created + timedelta(hours=1))
                 continue
             t = c.created + timedelta(hours=g.r.randint(1, 3))
             if escalate:
-                d.step(c, "escalated", "ana", t)
+                d.step(c, "escalated", t)
                 if age_h > 60:
-                    d.step(c, "blocked", "sofia", t + timedelta(hours=g.r.randint(4, 18)), "Match confirmed on name and jurisdiction; payment blocked and reported.")
+                    d.step(c, "blocked", t + timedelta(hours=g.r.randint(4, 18)), "Match confirmed on name and jurisdiction; payment blocked and reported.")
             else:
-                d.step(c, "discounted", "ana", t, "Name differs in a distinguishing token; no secondary identifier matches.")
+                d.step(c, "discounted", t, "Name differs in a distinguishing token; no secondary identifier matches.")
+            continue
+        if c.case_type != "tm_alert_investigation":
             continue
         if age_h < 40:
             if age_h > 20 and n % 3 == 0:
-                d.own(c, "ana", c.created + timedelta(hours=3))
+                d.own(c, c.created + timedelta(hours=3))
             continue
         if not escalate and n % 4 == 0:
-            d.step(c, "closed_no_sar", "ana", t, "Activity matches the documented business profile; agent briefing reviewed and agreed.")
+            d.step(c, "closed_no_sar", t, "Activity matches the documented business profile; agent briefing reviewed and agreed.")
             continue
-        d.step(c, "investigation", "ana", t)
+        d.step(c, "investigation", t)
         if age_h < 100:
             if n % 3:
-                d.own(c, l2, t + timedelta(hours=5))
+                d.own(c, t + timedelta(hours=5), salt=n)
             continue
-        d.own(c, l2, t + timedelta(hours=5))
+        d.own(c, t + timedelta(hours=5), salt=n)
         if n % 5 == 0:  # the investigator needs something from outside the team
             asked = t + timedelta(hours=20)
             old = age_h > 400
-            r = d.ask(c, l2, "relationship_manager" if n % 2 else "customer",
+            r = d.ask(c, "relationship_manager" if n % 2 else "customer",
                       "Please confirm the source of the funds received and the purpose of the onward payments, with supporting documents.",
                       asked, due_days=5)
-            d.step(c, "awaiting_information", l2, asked + timedelta(minutes=30))
+            d.step(c, "awaiting_information", asked + timedelta(minutes=30))
             if not old:
                 continue
-            requests.answer_request(d.s, r, PERSONAS[l2], "Customer provided a sale agreement and bank confirmation covering the incoming funds.",
-                                    ts=asked + timedelta(hours=38))
-            d.step(c, "investigation", l2, asked + timedelta(hours=40))
+            d.answer(r, c, "Customer provided a sale agreement and bank confirmation covering the incoming funds.", asked + timedelta(hours=38))
+            d.step(c, "investigation", asked + timedelta(hours=40))
         t += timedelta(days=g.r.randint(1, 4))
         if age_h < 150:
             continue
         if not escalate:
-            d.step(c, "closed_no_sar", l2, t, "Activity is consistent with the customer profile and the documented purpose.")
+            d.step(c, "closed_no_sar", t, "Activity is consistent with the customer profile and the documented purpose.")
             continue
-        d.step(c, "sar_drafting", l2, t)
+        d.step(c, "sar_drafting", t)
         if age_h < 200:
             continue
-        save_narrative(d.s, c, c.narrative, PERSONAS[l2], ts=min(t + timedelta(hours=3), g.end - timedelta(hours=1)))
-        d.step(c, "mlro_review", l2, t + timedelta(hours=4))
+        save_narrative(d.s, c, c.narrative, d.member(c), ts=min(t + timedelta(hours=3), g.end - timedelta(hours=1)))
+        d.step(c, "mlro_review", t + timedelta(hours=4))
         if age_h < 260:
             continue
-        options = {x["to"] for x in allowed_transitions(d.s, c, PERSONAS["maya"])}
         t += timedelta(days=g.r.randint(1, 2))
-        if "filed" in options:
-            d.step(c, "filed", "maya", t)
+        if "filed" in applicable_targets(d.s, c):
+            d.step(c, "filed", t)
         else:
-            d.step(c, "senior_approval", "maya", t)
+            d.step(c, "senior_approval", t)
             if age_h > 420:
-                d.step(c, "filed", "hugo", t + timedelta(hours=g.r.randint(6, 30)))
+                d.step(c, "filed", t + timedelta(hours=g.r.randint(6, 30)))
 
 
 def _work_qa(d: Desk) -> None:
-    """Quinn reviews most sampled cases; the most recent one fails and sends its case back to the team."""
+    """Most sampled cases are reviewed; the most recent one fails and sends its case back to the team."""
     reviews = sorted(d.s.scalars(select(Case).where(Case.case_type == "qa_review")), key=lambda c: c.created)
     due = [c for c in reviews if (d.g.end - c.created).total_seconds() / 3600 >= 48]
     for n, c in enumerate(due):
         if c is due[-1]:
             at = d.g.end - timedelta(hours=7)
-            d.own(c, "quinn", at - timedelta(hours=1))
-            transition(d.s, c, "failed", PERSONAS["quinn"],
+            reviewer = d.own(c, at - timedelta(hours=1))
+            transition(d.s, c, "failed", reviewer,
                        "The closure rationale does not explain why the pattern fits the customer's business. Returned for a documented explanation.", ts=at)
         elif n % 4 != 3:
-            d.step(c, "passed", "quinn", c.created + timedelta(hours=d.g.r.randint(20, 44)))
+            d.step(c, "passed", c.created + timedelta(hours=d.g.r.randint(20, 44)))
 
 
-def _seed_kyc(d: Desk) -> None:
+APPLICANTS = [("Helena Brandt", "architect", "low", False, 30), ("Rashid Al-Amin", "import-export trader", "high", False, 70),
+              ("Odile Fontaine", "government minister", "medium", True, 50), ("Mateo Aguilar", "student", "low", False, 6),
+              ("Bianca Roth", "dentist", "low", False, 20), ("Tobias Lindgren", "crypto trader", "high", False, 110)]
+KYC_ASK = "Your periodic review is due. Please upload current identification, proof of address and confirm your occupation."
+
+
+def _seed_kyc_refresh(d: Desk, n_low: int) -> None:
     g, s = d.g, d.s
-    types = load_case_types()
-    low = g.r.sample(list(s.scalars(select(Party).where(Party.risk_rating == "low").limit(80))), 5)
-    high = list(s.scalars(select(Party).where(Party.risk_rating == "high").limit(2)))
-    ask = "Your periodic review is due. Please upload current identification, proof of address and confirm your occupation."
+    ct = load_case_types(tenant_of(s))["kyc_refresh"]
+    low = g.r.sample(list(s.scalars(select(Party).where(Party.risk_rating == "low").order_by(Party.id).limit(80))), n_low)
+    high = list(s.scalars(select(Party).where(Party.risk_rating == "high").order_by(Party.id).limit(2)))
     for n, p in enumerate(low + high):
-        c = create_case(s, types["kyc_refresh"], p.id, "medium" if p.risk_rating == "high" else "low", created=g.when(3, 24), actor="kyc-scheduler")
+        c = create_case(s, ct, p.id, "medium" if p.risk_rating == "high" else "low", created=g.when(3, 24), actor="kyc-scheduler")
         age_h = (g.end - c.created).total_seconds() / 3600
-        d.own(c, "kai", c.created + timedelta(hours=2))
+        d.own(c, c.created + timedelta(hours=2), salt=n)
         if n in (0, 3):  # still waiting on the customer
-            d.ask(c, "kai", "customer", ask, c.created + timedelta(hours=3), due_days=10 if n else 3)
+            d.ask(c, "customer", KYC_ASK, c.created + timedelta(hours=3), due_days=10 if n else 3)
             continue
-        d.ask(c, "kai", "customer", ask, c.created + timedelta(hours=3), due_days=10,
+        d.ask(c, "customer", KYC_ASK, c.created + timedelta(hours=3), due_days=10,
               answer="Customer uploaded passport, utility bill and employer letter.", answered_after_h=50)  # answered before the step out of outreach
-        t = d.step(c, "review", "kai", c.created + timedelta(hours=60))
+        t = d.step(c, "review", c.created + timedelta(hours=60))
         if age_h < 150:
             continue
         if p.risk_rating == "high":
-            t = d.step(c, "edd", "kai", t + timedelta(hours=20))
+            t = d.step(c, "edd", t + timedelta(hours=20))
             if n == len(low):
-                d.step(c, "approved", "maya", t + timedelta(hours=30), "Source of wealth evidenced by audited accounts; relationship retained at high risk.")
+                d.step(c, "approved", t + timedelta(hours=30), "Source of wealth evidenced by audited accounts; relationship retained at high risk.")
         else:
-            d.step(c, "approved", "kai", t + timedelta(hours=20), "Documents current, screening clear, activity matches the stated occupation.")
-    applicants = [("Helena Brandt", "architect", "low", False, 30), ("Rashid Al-Amin", "import-export trader", "high", False, 70),
-                  ("Odile Fontaine", "government minister", "medium", True, 50), ("Mateo Aguilar", "student", "low", False, 6),
-                  ("Bianca Roth", "dentist", "low", False, 20), ("Tobias Lindgren", "crypto trader", "high", False, 110)]
-    for n, (name, job, risk, pep, hours_ago) in enumerate(applicants):
+            d.step(c, "approved", t + timedelta(hours=20), "Documents current, screening clear, activity matches the stated occupation.")
+
+
+def _seed_kyc_onboarding(d: Desk) -> None:
+    g, s = d.g, d.s
+    ct = load_case_types(tenant_of(s))["kyc_onboarding"]
+    for n, (name, job, risk, pep, hours_ago) in enumerate(APPLICANTS):
         g.n += 1
         p = Party(id=f"P{10000 + g.n}", name=name, occupation=job, risk_rating=risk, pep=pep, onboarded=g.end)
         s.add(p)
         s.add(Account(id=f"A{p.id[1:]}", party_id=p.id))
         s.flush()
-        c = create_case(s, types["kyc_onboarding"], p.id, "high" if pep or risk == "high" else "medium",
+        c = create_case(s, ct, p.id, "high" if pep or risk == "high" else "medium",
                         created=g.end - timedelta(hours=hours_ago), actor="onboarding-portal")
         if n == 3:
             continue  # fresh application, nobody has picked it up
-        d.own(c, "kai", c.created + timedelta(hours=1))
+        d.own(c, c.created + timedelta(hours=1), salt=n)
         if n == 4:
-            d.ask(c, "kai", "customer", "The proof of address is older than three months. Please send a recent one.", c.created + timedelta(hours=2), due_days=7)
-            d.step(c, "awaiting_customer", "kai", c.created + timedelta(hours=2, minutes=10))
+            d.ask(c, "customer", "The proof of address is older than three months. Please send a recent one.", c.created + timedelta(hours=2), due_days=7)
+            d.step(c, "awaiting_customer", c.created + timedelta(hours=2, minutes=10))
             continue
-        t = d.step(c, "risk_assessment", "kai", c.created + timedelta(hours=5))
+        t = d.step(c, "risk_assessment", c.created + timedelta(hours=5))
         if n == 0:
-            d.step(c, "approved", "kai", t + timedelta(hours=3))
+            d.step(c, "approved", t + timedelta(hours=3))
         elif n in (1, 2):
-            t = d.step(c, "edd_approval", "kai", t + timedelta(hours=4))
+            t = d.step(c, "edd_approval", t + timedelta(hours=4))
             if n == 1:
-                d.step(c, "approved", "tara", t + timedelta(hours=20), "Trade documents and audited accounts support the declared source of wealth.")
+                d.step(c, "approved", t + timedelta(hours=20), "Trade documents and audited accounts support the declared source of wealth.")
 
 
 FRAUD = [  # (scenario, minutes ago, [(amount, payee, country, channel, hour or None)], stage to reach)
@@ -303,7 +349,7 @@ def _plant_fraud(g: Gen, victims: list[Party]) -> list[tuple]:
 
 
 def _seed_fraud(d: Desk, planted: list[tuple]) -> None:
-    s, g = d.s, d.g
+    s = d.s
     for n, (p, scenario, txns, stage) in enumerate(planted):
         total = sum(t.amount for t in txns)
         last = max(t.ts for t in txns)
@@ -317,26 +363,23 @@ def _seed_fraud(d: Desk, planted: list[tuple]) -> None:
         if stage == "triage":
             continue
         t0 = c.created + timedelta(minutes=25)
+        d.own(c, t0, salt=n)
         if stage == "closed_no_fraud":
-            d.own(c, "fran", t0)
-            transition(s, c, "closed_no_fraud", PERSONAS["fran"], "Customer recognised both payments after speaking with a family member.", ts=t0 + timedelta(hours=2))
+            d.step(c, "closed_no_fraud", t0 + timedelta(hours=2), "Customer recognised both payments after speaking with a family member.", tasks=False)
             continue
         if stage == "customer_contact":
-            d.own(c, "fran", t0)
-            complete_stage_tasks(s, c, PERSONAS["fran"], ts=t0)
-            d.ask(c, "fran", "customer", "Please confirm whether you shared a one-time passcode or approved a new device.", t0 + timedelta(minutes=10), due_days=2)
-            transition(s, c, "customer_contact", PERSONAS["fran"], ts=t0 + timedelta(minutes=15))
+            d.ask(c, "customer", "Please confirm whether you shared a one-time passcode or approved a new device.", t0 + timedelta(minutes=10), due_days=2)
+            d.step(c, "customer_contact", t0 + timedelta(minutes=15))
             continue
-        t = d.step(c, "investigation", "fran", t0)
+        t = d.step(c, "investigation", t0)
         if stage == "declined":
-            d.step(c, "declined", "fran", t + timedelta(hours=20), "Payments were chip-and-PIN at merchants the customer uses weekly; device and location match.")
+            d.step(c, "declined", t + timedelta(hours=20), "Payments were chip-and-PIN at merchants the customer uses weekly; device and location match.")
         elif total >= 5000:
-            t = d.step(c, "refund_approval", "fran", t + timedelta(hours=18), "Device and location do not match the customer; credentials were phished.")
+            t = d.step(c, "refund_approval", t + timedelta(hours=18), "Device and location do not match the customer; credentials were phished.")
             if stage == "refunded":
-                d.own(c, "tara", t + timedelta(hours=2))
-                transition(s, c, "refunded", PERSONAS["tara"], "Approved. Liability sits with the bank under the unauthorised payment rules.", ts=t + timedelta(hours=6))
+                d.step(c, "refunded", t + timedelta(hours=6), "Approved. Liability sits with the bank under the unauthorised payment rules.")
         else:
-            d.step(c, "refunded", "fran", t + timedelta(hours=16), "Card was used online at a merchant with no prior history while the customer was travelling.")
+            d.step(c, "refunded", t + timedelta(hours=16), "Card was used online at a merchant with no prior history while the customer was travelling.")
 
 
 def write_sample_feed(path: Path, end: datetime, seed: int = 11) -> int:
@@ -379,29 +422,56 @@ def write_sample_feed(path: Path, end: datetime, seed: int = 11) -> int:
     return len(rows)
 
 
-def seed(s: Session, n_baseline: int = 260) -> dict:
-    g = Gen(s)
+@dataclass(frozen=True)
+class Profile:
+    """How much synthetic history a client gets. The shape of the data is the same; only the volume differs."""
+
+    seed: int = 7
+    baseline: int = 260
+    structuring: int = 9
+    benign_structuring: int = 4
+    rapid: int = 8
+    benign_rapid: int = 4
+    geo: int = 6
+    sanctions: int = 6
+    fraud: int = len(FRAUD)
+    kyc_refresh: int = 5
+
+
+PROFILES = {
+    "large": Profile(),
+    "medium": Profile(seed=23, baseline=120, structuring=4, benign_structuring=2, rapid=5, benign_rapid=2, geo=2, sanctions=3, fraud=8, kyc_refresh=3),
+    "small": Profile(seed=41, baseline=80, structuring=3, benign_structuring=1, rapid=3, benign_rapid=2, geo=3, sanctions=4, fraud=4, kyc_refresh=5),
+    "starter": Profile(seed=5, baseline=30, structuring=2, benign_structuring=1, rapid=2, benign_rapid=1, geo=1, sanctions=2, fraud=3, kyc_refresh=3),
+}
+SANCTIONS = [("Volkov Maritime Trading", "RU", 1, 3), ("Darya Shipping Lines", "IR", 8, 30), ("Volkov Maritime Trading Co", None, 1, 35),
+             ("Darya Shipping Line LLC", None, 1, 35), ("Zarin Exchange Houses", None, 1, 35), ("Northgate Petrochem FZC", None, 1, 35)]
+
+
+def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
+    """Fill one client with synthetic history. `s` is that client's session, so nothing can land anywhere else."""
+    types = load_case_types(tenant_of(s))
+    g = Gen(s, seed=profile.seed)
     ordinary = []
-    for _ in range(n_baseline):
+    for _ in range(profile.baseline):
         p = g.party()
         g.baseline(p)
         ordinary.append(p)
-    for _ in range(9):
+    for _ in range(profile.structuring):
         g.structuring(1, 40)
-    for _ in range(4):
+    for _ in range(profile.benign_structuring):
         g.structuring(2, 40, benign=True)
-    for _ in range(8):
+    for _ in range(profile.rapid):
         g.rapid(1, 40)
-    for _ in range(4):
+    for _ in range(profile.benign_rapid):
         g.rapid(2, 40, benign=True)
-    for _ in range(6):
+    for _ in range(profile.geo):
         g.geo(1, 40)
-    g.sanctions(1, 3, "Volkov Maritime Trading", "RU")
-    g.sanctions(8, 30, "Darya Shipping Lines", "IR")
-    for name in ["Volkov Maritime Trading Co", "Darya Shipping Line LLC", "Zarin Exchange Houses", "Northgate Petrochem FZC"]:
-        g.sanctions(1, 35, name, g.r.choice(["DE", "SG", "AE", "GB"]))
+    for name, country, lo, hi in SANCTIONS[:profile.sanctions]:
+        g.sanctions(lo, hi, name, country or g.r.choice(["DE", "SG", "AE", "GB"]))
     g.settle()
-    planted = _plant_fraud(g, g.r.sample(ordinary, len(FRAUD)))  # after settling, so "35 minutes ago" stays 35 minutes ago
+    # Fraud is planted after settling, so "35 minutes ago" stays 35 minutes ago.
+    planted = _plant_fraud(g, g.r.sample(ordinary, profile.fraud)) if "fraud_claim" in types else []
     s.flush()
     alerts = run_detection(s)
     cases = route_alerts(s, alerts)
@@ -410,23 +480,64 @@ def seed(s: Session, n_baseline: int = 260) -> dict:
     desk = Desk(s, g)
     _work_monitoring(desk, sorted(cases, key=lambda c: c.created))
     _seed_fraud(desk, planted)
-    _seed_kyc(desk)
+    if "kyc_refresh" in types:
+        _seed_kyc_refresh(desk, profile.kyc_refresh)
+    if "kyc_onboarding" in types:
+        _seed_kyc_onboarding(desk)
     s.flush()
-    _work_qa(desk)
+    if "qa_review" in types:
+        _work_qa(desk)
     sweep = run_timers(s, at=g.end)
-    n = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", g.end)
     total = len(list(s.scalars(select(Case.id))))
-    return {"parties": g.n, "alerts": len(alerts) + len(planted), "cases": total, "stage_breaches": sweep["stage_breaches"],
-            "sample_feed_rows": n}
+    return {"parties": g.n, "transactions": len(g.txns), "alerts": len(alerts) + len(planted), "cases": total,
+            "stage_breaches": sweep["stage_breaches"]}
+
+
+# The demo's managed-service book: three clients of different kinds, each with its own configuration and data.
+DEMO_CLIENTS = [
+    {"tenant_id": "meridian", "name": "Meridian Retail Bank", "template": "full_service_bank", "region": "us-east", "deployment": "pooled", "profile": "large"},
+    {"tenant_id": "kestrel", "name": "Kestrel Payments", "template": "fintech_payments", "region": "uk-south", "deployment": "pooled", "profile": "medium"},
+    {"tenant_id": "alder", "name": "Alder Private Bank", "template": "private_bank", "region": "eu-west", "deployment": "dedicated", "profile": "small"},
+]
+
+
+def _alder_own_workflow(s: Session) -> None:
+    """One client changes a workflow for itself: stricter periodic reviews. Cases already open stay on the old version."""
+    source = library()["kyc_refresh"]["source"]
+    changes = [("version: 3.0.0", "version: 3.1.0"),
+               ('when: ["risk_rating != high", "pep == false"]', 'when: ["risk_rating == low", "pep == false"]'),
+               ("sla_hours: 72", "sla_hours: 48")]
+    for old, new in changes:
+        if old not in source:
+            raise RuntimeError(f"kyc_refresh no longer contains {old!r}; update the demo override")
+        source = source.replace(old, new)
+    admin = next(p for p in policy_of(tenant_of(s)).people.values() if p.can("publish_workflow"))
+    publishing.publish(s, source, admin, "Medium-risk clients now go to enhanced due diligence; analyst review within two days.")
+    ct = load_case_types(tenant_of(s))["kyc_refresh"]
+    for p in s.scalars(select(Party).where(Party.risk_rating == "medium").order_by(Party.id).limit(2)):
+        create_case(s, ct, p.id, "medium", created=now() - timedelta(hours=5), actor="kyc-scheduler")
+
+
+def seed_demo() -> dict:
+    """Onboard the demo clients through the same path the operator console uses, then fill each with its own data."""
+    out = {}
+    with session_scope(platform=True) as s:
+        for client in DEMO_CLIENTS:
+            onboard(s, **{k: v for k, v in client.items() if k != "profile"}, by="platform onboarding")
+    for client in DEMO_CLIENTS:
+        with session_scope(client["tenant_id"]) as s:
+            out[client["tenant_id"]] = seed_tenant(s, PROFILES[client["profile"]])
+            if client["tenant_id"] == "alder":
+                _alder_own_workflow(s)
+    out["sample_feed_rows"] = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", now())
+    return out
 
 
 def main() -> None:
     Base.metadata.drop_all(engine)
     ensure_schema()
-    with session_scope() as s:
-        s.execute(delete(WorkflowVersion))
-        reset_published()
-        print("Seeded:", seed(s))
+    reset()
+    print("Seeded:", seed_demo())
 
 
 if __name__ == "__main__":

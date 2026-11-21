@@ -1,7 +1,8 @@
 # Access policy: who can do what. This file is the whole access model; nothing about roles lives in code.
 # Case types grant workflow steps to roles; this file grants everything else and says who holds each role.
-# In a multi-client deployment every client has its own copy of this file.
-policy: default
+# This is the starting policy of the 'Full-service bank' template. Each client gets its own copy at onboarding
+# and changes it from the Access page; the copy is versioned per client.
+policy: full-service-bank
 version: 1.0.0
 
 permissions:
@@ -11,6 +12,7 @@ permissions:
   run_timers: Run the stage-clock sweep on demand
   publish_workflow: Publish new versions of case types
   load_data: Load data feeds onto the platform
+  manage_access: Manage access - change the roles, queues and people in this policy
 
 queues:
   aml-l1: AML alert triage (L1)
@@ -35,7 +37,7 @@ roles:
   mlro:              {title: MLRO / BSA officer, permissions: [work, view_team]}
   head_fiu:          {title: Head of FIU, permissions: [work, view_team, reassign]}
   team_lead:         {title: Operations team lead, permissions: [work, view_team, reassign, run_timers]}
-  admin:             {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data]}
+  admin:             {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access]}
   auditor:           {title: Internal auditor, permissions: [view_team], read_only: true}
 
 # Demo users. A real deployment takes these from the client's identity provider.
@@ -61,7 +63,7 @@ people:
   - {id: hugo, name: Hugo Laurent, role: head_fiu, queues: [senior-approval],
      about: Second approval for high-value and politically exposed filings.}
   - {id: omar, name: Omar Haddad, role: admin, queues: [],
-     about: Loads data and publishes workflow versions. Does not work cases.}
+     about: Loads data, publishes workflow versions and maintains the access policy. Does not work cases.}
   - {id: audra, name: Audra Klein, role: auditor, queues: [],
      about: Read-only access to every case, decision and audit trail.}
 

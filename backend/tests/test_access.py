@@ -6,22 +6,22 @@ import yaml
 from fastapi.testclient import TestClient
 
 from app.cases import assignments, requests
-from app.cases.case_types import load_case_types
+from app.cases.case_types import library, load_case_types
 from app.cases.service import TransitionError, allowed_transitions, create_case, set_task, transition
 from app.config import settings
 from app.domain.access import AccessPolicyError, parse_policy
 from app.domain.models import Account, Party
-from app.domain.personas import PERSONAS, POLICY
+from support import PERSONAS, POLICY, T
 
 T0 = datetime(2026, 5, 1, 9)
-STEPS = [(ct["case_type"], t["from"], t["to"], i) for ct in load_case_types().values() for i, t in enumerate(ct["transitions"])]
+STEPS = [(ct["case_type"], t["from"], t["to"], i) for ct in library().values() for i, t in enumerate(ct["transitions"])]
 
 
 def _case_in(s, case_type: str, state: str):
     s.add(Party(id="P1", name="Test Person"))
     s.add(Account(id="A1", party_id="P1"))
     s.flush()
-    ct = load_case_types()[case_type]
+    ct = load_case_types(T)[case_type]
     c = create_case(s, ct, "P1", "medium", created=T0)
     c.state, c.queue = state, ct["states"][state].get("queue")
     return c, ct
@@ -48,14 +48,14 @@ def test_only_the_roles_a_step_names_can_take_it(s, case_type, src, dst, index):
 
 
 def test_every_role_named_in_a_workflow_exists_and_someone_holds_it():
-    for ct in load_case_types().values():
+    for ct in library().values():
         for t in ct["transitions"]:
             for role in t["roles"]:
                 assert role in POLICY.roles and POLICY.holders(role), f"{ct['case_type']}: nobody can '{t['label']}'"
 
 
 def test_every_queue_a_workflow_uses_has_members_who_can_act_there():
-    for ct in load_case_types().values():
+    for ct in library().values():
         for sid, st in ct["states"].items():
             if st.get("kind") == "closed":
                 continue
@@ -85,27 +85,6 @@ def test_read_only_and_non_working_roles_cannot_change_a_case(s):
 
 
 # --- the same rules at the HTTP boundary -------------------------------------------
-@pytest.fixture(scope="module")
-def client(tmp_path_factory):
-    from sqlalchemy.orm import sessionmaker
-
-    import app.db as db
-    from app.main import app
-
-    eng = db.make_engine(f"sqlite:///{tmp_path_factory.mktemp('db') / 'test.db'}")
-    old = db.engine, db.SessionLocal
-    db.engine, db.SessionLocal = eng, sessionmaker(bind=eng, expire_on_commit=False)
-    settings_samples = settings.samples_dir
-    object.__setattr__(settings, "samples_dir", tmp_path_factory.mktemp("samples"))
-    import app.seed as seed_module
-    seed_module.engine = eng
-    with TestClient(app) as c:
-        yield c
-    db.engine, db.SessionLocal = old
-    seed_module.engine = old[0]
-    object.__setattr__(settings, "samples_dir", settings_samples)
-
-
 def _h(who):
     return {"X-Persona": who}
 
@@ -162,7 +141,7 @@ def test_reassign_over_http_needs_a_lead_and_a_queue_member(client):
 
 # --- the policy file itself --------------------------------------------------------
 def _raw():
-    return yaml.safe_load(settings.access_policy.read_text())
+    return yaml.safe_load((settings.access_dir / "full_service_bank.yaml").read_text())
 
 
 def test_shipped_policy_loads_and_the_auditor_is_read_only():
@@ -176,7 +155,7 @@ def test_shipped_policy_loads_and_the_auditor_is_read_only():
     (lambda r: r["people"][0].update(queues=["nowhere"]), "unknown queue"),
     (lambda r: r["people"].append(dict(r["people"][0])), "repeated"),
     (lambda r: r["roles"]["auditor"]["permissions"].append("work"), "read-only"),
-    (lambda r: r["people"][-1].update(queues=["qa"]), "cannot work cases"),
+    (lambda r: r["people"][-1].update(queues=["qa"]), "can work cases"),
     (lambda r: r.update(default_person="nobody"), "default_person"),
     (lambda r: r.pop("roles"), "missing 'roles'"),
 ])

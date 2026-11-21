@@ -7,6 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .config import settings
 
@@ -20,6 +21,8 @@ def make_engine(url: str | None = None):
     kwargs = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {}
     if url.startswith("sqlite:///") and ":memory:" not in url:
         Path(url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)  # fresh checkout has no data/
+    if url in ("sqlite://", "sqlite:///:memory:"):
+        kwargs["poolclass"] = StaticPool  # one shared in-memory database, for tests
     eng = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
         @event.listens_for(eng, "connect")
@@ -41,7 +44,7 @@ def init_db(eng=None) -> None:
     Base.metadata.create_all(eng or engine)
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 
 def ensure_schema(eng=None) -> None:
@@ -67,15 +70,18 @@ def ensure_schema(eng=None) -> None:
     init_db(eng)
 
 
-def get_session() -> Iterator[Session]:
-    """FastAPI dependency: one session per request, committed on success."""
-    with session_scope() as s:
-        yield s
-
-
 @contextmanager
-def session_scope() -> Iterator[Session]:
+def session_scope(tenant_id: str | None = None, *, platform: bool = False) -> Iterator[Session]:
+    """One unit of work. Pass a tenant for client data; `platform=True` for cross-client platform operations."""
+    from .tenancy import TenantError, bind_tenant
+
+    if (tenant_id is None) == (not platform):
+        raise TenantError("Open a session for exactly one tenant, or as a platform session")
     s = SessionLocal()
+    if tenant_id:
+        bind_tenant(s, tenant_id)
+    else:
+        s.info["platform"] = True
     try:
         yield s
         s.commit()

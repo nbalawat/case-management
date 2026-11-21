@@ -3,12 +3,16 @@
 A laptop-sized, working slice of an AI-first financial-crime case management platform. It ingests a bank feed,
 maps it to a canonical model, runs monitoring scenarios, groups alerts into cases, has an agent prepare each
 investigation, and routes the work through configurable workflows to the right people, under role, four-eyes
-and stage-clock controls, with a complete audit trail.
+and stage-clock controls, with a complete audit trail. It runs many clients on one platform: each has its own
+people, access policy, workflows and data, and a new client is onboarded from a template in about a minute.
+Anyone can ask a question about the caseload in plain language and get an answer that names the cases behind it.
 
 This is a demo build. It is meant to be shown, not deployed. All data is synthetic.
 
 ![My work](docs/screenshots/01-my-work.png)
+![Ask anything](docs/screenshots/15-ask.png)
 ![Workflow designer](docs/screenshots/08-workflows.png)
+![Operator console](docs/screenshots/14-operator-console.png)
 
 ## Run it on a Mac
 
@@ -26,15 +30,18 @@ docker compose up --build
 make run
 ```
 
-The first start seeds about 300 customers, 34,000 transactions and 60 cases across monitoring, sanctions, fraud,
-KYC and QA, already worked to different stages by twelve people. `make seed` (or `make reset` for
+The first start (about ten seconds) seeds three clients of different kinds: Meridian Retail Bank (every
+workload, twelve people), Kestrel Payments (fraud first, a lean team where people hold two roles) and Alder
+Private Bank (due diligence first, with a workflow version of its own). Together they hold about 540 customers,
+61,000 transactions and 120 cases, already worked to different stages by each client's own people. `make seed` (or `make reset` for
 Docker) restores that starting point before each demo. `make test` runs the backend tests.
 
 For development, run `make dev-api` and `make dev-ui` in two terminals and open <http://localhost:5173>.
 
 ## A fifteen-minute demo
 
-The person picker at the top right is the whole login. Each step below says who to be.
+The client and person pickers at the top right are the whole login. Steps 1 to 9 are at Meridian Retail Bank;
+each says who to be. Steps 10 to 12 show the platform running several clients.
 
 1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
    his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
@@ -55,12 +62,47 @@ The person picker at the top right is the whole login. Each step below says who 
    draft to see exactly what would change, and publish. New cases use the new version; open cases finish
    on the one they started with. A broken draft (unknown role, dead-end stage, bad condition) is refused
    with the reason.
-7. **Access, as anyone.** The role and permission matrix, and every workflow step against every role. All of
-   it comes from one policy file, `backend/access/default.yaml`.
+7. **Access, as anyone.** The role and permission matrix, every workflow step against every role, people and
+   queues. All of it is the client's own policy; nothing about roles is in code.
 8. **Read-only, as Audra Klein (auditor).** Every case and audit trail opens; nothing can be changed.
 9. **Data onboarding and scale, as Omar.** Profile the legacy extract, confirm the mapping, load it: counts
    reconcile, defective rows are held, new cases appear. Then the throughput check and the laptop-to-cloud
    table on the last page.
+
+10. **A second client.** Switch the client to Kestrel Payments. Different people, different roles and queue
+    names, three case types instead of six, no QA. Joy Tanaka holds two roles (MLRO and operations lead) and
+    still cannot approve her own work. Customer `P10005` exists here too and is a different person.
+11. **Changing access, as Pat Novak at Kestrel.** On Access, add a person or move a permission in the policy,
+    raise the version and check the draft: the page lists exactly what would change. Try removing the only
+    chief risk officer: refused, because a workflow Kestrel runs would have nobody for a step. Publish, and the
+    change applies from the next click. Meridian's policy is untouched.
+12. **Operator console.** Pick "All clients" in the client picker. Every client with its volumes, backlog and
+    configuration, in counts only. Onboard a new client: choose a template, name it, and it is live with its
+    own copy of the policy and a small set of sample data. Suspend it and its sign-ins stop at once.
+
+13. **Ask anything, as Tara Singh at Meridian.** Open Ask and click "Which scenario produces the most SARs?".
+    The answer leads with the figure, charts the breakdown, and links the cases behind it; "How this was
+    answered" shows each lookup and its filters. Ask "Who has the most open work?", then switch to Ana Ruiz
+    (an analyst) and ask it again: her role does not hold the team view, so the answer says so, and "What
+    should I work on first?" lists only her own cases. Switch client and the same question gets that
+    client's answer. Every question lands in the question record.
+
+### Connecting a model to Ask
+
+With no key the Ask page uses an offline planner: a phrase matcher that understands common questions (the
+suggested ones and their variations), answers one question at a time, and says so when it cannot place a
+question. To answer free-form and follow-up questions with a model:
+
+```bash
+export ANTHROPIC_API_KEY=...        # then start the app as usual
+export ASK_MODEL=claude-opus-5-5    # optional; this is the default
+```
+
+The model never sees the database. It is handed five read-only lookups (breakdown, case list, case detail,
+customer, team workload) that run as the person asking, inside their client, and it gets only the lookups that
+person's role may use. Case ids in an answer are checked against what the lookups returned before they become
+links. `ASK_PROVIDER=offline` forces the planner even when a key is set. Other providers (a model in the
+client's own cloud, a local model) plug in behind the same interface in `backend/app/ask/gateway.py`.
 
 To show overlay mode (sitting on top of an incumbent monitoring engine), push an alert from a terminal and
 watch a case appear:
@@ -70,6 +112,9 @@ curl -X POST localhost:8000/api/alerts -H 'content-type: application/json' -d '{
   "source": "legacy-tm", "external_id": "LT-88213", "scenario": "rapid_movement",
   "party_id": "P10005", "score": 0.82, "explanation": "Vendor rule 12: funds in and out within 24h"}'
 ```
+
+API calls are for one client. This demo reads it from an `X-Tenant` header (Meridian if absent) and the person
+from `X-Persona`; a real deployment takes both from the sign-in token.
 
 The full API reference is at <http://localhost:8000/docs>.
 
@@ -81,12 +126,13 @@ The full API reference is at <http://localhost:8000/docs>.
 | Detection | Four scenarios (structuring, rapid movement, high-risk geography, watchlist name match), versioned and idempotent | Stream processing, ML models, a real sanctions list (the watchlist is fictional) |
 | Alert intake | `POST /api/alerts` for outside engines, deduplicated, grouped per customer | Vendor-specific adapters |
 | Workflows | Six case types as versioned YAML: stages, queues, stage tasks, conditional steps, waiting stages, four-eyes, stage clocks with escalation, QA sampling with reopen. Checked and published from the UI. | Durable workflow engine (timers are swept, not scheduled), parallel branches, a drag-and-drop designer |
-| People and access | Twelve people in eleven roles, queues, claim and reassign, permissions and read-only access, all from one policy file. Every person is tested against every workflow step. | SSO, per-client policies, attribute-based rules, editing the policy in the UI |
+| People and access | Each client's own versioned policy: roles, permissions, queues, people (who may hold several roles), read-only roles. Edited and published from the UI with checks: a change is refused if it would strand a workflow or lock everyone out. Every person at every kind of client is tested against every workflow step. | SSO and people from the client's identity provider, attribute-based rules (for example by customer segment or country), a form-based editor |
+| Clients | Shared database with every row keyed by client. Isolation is enforced in the data layer: queries are filtered and writes stamped automatically, and statements that cannot be filtered are refused. Per-client case types and workflow versions. Templates, one-step onboarding, suspend, and an operator console that shows counts only. | Postgres row-level security as a second layer, dedicated databases or stamps per client (the choice is recorded, not acted on), per-client encryption keys, usage metering, offboarding and data export |
 | Information requests | Requests to customer, branch or relationship manager with due dates and overdue flags | Actually sending them (email, portal, secure message) |
 | Agents | Multi-step investigation with cited findings, recommendation and draft narrative. Agents never move a case. | A language model. The provider is an offline rule-and-template implementation behind the `LLMProvider` interface, so the demo runs with no keys and no data leaving the laptop. |
+| Ask anything | Plain-language questions answered through a fixed vocabulary of 31 fields and 9 measures, never SQL. Answers are limited to the asker's client, team workload follows the client's own access policy, cited cases are verified, and every question is recorded. Hosted-model provider with tool use, plus an offline planner so the demo needs no key. | The hosted-model path has only been run against a stand-in client here, never a live model: its request shape and reply handling are tested, answer quality is not. Checking figures in an answer (only case ids are checked). Streaming. Per-role limits on which cases a person may see (everyone at a client sees all of its cases, as on the Cases page). Questions about transactions outside alerted activity. Spend limits. |
 | Filing | A hashed JSON filing record | FinCEN BSA XML, goAML |
-| Identity | Person picker (no login) | SSO |
-| Clients | One client | Multi-tenancy: next milestone |
+| Identity | Client and person pickers (no login). Anyone can pick any client or the operator console. | SSO; the client and person come from the token |
 | Scale | Measured single-process throughput on your machine | Anything distributed. Do not quote the laptop figure as a production figure. |
 
 ## How the code is laid out
@@ -100,15 +146,20 @@ backend/app/
   cases/       case type registry, transition guards, conditions, tasks, assignment,
                information requests, timers, QA sampling, publishing
   agents/      provider interface, investigation steps, orchestrator
+  ask/         ask anything: query vocabulary, read-only tools, model gateway and providers,
+               answer loop with citation checks and the question record
   reporting/   dashboard metrics
+  tenancy.py   client isolation: session binding, automatic filtering and stamping
+  tenants/     client registry, templates, onboarding, access policy administration
   api/         HTTP routes (the UI uses only these)
-backend/case_types/   one YAML file per workflow
-backend/access/       the access policy: permissions, roles, queues, people
+backend/case_types/   the workflow library: one YAML file per case type
+backend/access/       starting access policies: permissions, roles, queues, people
+backend/templates/    client templates: a starting policy plus a set of case types
 frontend/src/         React + TypeScript UI
 ```
 
 Each replaceable part sits behind a small interface (`Connector`, `MappingProposer`, `LLMProvider`, the scenario
-registry), so later milestones swap implementations without touching callers. The database is chosen by
+registry, and `ChatModel` for the model that answers questions), so later milestones swap implementations without touching callers. The database is chosen by
 `DATABASE_URL`; nothing in the code is tied to a cloud.
 
 ## Milestones
@@ -119,12 +170,12 @@ agents and reporting.
 **2. Workflows and people (done).** The workflow engine, twelve people, queues, access policy, fraud and
 onboarding journeys, QA, the workflow diagram and editor.
 
-**3. Multi-tenancy.** Onboard a new client in minutes: isolated data, its own workflows, access policy and
-people, a client switcher, and an operator console for running five to ten clients side by side.
+**3. Multi-tenancy (done).** Isolated data per client, per-client access policy and workflow versions, templates
+and onboarding, a client switcher and an operator console. Tested with ten clients side by side.
 
-**4. Ask anything.** Agents that answer questions across the whole caseload in plain language, through
-governed queries, citing the cases behind every figure and limited to what the asker may see. Brings the model
-gateway with hosted and local models.
+**4. Ask anything (done).** Questions across the whole caseload in plain language, answered through governed
+lookups, citing the cases behind them and limited to what the asker may see. A model gateway with a hosted
+provider and an offline planner. Still to come here: a live-model evaluation run, streaming, and a local model.
 
 **5. Data pipelines.** Sources in object storage (S3, ADLS, GCS) behind one cloud-neutral interface, scheduled
 pipelines, saved mappings per source, data-quality gates and lineage. File upload remains only for samples.
