@@ -1,0 +1,66 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: caseforge-pod-security
+  annotations:
+    policies.kyverno.io/title: Pod security for caseforge stamps
+    policies.kyverno.io/description: >-
+      Application pods in stamp namespaces meet the restricted standard; in-cluster data service pods (Kafka,
+      OpenSearch) meet at least baseline.
+spec:
+  validationFailureAction: {{ .Values.podSecurity.action }}
+  background: true
+  rules:
+    - name: restricted-for-the-application
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - {key: caseforge.io/stamp, operator: Exists}
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: caseforge
+      validate:
+        podSecurity:
+          level: restricted
+          version: latest
+    - name: baseline-for-everything-else
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - {key: caseforge.io/stamp, operator: Exists}
+      validate:
+        podSecurity:
+          level: baseline
+          version: latest
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: caseforge-no-latest-tag
+  annotations:
+    policies.kyverno.io/title: Pinned images
+    policies.kyverno.io/description: Images in stamp namespaces carry an explicit tag or digest other than latest.
+spec:
+  validationFailureAction: {{ .Values.podSecurity.action }}
+  background: true
+  rules:
+    - name: require-pinned-image
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - {key: caseforge.io/stamp, operator: Exists}
+      validate:
+        message: "Use an explicit image tag or digest, not latest."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest & *:*"

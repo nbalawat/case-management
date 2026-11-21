@@ -1,4 +1,4 @@
-.PHONY: migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset
+.PHONY: migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -49,3 +49,34 @@ seed:            ## Reset the demo data
 
 reset:           ## Docker: wipe the database and document volumes
 	docker compose down -v
+
+# ---- Infrastructure as code and charts (infra/README.md). Nothing here touches a cloud account.
+TOFU ?= tofu
+infra-fmt:       ## Format every OpenTofu file
+	$(TOFU) fmt -recursive infra
+
+infra-contract:  ## Copy the stamp contract's variables into each cloud's stamp module and check the outputs agree
+	python3 infra/contract/check.py --fix
+
+infra-validate:  ## Format check, contract check and `tofu validate` in every module and stack
+	$(TOFU) fmt -check -recursive infra
+	python3 infra/contract/check.py
+	TOFU=$(TOFU) infra/bin/each.sh validate
+
+infra-test:      ## `tofu test` against mocked providers
+	TOFU=$(TOFU) infra/bin/each.sh test
+
+infra-lint:      ## TFLint with the AWS, Azure and Google rulesets
+	cd infra && tflint --init --config=$(CURDIR)/infra/.tflint.hcl
+	cd infra && tflint --recursive --chdir=modules --config=$(CURDIR)/infra/.tflint.hcl
+	cd infra && tflint --recursive --chdir=stacks --config=$(CURDIR)/infra/.tflint.hcl
+
+infra-scan:      ## Checkov over the IaC (every skip carries its reason)
+	cd infra && checkov -d . --framework terraform --quiet --compact --skip-path .tofu
+
+infra-lock:      ## Write provider lock files for the platforms CI and laptops use
+	infra/bin/each.sh lock
+
+charts-check:    ## Lint and render every chart, then check it strictly against Kubernetes and CRD schemas
+	deploy/scripts/crd-schemas.sh .schemas
+	deploy/scripts/check-charts.sh .schemas

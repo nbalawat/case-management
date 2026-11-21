@@ -1,0 +1,20 @@
+# Installed once per cluster by infra/modules/kubernetes/platform-addons, after Kyverno and cert-manager.
+
+podSecurity:
+  # Every pod in a namespace labelled caseforge.io/stamp must meet the Kubernetes "restricted" pod security standard,
+  # except the pods of in-cluster data services, which are held to "baseline".
+  action: Enforce        # Audit while adopting, then Enforce
+
+signedImages:
+  enabled: false
+  # Image references the rule applies to, for example ["ghcr.io/nbalawat/caseforge*"].
+  image_patterns: []
+  certificate_issuer: https://token.actions.githubusercontent.com
+  # Keyless signer identity: the release workflow on a tag of this repository.
+  subject_regexp: ""
+
+clusterIssuer:
+  name: letsencrypt
+  acmeEmail: ""          # empty: no ACME issuer is created
+  acmeServer: https://acme-v02.api.letsencrypt.org/directory
+  ingressClass: traefik
