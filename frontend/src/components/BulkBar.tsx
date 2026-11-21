@@ -15,8 +15,9 @@ export default function BulkBar({ ids, onDone, onClear }: { ids: string[]; onDon
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
   const key = ids.join(',')
+  const [chosenFor, setChosenFor] = useState(key)
+  if (chosenFor !== key) { setChosenFor(key); setTo(''); setReason('') }  // a different selection: the step chosen for the last one does not carry over
   useEffect(() => {
-    setTo(''); setReason('')
     api.post<Options>('/cases/bulk/options', { case_ids: ids }).then(setOptions).catch(e => setError(e.message))
   }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
   const run = (body: Record<string, unknown>) => api.post<Result>('/cases/bulk', { case_ids: ids, ...body })

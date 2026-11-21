@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api, fmtDateTime, words } from '../api'
-import { usePeople } from '../App'
+import { usePeople } from '../shell/people'
 import { useApi } from '../useApi'
 import { Card, Loading, Pill } from '../components/ui'
 
@@ -26,7 +26,8 @@ function Editor({ data, onPublished }: { data: AccessData; onPublished: () => vo
   const [note, setNote] = useState('')
   const [check, setCheck] = useState<Check | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
-  useEffect(() => { setSrc(data.yaml); setCheck(null) }, [data.policy.version]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [version, setVersion] = useState(data.policy.version)
+  if (version !== data.policy.version) { setVersion(data.policy.version); setSrc(data.yaml); setCheck(null) }  // a new version was published: edit from it
   const run = () => api.post<Check>('/access/check', { source: src }).then(r => { setCheck(r); setMsg(null) }).catch(e => setMsg(e.message))
   const publish = () => api.post<{ version: string }>('/access/publish', { source: src, note })
     .then(r => { setMsg(`Published v${r.version}. It applies from the next action anyone takes.`); setNote(''); onPublished() }).catch(e => setMsg(e.message))

@@ -20,10 +20,11 @@ streaming:       ## Docker: everything in `full`, plus an Apache Flink cluster f
 	EVENT_BUS_URL=kafka://kafka:9092 LAKE_CATALOG='$(LAKE)' SEARCH_URL=opensearch://opensearch:9200 GRAPH_URL=$(GRAPH) TEMPORAL_URL=temporal://temporal:7233 FLINK_URL=http://flink-jobmanager:8081 docker compose --profile backbone --profile search --profile graph --profile durable --profile streaming up --build
 
 CLIENT ?= meridian
-flink-job:       ## Docker, with `make streaming` running: render and submit one client's structuring job. make flink-job CLIENT=meridian
+JOB ?= structuring
+flink-job:       ## Docker, with `make streaming` running: render and submit one client's job. make flink-job CLIENT=meridian JOB=rapid_movement
 	mkdir -p deploy/flink/jobs
-	docker compose exec -T app uv run --no-dev python -m app.streamjobs structuring $(CLIENT) --bootstrap kafka:9092 > deploy/flink/jobs/$(CLIENT).sql
-	docker compose exec flink-jobmanager ./bin/sql-client.sh -f /jobs/$(CLIENT).sql
+	docker compose exec -T app uv run --no-dev python -m app.streamjobs $(JOB) $(CLIENT) --bootstrap kafka:9092 > deploy/flink/jobs/$(CLIENT)-$(JOB).sql
+	docker compose exec flink-jobmanager ./bin/sql-client.sh -f /jobs/$(CLIENT)-$(JOB).sql
 
 build:           ## Build the UI so the API can serve it
 	cd frontend && npm install && npm run build

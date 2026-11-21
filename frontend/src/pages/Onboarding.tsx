@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDateTime, fmtMoney } from '../api'
-import { usePeople } from '../App'
+import { usePeople } from '../shell/people'
 import { useApi } from '../useApi'
 import { Card, Loading, Pill } from '../components/ui'
 

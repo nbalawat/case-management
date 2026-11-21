@@ -51,7 +51,7 @@ or an address has the wrong scheme.
   upgrade between two real versions has happened yet, and there are no downgrade tests. Take a backup first.
 - The pipeline schedule timer is off, because it is wrong with more than one API pod. Scheduled pipelines run when
   "Run what is due" is called; nothing calls it for you here.
-- Pods run as a non-root user with no privilege escalation and write only to `/tmp`.
+- Pods run as a non-root user with no privilege escalation and write only to `/tmp` and `/app/data`, both scratch volumes that go with the pod.
 - `networkPolicy.enabled` limits what may reach the pods. It does not limit what the pods may reach.
 - One release serves the clients in its database. A dedicated stamp per client is one release per client; nothing
   here creates the client's database, topics or bucket.

@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Every model change has a migration
@@ -88,10 +88,11 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U caseforge -d graph" --health-interval 3s --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: services  # its own cache, so this job and the SQLite job never race to save one
       - name: Start a Temporal development server
         run: |
           docker run -d --name temporal -p 7233:7233 temporalio/temporal:1.10.1 server start-dev --ip 0.0.0.0
@@ -113,8 +114,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -130,7 +131,7 @@ jobs:
     name: Compose file is valid
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker compose --profile backbone --profile cdc --profile search --profile graph --profile durable --profile streaming config -q
 
   helm:
@@ -138,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Lint and render
         working-directory: deploy/helm/caseforge
         run: |
@@ -166,3 +167,23 @@ jobs:
           # And the least it must accept
           helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e > /dev/null
           helm template demo . --set existingSecret=s --set demoTenants=true --set schemaOnMismatch=rebuild --set auth.mode=demo > /dev/null
+
+  image:
+    name: Image builds and starts as a non-root user
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t caseforge:ci .
+      - name: Start as the user Kubernetes runs the pods as
+        run: |
+          set -euo pipefail
+          docker run -d --name app --user 10001:10001 -p 8000:8000 caseforge:ci
+          for i in $(seq 1 120); do
+            if curl -sf http://localhost:8000/api/tenants > /dev/null; then echo "answered after $((i * 5)) s"; break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' app)" != "true" ]; then docker logs app | tail -60; echo "the app stopped"; exit 1; fi
+            sleep 5
+          done
+          curl -sf http://localhost:8000/api/tenants > /dev/null
+          test "$(docker exec app id -u)" = "10001"
+          docker logs app | tail -5

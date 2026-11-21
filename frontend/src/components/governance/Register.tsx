@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDateTime } from '../../api'
-import { useNameOf } from '../../App'
+import { useNameOf } from '../../shell/people'
 import { Card, Pill } from '../ui'
 import type { Entry } from './types'
 

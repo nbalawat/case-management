@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { api, fmtDate, words } from '../../api'
-import { useNameOf } from '../../App'
+import { useNameOf } from '../../shell/people'
 import { Card, Pill } from '../ui'
 import type { Analysis, OwnLink, OwnNode, Ownership } from './types'
 

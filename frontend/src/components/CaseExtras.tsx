@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDateTime } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf } from '../App'
+import { useNameOf } from '../shell/people'
 import { Card, Pill } from './ui'
 import type { CaseRow } from '../pages/Cases'
 
@@ -59,7 +59,8 @@ function ScorecardCard({ caseId, qa, onChange }: { caseId: string; qa: NonNullab
   const nameOf = useNameOf()
   const [answers, setAnswers] = useState<Record<string, Mark>>({})
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => { setAnswers(qa.scorecard?.answers ?? {}) }, [qa.scorecard])
+  const [from, setFrom] = useState<typeof qa.scorecard | null>(null)
+  if (from !== qa.scorecard) { setFrom(qa.scorecard); setAnswers(qa.scorecard?.answers ?? {}) }  // a saved scorecard comes back: show it
   const set = (code: string, change: Partial<Mark>) => setAnswers(a => ({ ...a, [code]: { ...(a[code] ?? { mark: '', root_cause: '', comment: '' }), ...change } }))
   const total = qa.criteria.reduce((n, c) => n + (c.weight ?? 1), 0)
   const earned = qa.criteria.reduce((n, c) => n + (c.weight ?? 1) * ({ met: 1, partly: 0.5 }[answers[c.code]?.mark] ?? 0), 0)

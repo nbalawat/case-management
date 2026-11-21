@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, daysUntil, fmtDate, fmtMoney } from '../api'
 import { useApi } from '../useApi'
-import { usePeople } from '../App'
+import { usePeople } from '../shell/people'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
 import DataGrid from '../components/grid/DataGrid'
 import { SearchInput } from '../components/grid/controls'
@@ -20,7 +20,7 @@ type Register = {
   profile: { regime: string; institution: Record<string, string>; missing: string[]; channel_title: string; formats: { id: string; title: string }[] }
   counts: Record<string, number>; filings: FilingRow[]; cash_days: CashDay[]
 }
-export const STATUS: Record<string, [string, string]> = {
+const STATUS: Record<string, [string, string]> = {
   prepared: ['Not sent', 'warning'], submitted: ['With the regulator', 'human'], acknowledged: ['Accepted', 'good'],
   rejected: ['Rejected', 'critical'], superseded: ['Replaced', 'neutral'],
 }

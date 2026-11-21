@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDateTime, getPersonaId, getTenantId, words } from '../api'
 import { useApi } from '../useApi'
-import { useNameOf } from '../App'
+import { useNameOf } from '../shell/people'
 import { Card, Kpi, Loading, Pill } from '../components/ui'
 
 type Level = 'L0' | 'L1' | 'L2' | 'L3'
@@ -61,7 +61,8 @@ export default function Agents() {
   const [reason, setReason] = useState<Record<string, string>>({})
   const [open, setOpen] = useState<string | null>(null)
   const [days, setDays] = useState(90)
-  useEffect(() => { if (data) { setDraft(clone(data.policy)); setCheck(null); setDraftEval(null) } }, [data?.policy_version])
+  const [version, setVersion] = useState<Page['policy_version'] | null>(null)
+  if (data && version !== data.policy_version) { setVersion(data.policy_version); setDraft(clone(data.policy)); setCheck(null); setDraftEval(null) }  // a new version: edit from it
   const dirty = useMemo(() => !!data && !!draft && JSON.stringify(draft) !== JSON.stringify(data.policy), [data, draft])
   if (!data || !draft) return <Loading error={error} />
   const can = data.can_manage

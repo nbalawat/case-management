@@ -43,6 +43,8 @@ affinity: {{- toYaml . | nindent 2 }}
 volumes:
   - name: tmp
     emptyDir: {}
+  - name: data
+    emptyDir: {}
 {{- end -}}
 
 {{- define "caseforge.container" -}}
@@ -58,4 +60,5 @@ env:
   - {name: UV_NO_SYNC, value: "1"}
 volumeMounts:
   - {name: tmp, mountPath: /tmp}
+  - {name: data, mountPath: /app/data}  # scratch only: evidence, quarantine and the lake are addressed by URL
 {{- end -}}

@@ -29,7 +29,8 @@ def view(s: Session) -> dict:
         "graph": graph_engine(tenant),
         "clocks": stage_clocks(tenant),
         "stream_jobs": stream_jobs(s, tenant),
-        "bus": {"kind": kind, "note": note, "workers": settings.backbone_workers},
+        # Whether this API process also runs the relay and consumers. False is normal when a separate worker does.
+        "bus": {"kind": kind, "note": note, "workers_in_api": settings.backbone_workers},
         "publisher": "debezium" if cdc else "relay",
         # Under change data capture rows are never marked here, so "waiting" would mislead: report only the total.
         "outbox": {"waiting": None if cdc else waiting, "oldest_waiting": None if cdc or oldest is None else oldest.isoformat(),
