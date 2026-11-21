@@ -1,7 +1,13 @@
-.PHONY: demo dev-api dev-ui test seed build reset
+.PHONY: backbone backbone-cdc demo dev-api dev-ui test seed build reset
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
+
+backbone:        ## Docker: the demo plus Kafka, the outbox relay and the stream consumers
+	EVENT_BUS_URL=kafka://kafka:9092 docker compose --profile backbone up --build
+
+backbone-cdc:    ## Docker: the same, with Debezium publishing the outbox instead of the relay
+	EVENT_BUS_URL=kafka://kafka:9092 OUTBOX_PUBLISHER=debezium docker compose --profile backbone --profile cdc up --build
 
 build:           ## Build the UI so the API can serve it
 	cd frontend && npm install && npm run build

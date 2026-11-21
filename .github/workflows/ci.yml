@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests (SQLite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Test
+        working-directory: backend
+        run: uv run pytest -q
+
+  services:
+    name: Backend on Postgres and Kafka
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: caseforge
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: caseforge
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U caseforge" --health-interval 3s --health-retries 20
+      kafka:
+        image: apache/kafka:3.9.1
+        ports: ["9092:9092"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: The whole demo on Postgres, and the event backbone on a real broker
+        working-directory: backend
+        env:
+          TEST_POSTGRES_URL: postgresql+psycopg://caseforge:ci-only@localhost:5432/caseforge
+          TEST_KAFKA_URL: kafka://localhost:9092
+        run: uv run pytest -q tests/test_postgres.py tests/test_kafka.py
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npm run lint --if-present
+      - working-directory: frontend
+        run: npm run build
+
+  compose:
+    name: Compose file is valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose --profile backbone --profile cdc config -q
