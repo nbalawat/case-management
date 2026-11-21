@@ -1,0 +1,26 @@
+id: edd_questionnaire
+title: Enhanced due diligence questionnaire
+version: "1.0"
+description: What enhanced due diligence must establish for a higher-risk customer before the relationship is approved or kept.
+case_types: [kyc_onboarding, kyc_refresh]
+stages: [risk_assessment, edd]
+sections:
+  - title: Source of wealth and funds
+    fields:
+      - {key: source_of_wealth, label: Source of wealth, type: choice, required: true,
+         options: [employment, business_ownership, inheritance, investments, property, other]}
+      - {key: source_of_wealth_detail, label: Explain the source of wealth, type: long_text, required: true, min_length: 40}
+      - {key: expected_monthly_volume, label: Expected monthly volume, type: money, required: true, minimum: 0}
+      - {key: source_corroborated, label: Source of wealth corroborated by documents, type: boolean, required: true}
+  - title: Exposure
+    fields:
+      - {key: pep, label: Politically exposed, type: boolean, required: true}
+      - {key: pep_position, label: Public position held, type: text, required: true, visible_when: "pep == true"}
+      - {key: high_risk_jurisdictions, label: Dealings with high-risk jurisdictions, type: boolean, required: true}
+      - {key: jurisdictions, label: Which jurisdictions, type: text, required: true, visible_when: "high_risk_jurisdictions == true"}
+      - {key: adverse_media_reviewed, label: Adverse media reviewed, type: boolean, required: true}
+  - title: Recommendation
+    fields:
+      - {key: recommendation, label: Recommendation, type: choice, required: true, options: [approve, approve_with_conditions, decline, exit]}
+      - {key: conditions, label: Conditions, type: long_text, required: true, visible_when: "recommendation == approve_with_conditions"}
+      - {key: next_review, label: Next review by, type: date, required: true}

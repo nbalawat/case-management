@@ -1,0 +1,20 @@
+id: case_routing
+title: First queue for a monitoring case
+version: "1.0"
+description: >-
+  Which team triages a new monitoring case. Strong alerts on sensitive customers skip first-line triage and go
+  straight to investigators. Queues the client does not have are ignored.
+context: case
+binding: case_queue
+enabled: false
+case_types: [tm_alert_investigation]
+hit_policy: UNIQUE
+inputs:
+  - {name: max_score, label: Highest alert score, kind: number}
+  - {name: pep, label: Politically exposed, kind: bool}
+outputs:
+  - {name: queue, label: Queue, kind: text, default: aml-l1}
+rules:
+  - {id: r1, when: {pep: true}, then: {queue: aml-l2}, note: Public figures are triaged by investigators}
+  - {id: r2, when: {pep: false, max_score: ">= 0.85"}, then: {queue: aml-l2}, note: Strong alerts skip L1}
+  - {id: r3, when: {pep: false, max_score: "< 0.85"}, then: {queue: aml-l1}}

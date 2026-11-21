@@ -1,0 +1,27 @@
+id: sar_decision
+title: SAR decision record
+version: "1.0"
+description: >-
+  The investigator's structured decision before a narrative is drafted: what was found, whether to file, and why.
+  Examiners ask for this reasoning on every case, filed or not.
+case_types: [tm_alert_investigation]
+stages: [investigation, sar_drafting]
+sections:
+  - title: What was found
+    fields:
+      - {key: typology, label: Main typology, type: choice, required: true,
+         options: [structuring, rapid_movement, high_risk_geography, trade_based, funnel_account, other]}
+      - {key: typology_other, label: Describe the typology, type: text, required: true, visible_when: "typology == other", max_length: 200}
+      - {key: amount_involved, label: Amount involved, type: money, minimum: 0, prefill: alerted_amount}
+      - {key: activity_from, label: Activity from, type: date}
+      - {key: activity_to, label: Activity to, type: date}
+      - {key: red_flags, label: Red flags seen, type: multi_choice,
+         options: [cash_below_threshold, round_amounts, rapid_in_out, third_party_deposits, high_risk_counterparty, inconsistent_with_profile]}
+  - title: Decision
+    fields:
+      - {key: decision, label: Decision, type: choice, required: true,
+         options: [{value: file, label: File a SAR}, {value: no_file, label: Do not file}, {value: more_information, label: Need more information}]}
+      - {key: no_file_reason, label: Why no report is needed, type: long_text, required: true, min_length: 60, visible_when: "decision == no_file",
+         help: "Examiners read this. Say what explains the activity and what you checked."}
+      - {key: continuing_activity, label: Expect continuing activity, type: boolean, visible_when: "decision == file"}
+      - {key: law_enforcement_contacted, label: Law enforcement already contacted, type: boolean, visible_when: "decision == file"}
