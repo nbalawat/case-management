@@ -22,10 +22,11 @@ import TransactionExplorer from '../components/case/workspace/TransactionExplore
 import CustomerPanel from '../components/case/workspace/CustomerPanel'
 import NarrativeCard from '../components/case/workspace/NarrativeCard'
 import RequestsCard from '../components/case/workspace/RequestsCard'
+import FormsCard from '../components/case/workspace/FormsCard'
 import Timeline from '../components/case/workspace/Timeline'
 import { NEW_REQUEST, type Act, type CaseDetail, type RequestDraft } from '../components/case/workspace/types'
 
-const TABS = ['overview', 'transactions', 'customer', 'narrative', 'requests', 'timeline'] as const
+const TABS = ['overview', 'transactions', 'customer', 'narrative', 'forms', 'requests', 'timeline'] as const
 type Tab = (typeof TABS)[number]
 
 /**
@@ -63,6 +64,7 @@ export default function CaseWorkspace() {
             <TabsTrigger value="transactions">Transactions<TabCount n={data.transactions.length} /></TabsTrigger>
             <TabsTrigger value="customer">Customer{party.pep && <span className="tab-count warn">PEP</span>}</TabsTrigger>
             <TabsTrigger value="narrative">Narrative{!c.drafted_by && c.narrative && <span className="tab-count">draft</span>}</TabsTrigger>
+            <TabsTrigger value="forms">Forms</TabsTrigger>
             <TabsTrigger value="requests">Requests<TabCount n={openRequests} /></TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
           </TabsList>
@@ -93,6 +95,7 @@ export default function CaseWorkspace() {
           </TabsContent>
 
           <TabsContent value="narrative" className="ws-stack"><NarrativeCard key={`${c.id}:${c.narrative}`} d={data} act={act} /></TabsContent>
+          <TabsContent value="forms" className="ws-stack"><FormsCard caseId={c.id} /></TabsContent>
           <TabsContent value="requests" className="ws-stack"><RequestsCard d={data} act={act} draft={request} setDraft={setRequest} /></TabsContent>
           <TabsContent value="timeline" className="ws-stack"><Timeline events={data.events} /></TabsContent>
         </Tabs>
