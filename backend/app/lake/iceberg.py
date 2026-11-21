@@ -69,6 +69,13 @@ class IcebergStore:
         self._open[key] = table
         return table
 
+    def table(self, tenant_id: str, name: str):
+        """The Iceberg table itself, current, for a query engine to plan a scan of; None when it does not exist yet."""
+        t = self._table(tenant_id, name)
+        if t is not None:
+            t.refresh()
+        return t
+
     def append(self, tenant_id: str, table: str, rows: list[dict], marks: dict[str, int]) -> int:
         if not rows:
             return 0

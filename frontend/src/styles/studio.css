@@ -80,3 +80,16 @@
 .fb-chips button{min-height:28px;padding:2px 10px;font-size:12.5px;border-radius:14px}
 .fb-chips button[aria-pressed=true]{background:var(--brand-soft);color:var(--brand);border-color:var(--brand)}
 .fb-preview{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--bg-2)}
+
+/* Lake SQL */
+.lk{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px}@media(max-width:1000px){.lk{grid-template-columns:1fr}}
+.lk-tables details{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:var(--surface)}
+.lk-tables summary{cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.lk-tables ul{list-style:none;margin:6px 0;padding:0}.lk-tables li{display:flex;justify-content:space-between;font-size:12.5px;padding:1px 0}
+.lk-tables li span{color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+.lk-col{border:0;background:transparent;padding:0;min-height:0;font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--brand)}
+.lk-tables .link{border:0;background:transparent;padding:2px 0;min-height:0;color:var(--brand);text-align:left}
+.lk-asof{display:inline-flex;gap:6px;align-items:center}.lk-asof input{min-height:32px;border:1px solid var(--line);border-radius:8px;padding:2px 8px}
+.lk-tools{margin:0}.lk-tools .seg{margin:0}
+.lk-grid{overflow:auto;max-height:560px}.lk-grid th small{display:block;color:var(--muted);font-weight:400;font-size:10.5px}
+.lk-grid td{font-variant-numeric:tabular-nums;white-space:nowrap}
