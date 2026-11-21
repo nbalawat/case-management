@@ -8,12 +8,14 @@ transaction) is skipped too, and its position still advances.
 from __future__ import annotations
 
 import logging
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 
 from ..backbone import topics
 from ..backbone.bus import EventBus, Message, Subscription
 from ..config import settings
+from ..observability import metrics
 from .base import HistoryStore
 from .tables import BY_TOPIC, TABLES
 
@@ -28,21 +30,44 @@ class Written:
 
 
 class LakeSink:
-    def __init__(self, bus: EventBus, store: HistoryStore, group: str | None = None) -> None:
+    """`flush_rows` and `flush_seconds` gather messages across polls before writing, so a busy stream makes a few
+    large Parquet files rather than many small ones (each write is one file per table and one table commit). With
+    both at 0 every poll is written at once. Nothing is committed on the bus until it is in a table, so messages
+    gathered but not yet written when a process stops are read again by the next one."""
+
+    def __init__(self, bus: EventBus, store: HistoryStore, group: str | None = None, *, flush_rows: int = 0, flush_seconds: float = 0.0) -> None:
         self.bus, self.store = bus, store
         self.group = group or f"{settings.event_topic_prefix}-lake"
+        self.flush_rows, self.flush_seconds = flush_rows, flush_seconds
         self._sub: Subscription | None = None
+        self._pending: list[Message] = []
+        self._since = 0.0
+
+    def _due(self) -> bool:
+        if not self._pending:
+            return False
+        if not self.flush_rows and not self.flush_seconds:
+            return True
+        return (bool(self.flush_rows) and len(self._pending) >= self.flush_rows) or \
+            (bool(self.flush_seconds) and time.monotonic() - self._since >= self.flush_seconds)
 
     def step(self, max_messages: int = 2000, timeout: float = 1.0) -> dict[tuple[str, str], Written]:
         if self._sub is None:
             self._sub = self.bus.subscribe(self.group, topics.pattern_any([t.topic for t in TABLES.values()]))
         try:
-            done = self._write(self._sub.poll(max_messages, timeout))
-            if done:
-                self._sub.commit()
+            got = self._sub.poll(max_messages, timeout)
+            if got and not self._pending:
+                self._since = time.monotonic()
+            self._pending += got
+            if not self._due():
+                return {}
+            done = self._write(self._pending)
+            self._sub.commit()
+            self._pending = []
             return done
         except Exception:
             sub, self._sub = self._sub, None  # start again from the last commit; the table's own marks prevent repeats
+            self._pending = []
             sub.close()
             raise
 
@@ -69,6 +94,8 @@ class LakeSink:
                     out.skipped += 1
                     log.info("Not kept in %s.%s: %s", tenant_id, name, e)
             out.rows = self.store.append(tenant_id, name, rows, marks)
+            if out.rows:
+                metrics.LAKE_ROWS.labels(tenant_id, name).inc(out.rows)
             done[(tenant_id, name)] = out
         return done
 

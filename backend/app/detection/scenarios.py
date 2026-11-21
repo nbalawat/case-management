@@ -7,6 +7,8 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import difflib
+import functools
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -170,24 +172,62 @@ def high_risk_geo(txns: list[Transaction]) -> list[Hit]:
     return hits
 
 
+class _Screen:
+    """Name screening against one set of lists, made cheap to repeat.
+
+    Each list name's matcher is built once (difflib indexes its second sequence, which is the costly part), and
+    a counterparty name screened before is answered from memory: a customer's history names the same payees again
+    and again, and detection re-reads that history on every batch. Answers are exactly those of comparing afresh.
+    One per thread, because a matcher holds the sequence it is comparing.
+    """
+
+    MEMO = 200_000
+
+    def __init__(self, w: Watch, threshold: float) -> None:
+        self.w, self.th = w, threshold
+        self.matchers = [(name, entry, difflib.SequenceMatcher(None, "", name.lower())) for name, entry in w.names]
+        self.memo: dict[tuple[str, str], tuple[float, str] | None] = {}
+
+    def best(self, seen: str, folded: str) -> tuple[float, str] | None:
+        """The first list name, in list order, at or above the threshold and not ruled out for this name."""
+        key = (seen, folded)
+        if key in self.memo:
+            return self.memo[key]
+        found = None
+        for name, entry, sm in self.matchers:
+            if (folded, entry) in self.w.exempt:
+                continue  # a person decided this name is not this entry
+            sm.set_seq1(seen)
+            r = sm.ratio()
+            if r >= self.th:
+                found = (r, name)
+                break
+        if len(self.memo) >= self.MEMO:
+            self.memo.clear()
+        self.memo[key] = found
+        return found
+
+
+@functools.lru_cache(maxsize=64)
+def _screen(w: Watch, threshold: float, _thread: int) -> _Screen:
+    return _Screen(w, threshold)
+
+
 @scenario("sanctions_name", "1.1.0", "Counterparty name matches watchlist", "Sanctions exposure", {"threshold": 0.86})  # its threshold is the client's screening rule, on Lists
 def sanctions_name(txns: list[Transaction]) -> list[Hit]:
     lists = watch()
     th = lists.threshold or settings("sanctions_name")["threshold"]
+    screen = _screen(lists, th, threading.get_ident())
     hits = []
     for t in txns:
         if not t.counterparty:
             continue
-        seen, folded = t.counterparty.lower(), subject_key(t.counterparty)
-        for w, entry in lists.names:
-            if (folded, entry) in lists.exempt:
-                continue  # a person decided this name is not this entry
-            r = difflib.SequenceMatcher(None, seen, w.lower()).ratio()
-            if r >= th:
-                hits.append(Hit("sanctions_name", version_of("sanctions_name"), t.id, round(r, 2),
-                                f"Counterparty '{t.counterparty}' matches watchlist entry '{w}' at {r:.0%} similarity on a ${t.amount:,.0f} {t.channel}.",
-                                [t.id]))
-                break
+        found = screen.best(t.counterparty.lower(), subject_key(t.counterparty))
+        if found is not None:
+            r, w = found
+            hits.append(Hit("sanctions_name", version_of("sanctions_name"), t.id, round(r, 2),
+                            f"Counterparty '{t.counterparty}' matches watchlist entry '{w}' at {r:.0%} similarity on a ${t.amount:,.0f} {t.channel}.",
+                            [t.id]))
     return hits
 
 

@@ -46,6 +46,10 @@ class IcebergStore:
             raise LakeError(f"The lake catalog cannot be opened: {e}") from None
         self._open: dict[tuple[str, str], object] = {}
 
+    def ping(self) -> None:
+        """Ask the catalog something cheap. Raises when it cannot answer."""
+        self._catalog.list_namespaces()
+
     def namespace(self, tenant_id: str) -> str:
         return f"{self._prefix}_{tenant_id.replace('-', '_')}"
 

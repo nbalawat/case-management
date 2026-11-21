@@ -117,6 +117,13 @@ ingress:
 networkPolicy:
   enabled: false        # when on: pods accept traffic only from the ingress namespace below, and only on the API port
   ingressNamespace: ingress-nginx
+  monitoringNamespace: ""  # when set, Prometheus in this namespace may also scrape the metrics port
+
+observability:
+  metricsPort: 9100     # every pod serves Prometheus metrics here, a port no ingress routes to
+  scrapeAnnotations: true  # prometheus.io/scrape, port and path on the pods, for Prometheus set to discover them
+  logFormat: json       # one JSON object per line, with request id, client and trace id
+  otlpEndpoint: ""      # an OpenTelemetry Collector, Jaeger or Tempo (http://collector:4318); empty: no traces
 
 podSecurityContext:
   runAsNonRoot: true
