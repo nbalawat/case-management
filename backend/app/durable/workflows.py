@@ -12,6 +12,7 @@ from temporalio.exceptions import ActivityError, ApplicationError
 
 # Activity names, registered by the worker (app.durable.temporal.activities)
 LOOK, PERFORM, STAGE_DUE, SWEEP, PIPELINES = "case_look", "case_perform", "stage_due", "sweep", "pipelines_due"
+ANSWERS = "regulator_answers"
 FILING_LOOK, FILING_DUE = "filing_look", "filing_follow_up"
 RUN_JOB, JOB_REFUSED, JOB_RETRY = "run_job", "Refused", "Retry"  # the rules said no / it stumbled; details name the exception for the caller
 REFUSED = "TransitionError"  # the application error type of a step the case type does not allow
@@ -201,6 +202,16 @@ class PipelineRuns:
                                                retry_policy=RetryPolicy(maximum_attempts=3), result_type=dict)
 
 
+@workflow.defn(name="RegulatorAnswers")
+class RegulatorAnswers:
+    """Read the regulator's answers that have reached one client's inbox, and record them. Started by a schedule."""
+
+    @workflow.run
+    async def run(self, tenant_id: str) -> dict:
+        return await workflow.execute_activity(ANSWERS, args=[tenant_id], start_to_close_timeout=timedelta(minutes=10),
+                                               retry_policy=RetryPolicy(maximum_attempts=3), result_type=dict)
+
+
 @workflow.defn(name="StageClock")
 class StageClock:
     """Kept so that clocks started before case workflows existed can finish. Nothing starts new ones."""
@@ -231,4 +242,4 @@ class StageClock:
             self._entered, self._due = entered, due
 
 
-WORKFLOWS = [CaseWorkflow, FilingWorkflow, JobWorkflow, Sweep, PipelineRuns, StageClock]
+WORKFLOWS = [CaseWorkflow, FilingWorkflow, JobWorkflow, Sweep, PipelineRuns, RegulatorAnswers, StageClock]

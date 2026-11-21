@@ -42,7 +42,26 @@ def tick() -> dict[str, int]:
     return started
 
 
+def collect_answers() -> dict[str, int]:
+    """Read each live client's regulatory inbox: the in-process stand-in for Temporal's answers schedule."""
+    from ..filing import answers
+
+    recorded: dict[str, int] = {}
+    for rt in registry.all_runtimes():
+        if rt.status != "live":
+            continue
+        try:
+            out = answers.collect_for(rt.id)
+        except Exception:  # noqa: BLE001  one client's inbox is that client's problem
+            log.exception("Collecting regulator answers failed for %s", rt.id)
+            continue
+        if out.get("recorded"):
+            recorded[rt.id] = out["recorded"]
+    return recorded
+
+
 async def run_forever(interval: float = INTERVAL_SECONDS) -> None:
     while True:
         await asyncio.sleep(interval)
         await asyncio.to_thread(tick)
+        await asyncio.to_thread(collect_answers)

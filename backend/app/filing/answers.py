@@ -27,6 +27,7 @@ from ..visibility import system_work
 from . import service
 
 INBOX = "regulatory/inbox/"
+SYSTEM = Persona("system:regulator-inbox", "Regulator inbox", "system", "Answers collected on a schedule")
 SOURCE = "regulator-answers"  # how answer files are marked in the ingested-objects ledger, so each is read once
 
 
@@ -98,3 +99,21 @@ def collect(s: Session, persona: Persona, ts: datetime | None = None) -> dict:
                              status="loaded", stats={"answers": out["answers"]}))
         s.flush()
     return out
+
+
+def collect_for(tenant_id: str, ts: datetime | None = None) -> dict:
+    """One client's inbox, read on a schedule (Temporal's per-client schedule, or the in-process scheduler).
+
+    A client with no landing storage, or whose inbox cannot be read right now, is skipped with the reason rather
+    than failing: the next pass tries again, and the Regulatory reports page shows the same reason when run by hand.
+    """
+    from ..db import session_scope
+
+    with session_scope(tenant_id) as s:
+        try:
+            out = collect(s, SYSTEM, ts)
+        except AnswerError as e:
+            s.rollback()
+            return {"skipped": str(e)}
+        s.commit()
+        return out
