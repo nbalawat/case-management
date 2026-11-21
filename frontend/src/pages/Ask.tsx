@@ -8,6 +8,7 @@ import { providerLabel } from './ask/format'
 import type { Answer, LogRow, Start, Step } from './ask/types'
 import { mainStep, toolLabel } from './ask/steps'
 import { AnswerText, Filters, type Links, StepView } from './ask/views'
+import { PassageText } from '../components/PassageText'
 
 /** Every id the answer may link, and where to: cases it cited and records a lookup showed or that the reader may open. */
 const linksOf = (a: Answer): Links => new Map([
@@ -30,13 +31,24 @@ function Checks({ a }: { a: Answer }) {
 }
 
 function Sources({ a }: { a: Answer }) {
-  const others = (a.sources ?? []).filter(s => s.kind !== 'case')
-  if (!a.cited.length && !others.length) return null
+  const others = (a.sources ?? []).filter(s => s.kind !== 'case' && s.kind !== 'policy')
+  const policies = (a.sources ?? []).filter(s => s.kind === 'policy')
+  if (!a.cited.length && !others.length && !policies.length) return null
   return (
-    <div className="cites"><span className="lbl">Records this answer points to</span>
-      {a.cited.map(c => <Link key={c.id} to={`/cases/${c.id}`} className="citecard"><b>{c.id}</b><span>{c.customer}</span><small>{c.case_type} · {c.stage}</small></Link>)}
-      {others.map(s => <Link key={s.id} to={s.link || '#'} className="citecard"><b>{s.id}</b><span>{words(s.kind)}</span><small>{s.label}</small></Link>)}
-    </div>
+    <>
+      {(a.cited.length > 0 || others.length > 0) && <div className="cites"><span className="lbl">Records this answer points to</span>
+        {a.cited.map(c => <Link key={c.id} to={`/cases/${c.id}`} className="citecard"><b>{c.id}</b><span>{c.customer}</span><small>{c.case_type} · {c.stage}</small></Link>)}
+        {others.map(s => <Link key={s.id} to={s.link || '#'} className="citecard"><b>{s.id}</b><span>{words(s.kind)}</span><small>{s.label}</small></Link>)}
+      </div>}
+      {policies.length > 0 && <div className="cites"><span className="lbl">Policy and guidance it rests on</span>
+        {policies.map(s => (
+          <details key={s.id} className="citecard policycard"><summary><b>{s.id}</b> <span>{s.label}</span>{s.client_document && <small> · this client's own</small>}</summary>
+            {s.excerpt && <PassageText text={s.excerpt} />}
+            <Link to={s.link} className="small">Open in the library</Link>
+          </details>
+        ))}
+      </div>}
+    </>
   )
 }
 

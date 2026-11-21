@@ -1,6 +1,6 @@
 """Turning the record ids in an answer into sources a person can open.
 
-Each id the answer names is looked up: if a tool showed it during this answer, or it is a real record the asker
+Each id the answer names is looked up (knowledge-library passages, `kb:<document>#<section>`, among them): if a tool showed it during this answer, or it is a real record the asker
 may see, it becomes a source with a label and a link into the app; otherwise it is reported as unverified. Cases
 are handled by the answer loop itself (they carry more detail), so they are left out here.
 """
@@ -10,12 +10,15 @@ import re
 
 from sqlalchemy.orm import Session
 
+from .. import knowledge
 from ..domain.access import Persona
+from ..tenancy import tenant_of
 from .landscape import catalog, query
 from .verify import platform_ids
 
 KIND_TO_OBJECT = {o.kind: o for o in catalog.objects().values()}
 MAX_SOURCES = 30
+PASSAGE_ID = re.compile(r"\bkb:[a-z0-9][a-z0-9-]*#[a-z0-9-]+")
 
 
 def link(kind: str, rec: dict) -> str:
@@ -44,6 +47,7 @@ def _label(obj, row: dict) -> str:
 def resolve(s: Session, asker: Persona, answer: str, seen: dict[str, dict], exclude: set[str] = frozenset()) -> tuple[list[dict], list[str]]:
     """(sources, unverified ids). `seen` maps ids a tool showed in this answer to {kind, id, case_id, customer_id}."""
     named: list[tuple[str, str]] = [(k, i) for k, i in platform_ids(answer) if i not in exclude and k != "case"]
+    named += [("policy", i) for i in dict.fromkeys(PASSAGE_ID.findall(answer))]
     # Ids a tool showed count wherever the answer names them, including client ids (customers, transactions),
     # which carry no prefix and so are never claims on their own.
     for rid, rec in seen.items():
@@ -53,6 +57,14 @@ def resolve(s: Session, asker: Persona, answer: str, seen: dict[str, dict], excl
             named.append((rec["kind"], rid))
     sources, unverified = [], []
     for kind, rid in named[:MAX_SOURCES]:
+        if kind == "policy":  # a library passage: the asker's own client's library, never another client's documents
+            p = knowledge.passage(tenant_of(s), rid)
+            if p is None:
+                unverified.append(rid)
+            else:
+                sources.append({"kind": "policy", "id": rid, "label": f"{p.title}: {p.section}", "link": knowledge.link(rid),
+                                "shown_by_tool": rid in seen, "excerpt": p.text[:600], "client_document": p.client is not None})
+            continue
         obj = KIND_TO_OBJECT.get(kind)
         row = None
         if obj is not None and obj.permission(asker) is None:

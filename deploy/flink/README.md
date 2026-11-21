@@ -100,11 +100,11 @@ Apache Kafka 3.9.1 broker (`backend/tests/test_flink.py`, 15 tests, set `TEST_KA
 that includes a listed name full of quotes, semicolons and comment markers, a ruled-out pair, and a start from the
 product on a client's own lists. A 5,000-name job has been submitted and run by hand on the same cluster.
 
-Run once, on a MacBook under Docker: the image and Compose services here (`make streaming`, then
-`make flink-job CLIENT=meridian`), with three test deposits through to one Flink alert in a case.
-
-Never run under Docker: the name screening job, and the image now that it compiles the function (CI builds the
-image and checks the function answers in it, on every change).
+Run on a MacBook under Docker, built from nothing (`make streaming` beside Kafka, OpenSearch, the graph engine and
+Temporal): the image with the function compiled into it, the SQL Gateway answering the application, and all four
+jobs submitted for one client and running. A payment to a misspelt listed name came through as one Flink alert at
+97% in a case, beside the application's own alert for the same payment. Earlier, three test deposits through to one
+structuring alert. Starting a job from the Integrations page has not been tried under Docker, only by hand.
 
 Never run: Flink on Kubernetes, a managed Flink service, checkpoints
 to object storage, recovery from a failure, or any volume beyond a handful of records. These tests are not in the

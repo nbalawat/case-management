@@ -51,6 +51,10 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
       interval: 5s
       retries: 60
+      # Setting up the demo clients on an empty database took over six minutes on a MacBook with the whole stack
+      # starting beside it. Failures in that time are not counted, so the workers that wait for the app still start.
+      start_period: 15m
+      start_interval: 5s
 
   # ---- the event backbone: docker compose --profile backbone
   kafka:
