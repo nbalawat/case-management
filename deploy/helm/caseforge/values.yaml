@@ -95,6 +95,7 @@ flink:
 storage:
   evidenceUrl: ""       # s3://bucket/prefix, abfss://..., gs://... Required: pods keep nothing on local disk.
   quarantineUrl: ""
+  modelStoreUrl: ""     # where trained alert-ranking models are kept (s3://, abfss://, gs://). Required when models are trained in the cluster.
   exportsUrl: ""        # offboarding bundles, sealed under each client's key. Unset: <evidenceUrl>-exports in the same store.
 
 # Per-client keys: customer documents are sealed under their client's own key (envelope encryption, app/keys).
@@ -157,6 +158,7 @@ observability:
   scrapeAnnotations: true  # prometheus.io/scrape, port and path on the pods, for Prometheus set to discover them
   logFormat: json       # one JSON object per line, with request id, client and trace id
   otlpEndpoint: ""      # an OpenTelemetry Collector, Jaeger or Tempo (http://collector:4318); empty: no traces
+  lineageUrl: ""        # an OpenLineage endpoint (Marquez, DataHub, OpenMetadata: https://host/api/v1/lineage); a bearer token goes in the Secret as LINEAGE_API_KEY
 
 podSecurityContext:
   runAsNonRoot: true

@@ -88,5 +88,27 @@ fresh client with 90,000 transactions over 1,800 customers on a 3-partition topi
 The worker used about 47% of one core and under 400 MB, and Postgres about 20%. One consumer on the laptop runs at
 about 40 to 50% of the cloud container's rate. A likely reason, not measured: Docker Desktop on an Intel Mac runs
 the containers in a virtual machine, where disk and network I/O between them costs more. The three-consumer run on this machine found
-the defects in the table above, so its figures are not reported; it is to be repeated with the fixes.
+the defects in the table above, so its figures are not reported; the rerun with the fixes follows.
 
+
+### With the fixes: one consumer, then three (commit ebe3a95)
+
+The same Mac, with the same database volumes as the runs above. By then it held seven test clients and about 630,000
+transactions. The two runs went back to back, so the machine was in the same state for both, though it was busy:
+Spotlight was indexing, memory was nearly full and swapping, and the load average was 7 to 13. Compare the two runs
+with each other, not with the ones above.
+
+| | Run A, 1 stream consumer | Run B, 3 stream consumers |
+|---|---:|---:|
+| Stream (first to last load) | **209 / s** | **350 / s** (1.67 times Run A) |
+| First half / second half of the run | 219 / 198 per s | 505 / 248 per s |
+| All 90,000 in Iceberg after publishing began | 447 s | 265 s |
+| Duplicates, rejects | 0, 0 | 0, 0 |
+| Operational store holds | 90,000 | 90,000 |
+| API: 8 callers for 20 s | 8.2 / s, p50 808 ms, p95 1,982 ms, 0 errors | 6.1 / s, p50 1,154 ms, p95 2,484 ms, 0 errors |
+| CPU mid-run: worker / Postgres / Kafka | 55% / 39% / 12% | 151% / 64% / 81% |
+
+Neither run logged a warning or an error. Three consumers reached about 56% of linear scaling. In the second half of
+Run B, throughput fell to half its first-half rate. Either the partitions finished unevenly, or Postgres became the
+shared limit, since three consumers and the API compete for it. API latency rose with the extra consumers for the same
+reason. A clean baseline, meaning a fresh database on an idle machine, is still to be run.
