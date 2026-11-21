@@ -12,9 +12,10 @@
  *   import { can } from '../shell/access'
  *   import { page } from '../shell/page'
  *   import type { Module } from '../shell/registry'
- *   export default { id: 'workflow-designer', path: '/workflows/designer', label: 'Workflow designer', group: 'admin',
+ *   const workflowDesigner: Module = { id: 'workflow-designer', path: '/workflows/designer', label: 'Workflow designer', group: 'admin',
  *     description: '...', icon: PencilRuler, page: page(() => import('../pages/WorkflowDesignerHome')),
- *     visible: can('publish_workflow'), after: 'forms' } satisfies Module
+ *     visible: can('publish_workflow'), after: 'forms' }
+ *   export default workflowDesigner   // named: lint forbids an anonymous default export
  */
 import type { ComponentType, LazyExoticComponent } from 'react'
 import {
