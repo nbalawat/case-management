@@ -13,6 +13,8 @@ dependencies = [
   "fsspec>=2024.6",
   "pyarrow>=16",
   "pyjwt[crypto]>=2.15.1",
+  # 49 and later ship no Intel macOS wheel, and building from source needs a recent Rust.
+  "cryptography>=44,<49",
 ]
 
 [dependency-groups]
