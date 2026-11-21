@@ -1,14 +1,14 @@
 """public api credentials and webhooks
 
-Revision: 0018
-Follows: 0017
+Revision: 0020
+Follows: 0019
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = '0018'
-down_revision = '0017'
+revision = '0020'
+down_revision = '0019'
 branch_labels = None
 depends_on = None
 
