@@ -22,6 +22,8 @@ permissions:
   manage_lists: Manage screening lists - load a new version, edit the client's own list, switch a list on or off
   sanctions_decisions: Decide sanctions matters - approve the release or blocking of a held payment, and approve a false-match exemption
   info_sharing: Handle law enforcement search requests - see them, search, decide matches and answer
+  tune_detection: Tune detection - propose scenario settings with a backtest, and plan and run lookback projects
+  approve_tuning: Approve detection changes - put a proposed scenario change live, and sign off a lookback
 
 queues:
   aml-l1: AML alert triage (L1)
@@ -46,10 +48,10 @@ roles:
   kyc_analyst:       {title: KYC analyst, permissions: [work], sees: {scope: all, case_types: [kyc_onboarding, kyc_refresh]}}
   fraud_analyst:     {title: Fraud analyst, permissions: [work], sees: {scope: all, case_types: [fraud_claim]}}
   qa_reviewer:       {title: QA reviewer, permissions: [work]}
-  mlro:              {title: MLRO / BSA officer, permissions: [work, view_team, view_restricted, restrict_case, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing]}
-  head_fiu:          {title: Head of FIU, permissions: [work, view_team, reassign, manage_agents, view_restricted, restrict_case, resolve_entities, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing]}
+  mlro:              {title: MLRO / BSA officer, permissions: [work, view_team, view_restricted, restrict_case, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing, tune_detection, approve_tuning]}
+  head_fiu:          {title: Head of FIU, permissions: [work, view_team, reassign, manage_agents, view_restricted, restrict_case, resolve_entities, submit_filings, approve_risk, manage_lists, sanctions_decisions, info_sharing, tune_detection, approve_tuning]}
   team_lead:         {title: Operations team lead, permissions: [work, view_team, reassign, run_timers, resolve_entities]}
-  admin:             {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents, resolve_entities, manage_lists]}
+  admin:             {title: Platform admin, permissions: [view_team, publish_workflow, run_timers, load_data, manage_access, manage_agents, resolve_entities, manage_lists, tune_detection]}
   restricted_matters: {title: Restricted matters team, permissions: [view_restricted], sees: {scope: own}}
   auditor:           {title: Internal auditor, permissions: [view_team, view_restricted], read_only: true}
 

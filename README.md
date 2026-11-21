@@ -53,8 +53,8 @@ each client's issuer: `PUT /api/platform/tenants/{id}/identity`.
 ## A fifteen-minute demo
 
 The client and person pickers at the top right are the whole login. Steps 1 to 9 are at Meridian Retail Bank;
-each says who to be. Steps 10 to 12 show the platform running several clients. Workflows, Lists, Access,
-Data and Integrations are under Setup in the top bar.
+each says who to be. Steps 10 to 12 show the platform running several clients. Workflows, Lists, Detection,
+Access, Data and Integrations are under Setup in the top bar.
 
 1. **My work, as Ivan Petrov (L2 investigator).** His own cases ordered by urgency, then unassigned work in
    his queue with a Claim button. Stage clocks and the regulatory deadline are separate columns.
@@ -147,6 +147,7 @@ The full API reference is at <http://localhost:8000/docs>.
 | Casework at volume | Per-client code lists (closing reasons, QA criteria and weights, QA root causes, hibernation rules), edited on the Lists page and retired rather than deleted. Closing without a report needs a reason the client offers for that outcome. Bulk claim, reassign and move, where each case passes its own checks and refusals change nothing. Merging two open cases about one customer. QA scorecards with a pass mark, and a findings report by person, criterion, root cause and agent advice. Weak alerts that wait for a second alert, join its case, or close with the rule on record. | Approval of list changes by a second person, list versions, case splitting, undoing a merge, scheduled sweeps (waiting alerts close when the clock sweep runs) |
 | KYC depth | A risk rating per customer from the client's own factors, points and bands (edited on Lists), showing the evidence for each factor. Raising a rating takes effect at once; lowering one waits for a second person holding `approve_risk`, never the proposer. Ownership structures as versions: effective shares multiplied down every chain, beneficial owners at the client's threshold or by control, untraced shares reported, and flags for trusts and nominees, loops, depth, politically exposed or unverified owners. A document store behind the same storage interface as the pipelines (`EVIDENCE_URL`), with a SHA-256 fingerprint checked on every read, a tamper-evident custody log, verification, expiry, and redacted copies of text documents. Flow of funds per customer or per case under resolved names. Events between reviews (rating rose, owners changed, a document expired, a SAR was filed, a sanctions match confirmed) open or join a review, and a schedule shows who is due one. | Identity and document verification vendors, registry lookups for ownership, OCR and redaction of scans and PDFs, virus scanning of uploads, encryption keys per client, a customer portal for collecting documents. The periodic review backlog in the demo comes from synthetic onboarding dates. |
 | Fraud and sanctions depth | Watchlists per client, loaded as versions from CSV or JSON: each load is compared with what is held, removed names are kept as history, and every customer and recent payment is screened again. The client's own do-not-deal list is screened the same way. False-match exemptions with two people, an end date, and automatic ending when the list entry changes; identical names cannot be exempted. Holds on a payment, account, card or online access, with a review clock per reason; a sanctions hold is released, blocked or rejected only by a second person, and a case cannot close while a hold is active. Blocked and rejected payments produce a report to the authority through the same reports machinery, due in ten business days. Confidential searches for law enforcement requests, visible only to people with the permission, opening no case. Fraud step-up checks on a hold, and disputes with clocks per payment kind for the customer's credit, the recovery (chargeback, return, recall) and the final answer, with loss and recovery worked out per dispute and by cause. | The lists are a fictional demo list: no feed from OFAC, the UN, the EU, HMT or a commercial list vendor. Holds are records here; nothing tells a payment engine or core banking system to stop or release money. Reports are rendered and sent through the simulated channel, not OFAC's own reporting system, and the annual report of blocked property is not built. No card network chargeback or ACH return connection. Business days skip weekends only, not public holidays. Step-up checks record an outcome and send nothing to the customer. Sharing between institutions (314(b)) is not built. |
+| Detection tuning and lookbacks | Each client's own settings per scenario, within the range the scenario declares, as numbered revisions holding the complete settings. A change is run against the past year first: how many alerts would not have been raised, how many of those led to a filing or a confirmed concern (listed by customer), and how many would be new. One person proposes with the backtest attached, another approves; approving a change that would have lost alerts that mattered, or switching a scenario off, takes a written reason. Alerts are stamped with the revision that raised them. Lookback projects: a past period run again through one scenario on chosen settings, counted before anything is raised, raising only what was never alerted, with every alert going to a person (no agent closure, no waiting rule), progress by case, a second person's sign-off with frozen figures, and a report to download. | Backtests and lookbacks run in the application process over the operational store, which suits the demo's volumes; at production scale they belong on the lake and the stream processor. A backtest compares alerts by customer and window, so a change to how windows are counted is approximate. No statistical above-the-line and below-the-line sampling, no segment-specific thresholds, no champion and challenger runs. Scenarios are still code: a client tunes them and switches them on or off, and does not author new ones. |
 | People and access | Each client's own versioned policy: roles, permissions, queues, people (who may hold several roles), read-only roles. Edited and published from the UI with checks: a change is refused if it would strand a workflow or lock everyone out. Every person at every kind of client is tested against every workflow step. | People and group membership synced from the client's identity provider (SCIM); today the provider proves who someone is and the policy on the Access page says what they may do. A form-based editor. |
 | Case visibility | Each role can be limited to its own queues, its own cases, or some case types; people keep cases they own or have worked on, and someone with several roles sees what any of them shows. Restricted cases are hidden from everyone not cleared, including their former owner, team leads and administrators, and cases opened from a restricted case inherit it. Enforced in the data layer, so lists, case pages, actions, the event feed, dashboards, the agent ledger and Ask all follow it; a hidden case answers "not found". Tested by signing in as every person at every client and checking every case against an independent statement of the rule. | Customers and transactions are not hidden by this rule, only cases and what hangs off them, so the Data pages and a customer lookup in Ask still show a customer whose case is restricted. Alerts closed by an agent before any case existed are visible to all. Rules by customer attribute (segment, country, relationship manager's own book). Break-glass access with a reason. Postgres row-level security as a second layer. A restricted case stays in its workflow, so someone cleared must also hold the role for the next step. |
 | Clients | Shared database with every row keyed by client. Isolation is enforced in the data layer: queries are filtered and writes stamped automatically, and statements that cannot be filtered are refused. Per-client case types and workflow versions. Templates, one-step onboarding, suspend, and an operator console that shows counts only. | Postgres row-level security as a second layer, dedicated databases or stamps per client (the choice is recorded, not acted on), per-client encryption keys, usage metering, offboarding and data export |
@@ -173,7 +174,7 @@ backend/app/
   storage/     object storage behind one interface: S3, Azure Data Lake, Google Cloud Storage, local
   ingest/      file formats, datasets, mapping proposer, pipelines (discover, validate, load, reconcile,
                detect), storage locations per client, the sample file loader
-  detection/   scenario registry and engine
+  detection/   scenarios, the engine, each client's settings with backtests and two-person approval, lookback projects
   alerts/      alert hub: dedupe, group into cases, prioritise
   cases/       case type registry, transition guards, conditions, tasks, assignment,
                information requests, timers, QA sampling and scorecards, bulk steps, merging, publishing
@@ -250,6 +251,12 @@ registry, and `ChatModel` for the model that answers questions), so later milest
     the law enforcement request and decide a possible match; switch to Ivan Petrov and the section is gone. As
     Fran Dubois, open Fraud: a wire dispute is in recovery, and the closed ones show what came back and what was
     lost. Open its case to record money coming back and resolve it on the figures.
+21. **Tuning detection, at Meridian.** Open Setup, then Detection. As Maya Chen, a change to cash structuring
+    waits for her: Omar Haddad proposed four deposits instead of three, and the backtest shows which alerts
+    would go and that none of them mattered. As Omar, press "Try different settings" on Rapid movement of
+    funds, set the hours to 24 and run it: three alerts that led to filings would be lost, so approving it
+    would take a written reason. As Hugo Laurent, run the lookback "Cash deposits from $5,000": its alerts land
+    in cases for people, and it can be signed off by someone else once those cases are decided.
 
 ## Milestones
 
@@ -295,9 +302,13 @@ flow of funds, and reviews triggered by events as well as by the calendar.
 two-person release, reports on blocked and rejected payments, law enforcement searches, fraud disputes and
 recoveries.
 
-**13. Enterprise breadth.** Lookback projects, management reporting, governance views and detection tuning.
+**13. Detection tuning and lookbacks (done).** Per-client scenario settings with backtests and two-person
+approval, and lookback projects worked to a signed conclusion.
 
-**14. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
+**14. Management information and governance.** Management reporting, the change register, access
+recertification and audit search.
+
+**15. Production backbone.** Kafka, Temporal, Flink, a Helm chart, then the cloud build on the reference
 architecture: per-client stamps and the SaaS, dedicated, client-cloud and air-gapped deployment modes.
 
 ## Screenshots

@@ -691,3 +691,49 @@ class InfoShare(TenantScoped, Base):
     responded_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
     responded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class ScenarioVersion(TenantScoped, Base):
+    """A client's own settings for one detection scenario. Proposed by one person with a backtest, put live by another."""
+
+    __tablename__ = "scenario_version"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    scenario: Mapped[str] = mapped_column(String(60), index=True)
+    number: Mapped[int] = mapped_column(Integer)  # 1, 2, 3 per scenario, in the order they were proposed
+    __table_args__ = (UniqueConstraint("tenant_id", "scenario", "number"),)
+    params: Mapped[dict] = mapped_column(JSON, default=dict)  # the complete settings, not a difference
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)  # pending | live | refused | withdrawn | superseded
+    reason: Mapped[str] = mapped_column(Text, default="")
+    backtest: Mapped[dict] = mapped_column(JSON, default=dict)  # what the change would have done to past alerts, as shown to the approver
+    proposed_by: Mapped[str] = mapped_column(String(40))
+    proposed_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    decided_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    decision_note: Mapped[str] = mapped_column(Text, default="")
+
+
+class Lookback(TenantScoped, Base):
+    """A lookback project: a past period run again through one scenario, usually with different settings, and worked to a conclusion."""
+
+    __tablename__ = "lookback"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    reason: Mapped[str] = mapped_column(Text, default="")  # why it is being done: a regulator's finding, a defect, a new typology
+    scenario: Mapped[str] = mapped_column(String(60))
+    params: Mapped[dict] = mapped_column(JSON, default=dict)  # the settings the period is run with
+    period_from: Mapped[datetime] = mapped_column(DateTime)
+    period_to: Mapped[datetime] = mapped_column(DateTime)
+    segment: Mapped[dict] = mapped_column(JSON, default=dict)  # which customers: {risk_ratings: [...]} or everyone
+    status: Mapped[str] = mapped_column(String(10), default="planned", index=True)  # planned | working | closed | cancelled
+    due: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(40))
+    created: Mapped[datetime] = mapped_column(DateTime, default=now)
+    preview: Mapped[dict] = mapped_column(JSON, default=dict)  # what a run would raise, counted before anything is raised
+    run_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    conclusion: Mapped[str] = mapped_column(Text, default="")
+    report: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # the figures as they stood when it closed
+    history: Mapped[list] = mapped_column(JSON, default=list)

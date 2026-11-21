@@ -237,3 +237,14 @@ dl.facts.dense{margin:8px 0 0;font-size:13px}dl.facts.dense dt,dl.facts.dense dd
 .rstack{display:flex;gap:2px;height:14px;min-width:4px}.rstack i{display:block;min-width:2px}.rstack i:last-child{border-radius:0 4px 4px 0}
 .rstack i.in{background:var(--series-1)}.rstack i.out{background:var(--series-2)}.rstack i.rest,.k.rest{background:#c9cedb}.k.rest{border-radius:2px}
 .cap::first-letter{text-transform:uppercase}.hold-act input[type=number]{min-height:34px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+/* detection governance: scenario settings, backtests, lookbacks */
+.scn{border-top:1px solid var(--line);padding:14px 0}.scn:first-of-type{border-top:0;padding-top:0}.scn.off .scn-rec{opacity:.55}
+.scn-rec{display:grid;grid-template-columns:150px minmax(120px,280px) 1fr;gap:12px;align-items:center;font-size:13.5px;margin:8px 0}.rstack i.open{background:var(--warn-bg);box-shadow:inset 0 0 0 1px #e4c66a}
+.scn table.factors{width:auto;min-width:min(100%,520px)}.scn table.factors input,.override-form table.factors input{width:110px;min-height:30px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.backtest{margin:10px 0}.backtest details{margin:6px 0}.backtest summary{cursor:pointer;font-size:13.5px}
+.bt-bars{display:grid;grid-template-columns:110px 1fr 40px;gap:6px 10px;align-items:center;font-size:13px;margin-bottom:6px}.bt-bars div{display:flex;gap:2px;height:14px}
+.bt-bars i{display:block;border-radius:0 4px 4px 0;min-width:2px}.bt-bars i.now,.k.now{background:#8b93a7}.bt-bars i.kept,.k.kept{background:var(--series-1)}.bt-bars i.added,.k.added{background:var(--series-2)}
+.bt-bars i.kept:not(:last-child){border-radius:0}.k.now,.k.kept,.k.added{border-radius:2px}.bt-bars b{text-align:right}
+.override .backtest .kpi{background:var(--surface)}
+.lb-prog{display:grid;grid-template-columns:minmax(120px,320px) 1fr;gap:12px;align-items:center;font-size:13px;margin:10px 0}.lb-prog div{height:10px;background:#e6e9f0;border-radius:5px;overflow:hidden}
+.lb-prog i{display:block;height:100%;background:var(--series-1)}.override-form input[type=date]{min-height:30px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;font:inherit}

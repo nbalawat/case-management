@@ -17,6 +17,7 @@ from .api.deps import signed_in
 from .api.entities import router as entities_router
 from .api.filings import router as filings_router
 from .api.kyc import router as kyc_router
+from .api.detection import router as detection_router
 from .api.fraud import router as fraud_router
 from .api.sanctions import router as sanctions_router
 from .api.operations import router as operations_router
@@ -50,9 +51,9 @@ async def lifespan(_: FastAPI):
         task.cancel()
 
 
-app = FastAPI(title="CaseForge demo API", version="0.12.0", lifespan=lifespan)
+app = FastAPI(title="CaseForge demo API", version="0.13.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
-for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router):
+for r in (router, work_router, workflows_router, access_router, platform_router, ask_router, data_router, agents_router, entities_router, filings_router, operations_router, kyc_router, fraud_router, sanctions_router, detection_router):
     app.include_router(r, dependencies=[Depends(signed_in)])
 app.include_router(auth_router)
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1
