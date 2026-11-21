@@ -98,8 +98,9 @@ class KafkaBus:
         names = list(names)
         if not names:
             return 0
+        admin = self._admin()  # held until the answers come: a collected client never completes its futures
         try:
-            futures = self._admin().delete_topics(names, operation_timeout=30)
+            futures = admin.delete_topics(names, operation_timeout=30)
         except ck.KafkaException as e:
             raise BusError(f"Kafka at {self._servers} cannot be reached: {e.args[0].str()}") from None
         gone = 0

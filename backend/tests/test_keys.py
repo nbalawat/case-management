@@ -53,6 +53,10 @@ class FakeTransit:
                     return httpx.Response(400, json={"errors": ["deletion is not allowed for this key"]})
                 del self.keys[name]
                 return httpx.Response(204)
+        if k is None and op == "encrypt":  # as real Transit does: encrypting under a missing key makes one ("upsert")
+            k = self.keys.setdefault(name, {"v": [secrets.token_bytes(32)], "deletable": False})
+        if k is None and op == "decrypt":  # as real Transit (OpenBao 2.x) answers: 400, not 404
+            return httpx.Response(400, json={"errors": ["encryption key not found"]})
         if k is None:
             return httpx.Response(404, json={"errors": []})
         if op == "keys" and parts[2] == "rotate":

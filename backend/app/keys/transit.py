@@ -58,13 +58,23 @@ class TransitKeyProvider:
         return self.info(tenant)
 
     def wrap(self, tenant: str, data_key: bytes) -> str:
+        # Transit makes a key on encrypt if there is none ("upsert"), which would quietly give a client whose key was
+        # destroyed a new one. So the key must exist first. Setting disable_upsert on the mount closes the same door
+        # on the server's side; this check holds whether or not the operator did.
+        if not self._read(tenant):
+            raise self._missing(tenant)
         out = self._call("POST", f"encrypt/{self._key(tenant)}", {"plaintext": base64.b64encode(data_key).decode()})
         if not out:
             raise self._missing(tenant)
         return out["data"]["ciphertext"]
 
     def unwrap(self, tenant: str, token: str) -> bytes:
-        out = self._call("POST", f"decrypt/{self._key(tenant)}", {"ciphertext": token})
+        try:
+            out = self._call("POST", f"decrypt/{self._key(tenant)}", {"ciphertext": token})
+        except KeyServiceError:
+            if not self._read(tenant):  # Transit answers a missing key with 400 "encryption key not found"
+                raise self._missing(tenant) from None
+            raise
         if not out:
             raise self._missing(tenant)
         return base64.b64decode(out["data"]["plaintext"])
