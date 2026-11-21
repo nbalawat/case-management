@@ -9,6 +9,7 @@ const TOOL: Record<string, (s: Step) => string> = {
   record: s => `Read ${s.input.object && s.input.object !== 'cases' ? `one of the ${words(s.input.object)}` : 'a case'}`,
   case_detail: () => 'Read a case', customer: () => 'Looked up a customer', team_workload: () => 'Read team workload',
   calculate: () => 'Worked out a figure',
+  policy_search: () => 'Searched the knowledge library',
 }
 export const toolLabel = (s: Step) => (TOOL[s.tool] ?? (() => words(s.tool)))(s)
 

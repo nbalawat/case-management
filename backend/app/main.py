@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from .api import feature_modules
+from .mcp import http as mcp_http
 from .api.deps import signed_in
 from .auth import dev_idp
 from . import workflow
@@ -47,7 +48,8 @@ async def lifespan(_: FastAPI):
         from .backbone import worker
 
         backbone = worker.start_in_process()
-    yield
+    async with mcp_running():  # the MCP server's request handling (stateless; see app/mcp/http.py)
+        yield
     if task:
         task.cancel()
     if backbone:
@@ -65,6 +67,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allo
 for feature in feature_modules():
     app.include_router(feature.router, dependencies=[] if getattr(feature, "PUBLIC", False) else [Depends(signed_in)])
 app.include_router(dev_idp.router)  # answers only when DEV_IDP=1
+mcp_running = mcp_http.mount(app)  # Ask's tools for MCP clients at /mcp, signed in like the rest of the API (app/mcp/http.py)
 observability.install(app)  # /healthz, /readyz, /metrics, request ids, structured logs, traces when configured
 
 DIST = Path(ROOT / "frontend" / "dist")
