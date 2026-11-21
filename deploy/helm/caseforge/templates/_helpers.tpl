@@ -26,7 +26,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "caseforge.pod" -}}
-serviceAccountName: {{ include "caseforge.serviceAccount" . }}
 securityContext: {{- toYaml .Values.podSecurityContext | nindent 2 }}
 {{- with .Values.imagePullSecrets }}
 imagePullSecrets: {{- toYaml . | nindent 2 }}

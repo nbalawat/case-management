@@ -1,6 +1,21 @@
 {{- if .Values.migrations.job }}
 # Brings the database to the newest schema before any pod of the new version starts. The pods themselves never
 # migrate here (MIGRATE_ON_START=0): one that finds an older schema stops and says so.
+# A pre-install hook runs before the release's own objects exist, so when the chart creates the service account the
+# job gets its own, created as a hook too. It needs only the database, so it gets no token.
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "caseforge.name" . }}-migrate
+  labels: {{- include "caseforge.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+automountServiceAccountToken: false
+---
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -20,6 +35,12 @@ spec:
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "caseforge.name" . }}-migrate
+      automountServiceAccountToken: false
+      {{- else }}
+      serviceAccountName: {{ include "caseforge.serviceAccount" . }}
+      {{- end }}
       {{- include "caseforge.pod" . | nindent 6 }}
       containers:
         - name: migrate

@@ -17,6 +17,7 @@ spec:
       annotations:
         checksum/env: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      serviceAccountName: {{ include "caseforge.serviceAccount" . }}
       {{- include "caseforge.pod" . | nindent 6 }}
       containers:
         - name: worker
@@ -44,6 +45,7 @@ spec:
       annotations:
         checksum/env: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      serviceAccountName: {{ include "caseforge.serviceAccount" . }}
       {{- include "caseforge.pod" . | nindent 6 }}
       containers:
         - name: durable
