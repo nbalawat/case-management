@@ -116,6 +116,8 @@ def from_definition(ct: dict) -> Design:
         nodes.append(Node(id=f"n_{sid}", type=btype, config=cfg))
     for i, t in enumerate(ct["transitions"]):
         cfg = {"label": t["label"], "roles": list(t["roles"]), "requires": list(t.get("requires", [])), "four_eyes": bool(t.get("four_eyes"))}
+        if t.get("forms"):
+            cfg["forms"] = list(t["forms"])
         if t.get("when"):
             cfg["when"] = cond.decompile(t["when"])
         edges.append(Edge(id=f"e_{i}", source=f"n_{t['from']}", target=f"n_{t['to']}", config=cfg))

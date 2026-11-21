@@ -64,7 +64,7 @@ export default function Palette({ cat, readOnly, hasStart, canAttach, onAdd, onA
         </section>
       )}
       {(cat.reference.forms.length > 0 || cat.reference.decision_tables.length > 0) && (
-        <p className="cf-help">Decision tables appear as facts in decisions; forms are chosen on a stage.</p>
+        <p className="cf-help">Decision tables appear as facts in decisions; forms are chosen on a step under Forms to complete.</p>
       )}
     </aside>
   )
