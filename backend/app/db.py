@@ -1,6 +1,8 @@
 """Database engine and session handling. SQLite by default, Postgres via DATABASE_URL."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -17,6 +19,8 @@ class Base(DeclarativeBase):
 def make_engine(url: str | None = None):
     url = url or settings.database_url
     kwargs = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {}
+    if url.startswith("sqlite:///") and ":memory:" not in url:
+        Path(url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)  # fresh checkout has no data/
     eng = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
         @event.listens_for(eng, "connect")
