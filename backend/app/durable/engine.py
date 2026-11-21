@@ -207,5 +207,7 @@ class TemporalEngine:
             self.reset()
             return {"engine": "temporal", "connected": False, "clocks": None, "workflows": None, "namespace": ns,
                     "note": "Temporal did not answer. People's steps on cases wait until it does; the sweep still checks stage clocks."}
-        return {"engine": "temporal", "connected": True, "clocks": n, "workflows": n, "namespace": ns,
+        from .encryption import describe
+
+        return {"engine": "temporal", "connected": True, "clocks": n, "workflows": n, "namespace": ns, "encryption": describe(),
                 "note": "Each open case is a durable Temporal workflow: people's steps are applied one at a time, in order, and its stage deadline is a durable timer."}

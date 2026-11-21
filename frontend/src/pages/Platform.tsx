@@ -13,7 +13,7 @@ type Backbone = {
   lake: { connected: boolean; note: string; tables: { name: string; rows: number; commits: number; last_commit: string | null }[] }
   search: { engine: string; names: number | null; note: string }
   graph: { engine: string; entities: number | null; links: number | null; note: string }
-  clocks: { engine: string; connected: boolean; clocks: number | null; workflows?: number | null; namespace?: string | null; note: string }
+  clocks: { engine: string; connected: boolean; clocks: number | null; workflows?: number | null; namespace?: string | null; encryption?: { encrypted: boolean; scope?: string; key_version?: number | null; problem?: string }; note: string }
   stream_jobs: StreamJobsView
   topics: { out: string[]; in: string[]; dead_letter: string }; streams: Stream[]
 }
@@ -60,7 +60,7 @@ function BackboneCard() {
       <h4>Payment network <Pill tone={data.graph.engine === 'age' ? 'good' : 'neutral'}>{data.graph.engine === 'age' ? 'Apache AGE' : 'Database'}</Pill></h4>
       <p className="muted">{data.graph.note}{data.graph.entities !== null && data.graph.links !== null && ` ${data.graph.entities.toLocaleString()} customers and counterparties and ${data.graph.links.toLocaleString()} relationships held for this client.`}</p>
       <h4>Case workflows <Pill tone={data.clocks.engine === 'temporal' && data.clocks.connected ? 'good' : 'neutral'}>{data.clocks.engine === 'temporal' ? (data.clocks.connected ? 'Temporal' : 'Temporal not answering') : 'In the application'}</Pill></h4>
-      <p className="muted">{data.clocks.note}{data.clocks.clocks !== null && ` ${data.clocks.clocks.toLocaleString()} case workflows running for this client now.`}{data.clocks.namespace && ` Namespace: ${data.clocks.namespace}.`}</p>
+      <p className="muted">{data.clocks.note}{data.clocks.clocks !== null && ` ${data.clocks.clocks.toLocaleString()} case workflows running for this client now.`}{data.clocks.namespace && ` Namespace: ${data.clocks.namespace}.`}{data.clocks.encryption && (data.clocks.encryption.encrypted ? ` Payloads are encrypted (${data.clocks.encryption.scope === 'per_client' ? 'a key per client' : 'one shared key'}, key version ${data.clocks.encryption.key_version}).` : ` Payloads are not encrypted${data.clocks.encryption.problem ? `: ${data.clocks.encryption.problem}` : ''}.`)}</p>
       <StreamJobs view={data.stream_jobs} onChange={reload} />
       <p className="muted small">Out: {data.topics.out.join(', ')}. Records that cannot be loaded go to {data.topics.dead_letter} with the reason.</p>
     </Card>
