@@ -276,3 +276,25 @@ def test_the_api_starts_and_stops_a_job_for_those_allowed(client, fake):
     fake.fail = "INSERT"
     refused = client.post("/api/stream-jobs/rapid_movement/start", headers=h("meridian", "maya"))
     assert refused.status_code == 502 and "Column 'nope' not found" in refused.json()["detail"]
+
+
+# ---- name screening runs on the client's own lists
+
+def test_name_screening_starts_on_the_clients_lists_and_shows_when_the_lists_have_moved_on(world, fake):  # noqa: F811
+    from app.sanctions import lists
+
+    with world.tenant(T) as s:
+        lists.load(s, "eu_list", [{"ref": "E1", "name": "Beta Shipping", "aliases": ["Beta Ship; O'Neil"]}], MAYA, name="EU list")
+        run = control.start(s, "sanctions_name", MAYA)
+        insert = fake.statements[-1]
+        assert "U&'Beta Shipping'" in insert and "U&'Volkov Maritime Trading'" in insert and "O'Neil" not in insert and "U&'Beta Ship\\003B O\\0027Neil'" in insert
+        assert any(st == "CREATE TEMPORARY FUNCTION WATCH_MATCH AS 'caseforge.WatchMatch'" for st in fake.statements)
+        assert run.params == {"threshold": 0.86, "names": 6, "ruled_out": 0, "list_fingerprint": run.params["list_fingerprint"]}
+        assert shown(s, "sanctions_name")["settings_changed"] is False
+        lists.load(s, "eu_list", [{"ref": "E1", "name": "Beta Shipping", "aliases": ["Beta Ship; O'Neil"]}, {"ref": "E2", "name": "Gamma Oil"}], MAYA, note="Issue 2")
+        assert shown(s, "sanctions_name")["settings_changed"] is True
+        again = control.restart(s, "sanctions_name", MAYA)
+        assert again.params["names"] == 7 and "U&'Gamma Oil'" in fake.statements[-1] and shown(s, "sanctions_name")["settings_changed"] is False
+    with world.tenant(OTHER) as s:
+        control.start(s, "sanctions_name", MAYA)
+        assert "Gamma Oil" not in fake.statements[-1] and "Beta Shipping" not in fake.statements[-1]  # another client's list is its own
