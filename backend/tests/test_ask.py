@@ -217,7 +217,8 @@ def test_case_detail_and_customer(book):
     one = tools.run(c, "case_detail", {"case_id": C[3]})
     assert one.data["case"]["outcome"] == "sar filed" and one.data["customer"]["name"] == "Alma Reyes" and one.case_ids == [C[3]]
     assert one.data["alerts"][0]["explanation"] == "Explanation 3" and one.data["narrative"] == "Narrative for case 3."
-    cu = tools.run(c, "customer", {"name_or_id": "alma"})
+    assert tools.run(c, "customer", {"name_or_id": "alma"}).data["customers"] == []  # none of Alma's cases is in Ana's queues
+    cu = tools.run(ctx(book, "tara"), "customer", {"name_or_id": "alma"})
     assert cu.data["customers"][0]["cases"] == 2 and cu.data["customers"][0]["sars_filed"] == 1 and set(cu.case_ids) == {C[1], C[3]}
     assert tools.run(c, "customer", {"name_or_id": "P2"}).data["customers"][0]["name"] == "Bo Chen"
     assert tools.run(c, "customer", {"name_or_id": "zzz"}).data["customers"] == []
@@ -481,7 +482,7 @@ EVAL = [  # question, asker, text the answer must contain: figures from the hand
     ("How often do reviewers agree with the agent on fraud cases?", "tara", "**100%** agreement with the agent"),
     ("how many cases involve politically exposed customers", "audra", "**2** cases"),
     (f"tell me about {C[3]}", "ana", "closed at **SAR filed**"),
-    ("what do we know about Alma Reyes", "ana", "2 case(s), 1 open, 1 SAR(s) filed, $60,000 alerted in total"),
+    ("what do we know about Alma Reyes", "tara", "2 case(s), 1 open, 1 SAR(s) filed, $60,000 alerted in total"),
     ("Who has the most open work?", "tara", "- Ivan Petrov (L2 investigator): 1 open"),
     ("Who has the most open work?", "ana", "Team workload needs the team view"),
     ("open cases by owner", "ana", "needs the team view"),

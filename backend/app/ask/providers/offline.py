@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from ..gateway import ModelTurn, ToolCall, ToolOutput, ToolSpec
+from .offline_landscape import named_object, plan as landscape_plan, write as landscape_write
 
 CASE_ID = re.compile(r"\bcase-[0-9a-f]{10}\b")
 COUNTRIES = {"united states": "US", "usa": "US", "mexico": "MX", "canada": "CA", "united kingdom": "GB", "uk": "GB", "britain": "GB",
@@ -365,16 +366,34 @@ WRITERS = {"breakdown": _write_breakdown, "list_cases": _write_list, "case_detai
 
 class OfflineConversation:
     def __init__(self, tools: list[ToolSpec], context: dict):
-        self.tools, self.context, self.plan = {t.name for t in tools}, context, None
+        self.tools, self.context, self.plan, self.other = {t.name for t in tools}, context, None, None
 
     def ask(self, question: str) -> ModelTurn:
+        objects = self.context.get("objects") or {}
+        self.other = landscape_plan(question, date.fromisoformat(self.context["today"]), objects) if objects else None
+        if self.other and self.other["tool"] in self.tools:
+            return ModelTurn("tools", tool_calls=[ToolCall("offline-1", self.other["tool"], self.other["args"])], model=OfflinePlanner.name)
+        self.other = None
         self.plan = plan(question, self.context, self.tools)
+        # A question about records this role may not read: ask for those records anyway, so the tool's refusal, with its
+        # reason, is the answer rather than an unrelated figure about cases. SARs are the exception: a case's SAR outcome
+        # is part of the case, so "how many SARs" stays a question about cases the person can see.
+        denied = named_object(question, self.context.get("objects_denied") or ())
+        if denied == "filings" and self.plan.understood and re.search(r"\bsars?\b", question.lower()):
+            denied = None
+        if denied and "breakdown" in self.tools:
+            return ModelTurn("tools", tool_calls=[ToolCall("offline-1", "breakdown", {"object": denied})], model=OfflinePlanner.name)
         return ModelTurn("tools", tool_calls=[ToolCall("offline-1", self.plan.tool, self.plan.args)], model=OfflinePlanner.name)
 
     def results(self, outputs: list[ToolOutput]) -> ModelTurn:
-        p, out = self.plan, outputs[0]
+        out = outputs[0]
         if out.error:
             return ModelTurn("answer", f"I could not answer that. {out.content['error']}", model=OfflinePlanner.name)
+        if self.other:
+            vocab = self.context["objects"][self.other["args"]["object"]]
+            text = landscape_write(self.other, out.content, vocab)
+            return ModelTurn("answer", f"{text}\n\nRead as: {self.other['reading']}.", model=OfflinePlanner.name)
+        p = self.plan
         text = WRITERS[p.tool](p, out.content)
         if not p.understood:
             text = ("I could not place that question, so here is the overall picture instead. The offline planner only recognises "
