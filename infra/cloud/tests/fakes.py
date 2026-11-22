@@ -48,6 +48,10 @@ class FakeTofu:
             if destroy:
                 return self.world.machine is not None
             return self.world.machine is None or self.world.machine["running"] != values["running"] or self.world.cidrs != values["allowed_cidrs"]
+        if destroy:
+            return self.world.setup_applied
+        if values.get("teardown"):
+            return not self.world.teardown_ready
         return not self.world.setup_applied
 
     def apply(self, plan: Path, state: Optional[Path] = None, var_file: Optional[Path] = None) -> None:
@@ -56,7 +60,12 @@ class FakeTofu:
             raise AssertionError("an encrypted plan cannot be applied without its variables")
         self.world.calls.append(("apply", root, destroy))
         if root != "machine":
-            self.world.setup_applied = True
+            if destroy:
+                self.world.setup_applied = False
+            elif values.get("teardown"):
+                self.world.teardown_ready = True
+            else:
+                self.world.setup_applied = True
             return
         if destroy:
             self.world.machine = None
@@ -102,6 +111,7 @@ class World:
     machine: Optional[Dict[str, Any]] = None
     cidrs: Optional[List[str]] = None
     setup_applied: bool = False
+    teardown_ready: bool = False
     pending: Any = None
     next_ip: str = "203.0.113.10"
     my_ip: Optional[str] = "198.51.100.7"

@@ -14,7 +14,8 @@ infra/bin/cloud.py up        # machine, Docker, the stack, the demo seed; waits 
 ssh caseforge                # sign in; while it is open the app is http://localhost:8000
 infra/bin/cloud.py stop      # stop paying for compute, keep the data
 infra/bin/cloud.py start     # back again (new address, picked up automatically)
-infra/bin/cloud.py down      # delete everything; nothing keeps billing
+infra/bin/cloud.py down      # delete the machine; nothing for it keeps billing
+infra/bin/cloud.py teardown  # delete every machine and everything setup created: the account is as it was
 ```
 
 The same commands are `make cloud-setup`, `make cloud-up`, `make cloud-stop`, `make cloud-start`, `make cloud-down`
@@ -116,6 +117,10 @@ Prices are on-demand list prices in us-east-1; `infra/bin/cloud.py cost` prints 
 | `stop` (or the automatic stop) | the machine, its disk, all data | the disk only | about $12 a month |
 | `down` | nothing: machine, disk, data, network and budget are deleted | nothing | $0 |
 | setup (stays after `down`) | state bucket, key, roles | the key and a few KB of state | about $1 a month |
+| `teardown` | nothing: every machine, then the state bucket and its contents, the roles and the GitHub OIDC provider | nothing (the key waits 7 days, AWS's minimum, before it is deleted, and does not bill meanwhile) | $0 |
+
+`teardown` asks you to type `delete everything`; it runs `down` for every machine first, then destroys the setup
+(with an administrator's credentials, as setup ran) and removes the operator profile from `~/.aws/config`.
 
 `down` asks you to type the machine's name. It needs only the setup on this computer, not the machine's own files,
 so it works from any computer that ran `setup` against the same account.

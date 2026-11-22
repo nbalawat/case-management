@@ -54,6 +54,14 @@ class Cloud(ABC):
         """One-time laptop configuration so later commands act as the least-privilege operator. Returns a note."""
         return None
 
+    def remove_operator(self) -> Optional[str]:
+        """Undo prepare_operator after a teardown. Returns a note."""
+        return None
+
+    def teardown_vars(self, region: str) -> Dict[str, Any]:
+        """Setup variables for the apply just before destroying it (for example: let the state store be emptied)."""
+        return {**self.setup_vars(region), "teardown": True}
+
     @abstractmethod
     def hourly_usd(self, size: str) -> float:
         """On-demand compute price per hour for `size`, an estimate."""

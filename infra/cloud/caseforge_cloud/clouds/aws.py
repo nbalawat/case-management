@@ -49,7 +49,10 @@ def write_operator_profile(path: Path, block: str) -> None:
         end = current.index(MARK_END, start) + len(MARK_END)
         current = (current[:start] + current[end:].lstrip("\n")).rstrip("\n")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text((current + "\n\n" if current.strip() else "") + block)
+    if not block:
+        path.write_text(current + "\n" if current.strip() else "")
+    else:
+        path.write_text((current + "\n\n" if current.strip() else "") + block)
     os.chmod(path, 0o600)
 
 
@@ -111,6 +114,13 @@ class Aws(Cloud):
         path = aws_config_path()
         write_operator_profile(path, operator_profile_block(setup["operator_role_arn"], setup["region"], source))
         return f"Wrote the [{OPERATOR_PROFILE}] profile to {path} (assumes the operator role from profile '{source}')."
+
+    def remove_operator(self) -> Optional[str]:
+        path = aws_config_path()
+        if not path.exists() or MARK_BEGIN not in path.read_text():
+            return None
+        write_operator_profile(path, "")
+        return f"Removed the [{OPERATOR_PROFILE}] profile from {path}."
 
     def hourly_usd(self, size: str) -> float:
         return HOURLY[size]

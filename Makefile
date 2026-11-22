@@ -1,4 +1,4 @@
-.PHONY: sso backup backup-drill observability lineage load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check cloud-setup cloud-up cloud-stop cloud-start cloud-down cloud-status cloud-test
+.PHONY: sso backup backup-drill observability lineage load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check cloud-setup cloud-up cloud-stop cloud-start cloud-down cloud-teardown cloud-status cloud-test
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -95,6 +95,9 @@ cloud-start:     ## Start the cloud machine again
 
 cloud-down:      ## Delete the cloud machine and everything created for it
 	python3 infra/bin/cloud.py down $(ARGS)
+
+cloud-teardown:  ## Delete every cloud machine and everything cloud-setup created
+	python3 infra/bin/cloud.py teardown $(ARGS)
 
 cloud-status:    ## Where the cloud machine is and what runs on it
 	python3 infra/bin/cloud.py status $(ARGS)

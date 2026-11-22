@@ -184,6 +184,26 @@ class LifecycleTest(unittest.TestCase):
         self.assertEqual(plan[3]["allowed_cidrs"], ["192.0.2.1/32"])
         self.assertIsNone(self.world.machine)
 
+    # ---- teardown
+    def test_teardown_deletes_machines_then_the_setup_and_cleans_this_computer(self):
+        life = self.setup_done()
+        life.up(Options(), wait=False)
+        life = self.world.lifecycle(assume_yes=False)
+        self.world.answers = ["yes"]
+        with self.assertRaises(UserError):
+            life.teardown()
+        self.assertIsNotNone(self.world.machine)
+        self.world.answers = ["delete everything"]
+        life.teardown()
+        self.assertIsNone(self.world.machine)
+        self.assertFalse(self.world.setup_applied)
+        order = [(c[1], c[2]) for c in self.world.calls if c[0] == "apply"]
+        self.assertEqual(order[-3:], [("machine", True), ("bootstrap", False), ("bootstrap", True)],
+                         "machines first, then the setup is opened for deletion, then destroyed")
+        self.assertIsNone(life.home.setup_outputs("aws"))
+        self.assertNotIn("caseforge-operator", (self.tmp / "aws-config").read_text())
+        self.assertFalse(life.assume_yes, "teardown must not leave questions switched off")
+
     # ---- status
     def test_status_runs_the_machines_status_or_explains_why_not(self):
         life = self.setup_done()

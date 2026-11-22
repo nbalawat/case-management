@@ -5,6 +5,7 @@
   stop     stop the machine, keep the disk and data (only storage bills)
   start    start it again (re-admits your current address)
   down     delete the machine and everything created for it (nothing keeps billing)
+  teardown down for every machine, then delete everything setup created too (the account is left as it was)
   status   where it is, what it costs, and what is running on it
   ssh      sign in with every console forwarded to localhost (same as `ssh caseforge`)
   logs     follow the stack's logs (or one service's)
@@ -62,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-wait", action="store_true")
     sub.add_parser("stop", parents=[common], help="stop the machine, keep its data")
     sub.add_parser("down", parents=[common], help="delete the machine and its data")
+    sub.add_parser("teardown", parents=[common], help="delete every machine and everything setup created")
     sub.add_parser("status", parents=[common], help="show the machine and its stack")
     p = sub.add_parser("ssh", parents=[common], help="sign in, consoles forwarded to localhost")
     p.add_argument("remote", nargs=argparse.REMAINDER, help="optional command to run instead of a shell")
@@ -89,7 +91,7 @@ def run(argv: Sequence[str], life: Optional[Lifecycle] = None) -> int:
     args = build_parser().parse_args(list(argv))
     cloud = get_cloud(args.cloud)
     life = life or Lifecycle(cloud=cloud, home=Home.default(), assume_yes=args.yes, as_caller=args.as_caller)
-    if not life.assume_yes and not sys.stdin.isatty() and args.command in ("setup", "up", "start", "stop", "down"):
+    if not life.assume_yes and not sys.stdin.isatty() and args.command in ("setup", "up", "start", "stop", "down", "teardown"):
         raise UserError("not a terminal: pass --yes to go ahead without being asked")
     cmd = args.command
     if cmd == "setup":
@@ -107,6 +109,8 @@ def run(argv: Sequence[str], life: Optional[Lifecycle] = None) -> int:
         life.set_running(args.name, False)
     elif cmd == "down":
         life.down(args.name)
+    elif cmd == "teardown":
+        life.teardown()
     elif cmd == "status":
         return life.status(args.name)
     elif cmd == "ssh":

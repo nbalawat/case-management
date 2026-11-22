@@ -319,6 +319,43 @@ class Lifecycle:
         self.refresh_ssh_config()
         self.out(f"'{name}' is gone." if changed else f"'{name}' did not exist; nothing to delete.")
 
+    def teardown(self) -> None:
+        """Delete every machine, then everything setup created, then this computer's setup files."""
+        setup = self._setup()
+        names = sorted(set(n for n, r in self.home.all_machine_records().items() if r.get("cloud") == self.cloud.name)
+                       | {"caseforge"})
+        self.out(f"This deletes, on {self.cloud.label} in {setup['region']}: every cloud machine ({', '.join(names)}) "
+                 "with its disk and data, then everything setup created: the state store and the machines' state, the "
+                 "operator and CI roles, and the state key (deleted after the cloud's shortest waiting period). "
+                 "Afterwards nothing bills.")
+        self.confirm("Tear everything down?", expect="delete everything")
+        asked, self.assume_yes = self.assume_yes, True
+        try:
+            for name in names:
+                self.down(name)
+            sdir = self.home.setup_dir(self.cloud.name)
+            tofu = self.tofu_factory(self.cloud.setup_root, sdir / "tofu", {})
+            var_file = sdir / "setup.tfvars.json"
+            write_json(var_file, self.cloud.teardown_vars(setup["region"]))
+            state, plan = sdir / "terraform.tfstate", sdir / "setup.tfplan"
+            tofu.init(var_file=var_file)
+            self.out("Allowing the state store to be deleted with its contents...")
+            if tofu.plan(out=plan, var_file=var_file, state=state):
+                tofu.apply(plan, state=state, var_file=var_file)
+            self.out("Deleting what setup created...")
+            if tofu.plan(out=plan, var_file=var_file, state=state, destroy=True):
+                tofu.apply(plan, state=state, var_file=var_file)
+            plan.unlink(missing_ok=True)
+        finally:
+            self.assume_yes = asked
+        (self.home.setup_dir(self.cloud.name) / "outputs.json").unlink(missing_ok=True)
+        note = self.cloud.remove_operator()
+        if note:
+            self.out(note)
+        self.refresh_ssh_config()
+        self.out(f"Torn down: nothing CaseForge created on {self.cloud.label} is left (apart from the key, which the "
+                 "cloud deletes at the end of its waiting period). `setup` starts again from nothing.")
+
     def status(self, name: str) -> int:
         record = self._known(name)
         machine = record["machine"]
