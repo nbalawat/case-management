@@ -22,19 +22,19 @@ class MachineScriptTest(unittest.TestCase):
         self.log = self.tmp / "calls"
         bin_dir = self.tmp / "bin"
         bin_dir.mkdir()
-        for tool in ("systemctl", "shutdown", "sudo"):
+        for tool in ("systemctl", "shutdown"):
             stub = bin_dir / tool
-            body = 'shift; [ "$1" = "-E" ] && shift; exec "$@"' if tool == "sudo" else f'echo "{tool} $*" >> "{self.log}"'
+            body = f'echo "{tool} $*" >> "{self.log}"'
             stub.write_text(f"#!/usr/bin/env bash\n{body}\n")
             stub.chmod(0o755)
         self.env = dict(os.environ, CASEFORGE_CONF=str(self.conf), CASEFORGE_SRC=str(self.src),
-                        PATH=f"{bin_dir}:{os.environ['PATH']}", SYSTEMCTL="systemctl", SHUTDOWN="shutdown")
+                        PATH=f"{bin_dir}:{os.environ['PATH']}", SYSTEMCTL="systemctl", SHUTDOWN="shutdown", CASEFORGE_SKIP_ROOT="1")
 
     def tearDown(self):
         self._tmp.cleanup()
 
     def run_script(self, *args, check=True):
-        result = subprocess.run(["bash", str(SCRIPT), *args], env=self.env, text=True, capture_output=True)
+        result = subprocess.run(["bash", str(SCRIPT), *args], env=self.env, text=True, capture_output=True, timeout=30)
         if check and result.returncode != 0:
             self.fail(f"caseforge {' '.join(args)} failed: {result.stderr}")
         return result
@@ -82,6 +82,14 @@ class MachineScriptTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("reset --yes", result.stderr)
         self.assertEqual(self.calls(), [])
+
+    def test_escalation_cannot_loop(self):
+        env = dict(self.env, CASEFORGE_SKIP_ROOT="0", CASEFORGE_ESCALATED="1")
+        if os.getuid() == 0:
+            self.skipTest("running as root: nothing to escalate")
+        result = subprocess.run(["bash", str(SCRIPT), "extend", "1"], env=env, text=True, capture_output=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("sudo did not provide it", result.stderr)
 
     def test_unknown_command(self):
         self.assertNotEqual(self.run_script("explode", check=False).returncode, 0)

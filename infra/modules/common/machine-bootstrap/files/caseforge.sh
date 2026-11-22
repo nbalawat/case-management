@@ -31,7 +31,13 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'caseforge: %s\n' "$*" >&2; exit 1; }
 # Git as the checkout's owner: root may not read a repository another user owns ("dubious ownership").
 git_as_owner() { if [ "$(id -un)" = "$OWNER" ]; then git "$@"; else sudo -u "$OWNER" git "$@"; fi; }
-need_root() { [ "$(id -u)" -eq 0 ] || exec sudo -E "$0" "$@"; }
+# Re-run as root through sudo once; CASEFORGE_ESCALATED stops a loop if sudo does not make us root.
+# CASEFORGE_SKIP_ROOT=1 runs as the current user (the unit tests, with systemctl and shutdown stubbed).
+need_root() {
+  [ "$(id -u)" -eq 0 ] || [ "${CASEFORGE_SKIP_ROOT:-0}" = 1 ] && return 0
+  [ "${CASEFORGE_ESCALATED:-0}" = 1 ] && die "needs root, and sudo did not provide it"
+  exec sudo -E CASEFORGE_ESCALATED=1 "$0" "$@"
+}
 
 set_conf() {  # set_conf KEY VALUE: replace or append KEY=VALUE in the settings file
   local key="$1" value="$2"
