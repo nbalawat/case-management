@@ -10,6 +10,10 @@ policies, GitOps) that is the same on every cloud. Together with the Helm charts
 > such as quota limits, region availability, provider behaviour the mocks do not model and organisation policies.
 > Plan on a dev subscription or project first.
 
+> **Just want the platform running in the cloud?** [`infra/cloud`](cloud/README.md) puts the whole Docker Compose
+> stack on one cloud machine with `infra/bin/cloud.py setup`, `up`, `stop`, `start` and `down`, used from a laptop
+> over `ssh caseforge`. It reuses the bootstrap stack below for its one-time setup.
+
 ## Decisions, and why
 
 | Decision | Why |

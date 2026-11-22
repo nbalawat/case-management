@@ -26,3 +26,15 @@ variable "permissions_boundary_arn" {
   type        = string
   default     = null
 }
+
+variable "machine_regions" {
+  description = "Regions the cloud machine may run in. Empty: the bootstrap's region."
+  type        = list(string)
+  default     = []
+}
+
+variable "machine_operators" {
+  description = "IAM ARNs allowed to assume the cloud machine's operator role. Empty: any identity in the account permitted to assume it."
+  type        = list(string)
+  default     = []
+}

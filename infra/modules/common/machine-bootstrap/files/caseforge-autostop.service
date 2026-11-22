@@ -1,0 +1,10 @@
+[Unit]
+Description=Stop the machine AUTO_STOP_HOURS after boot (disk kept) so a forgotten machine stops billing for compute
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/caseforge autostop
+
+[Install]
+WantedBy=multi-user.target

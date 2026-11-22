@@ -1,0 +1,21 @@
+[Unit]
+Description=CaseForge stack (the Makefile target in /etc/caseforge/machine.env)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/caseforge/machine.env
+# The owner runs the stack, as on a laptop; it is in the docker group.
+User=${ssh_user}
+ExecStart=/usr/local/bin/caseforge run
+ExecStop=/usr/local/bin/caseforge halt
+Restart=on-failure
+RestartSec=15
+# The first start builds every image and seeds the demo.
+TimeoutStartSec=0
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target
