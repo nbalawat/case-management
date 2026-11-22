@@ -65,7 +65,7 @@ jobs:
         env: {PY: "${{ matrix.python }}"}
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check --user uv
+          pipx install uv  # pipx: the runner's system Python refuses pip installs (PEP 668)
           ~/.local/bin/uv run --no-project --python "$PY" python -m unittest discover -v -s infra/cloud/tests -t infra/cloud/tests
 
   tflint:
