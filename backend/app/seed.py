@@ -48,10 +48,27 @@ SHELL_NEAR = {"Bluepeak Holdings SA": "Bluepeak Holding Group SA", "Meridian Tra
 SHELLS = ["Orion Global Consulting Ltd", "Bluepeak Holdings SA", "Meridian Trade Partners", "Sable Ridge Imports", "Quanta Ventures LLC"]
 
 
+DEMO_HOUR = 22  # UTC: late enough that every planted working-hours event of the last day is already in the past
+
+
+def demo_clock(at: datetime | None = None) -> datetime:
+    """The moment the demo history ends: the latest 22:00 UTC at or before `at` (default now).
+
+    Timestamps are laid out as "so many days back, at such an hour", so if the history ended at the real now the
+    first hours after midnight would push the last day's events into the future, shift the history and change which
+    cases are old enough to close or escalate. Anchoring the end to one time of day gives the same demo whenever it
+    is seeded; only the date moves.
+    """
+    at = at or now()
+    anchor = at.replace(hour=DEMO_HOUR, minute=0, second=0, microsecond=0)
+    return anchor if anchor <= at else anchor - timedelta(days=1)
+
+
 class Gen:
     def __init__(self, s: Session, seed: int = 7, end: datetime | None = None):
-        self.s, self.r, self.end, self.n = s, random.Random(seed), end or now(), 0
+        self.s, self.r, self.end, self.n = s, random.Random(seed), end or demo_clock(), 0
         self.txns: list[Transaction] = []
+        self.same_day: list[list[Transaction]] = []
         self.v = random.Random(seed + 1000)  # its own stream, so spelling variety does not disturb the planted patterns
 
     def shell(self) -> str:
@@ -85,11 +102,17 @@ class Gen:
         return t
 
     def settle(self) -> None:
-        """Shift the whole history back so nothing is dated after 'now'; patterns keep their shape."""
+        """Shift the whole history back so nothing is dated after its end; patterns keep their shape."""
         over = max(t.ts for t in self.txns) - self.end + timedelta(minutes=5)
         if over > timedelta(0):
             for t in self.txns:
                 t.ts -= over
+        for wires in self.same_day:  # a pattern counted per calendar month stays inside one day, so inside one month whatever the date
+            last = max(t.ts for t in wires)
+            spill = last - last.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=1)
+            if min(t.ts for t in wires).date() != last.date():
+                for t in wires:
+                    t.ts -= spill
 
     def baseline(self, p: Party, days: int = 90, per_day: float = 1.2) -> None:
         emp = self.r.choice(EMPLOYERS)
@@ -134,10 +157,11 @@ class Gen:
     def geo(self, lo: int, hi: int) -> Party:
         p = self.party("consultant", "high", pep=self.r.random() < 0.3)
         self.baseline(p)
-        start = self.when(lo, hi).replace(day=min(self.when(lo, hi).day, 20))
-        for i in range(self.r.randint(2, 4)):
-            self.txn(p, start + timedelta(days=i), self.r.uniform(6000, 24000), "out", "wire",
-                     self.shell(), self.r.choice(["IR", "SY", "MM"]))
+        # 09:00 to 16:59, and the wires two hours apart: one day (settle keeps it so), so one calendar month whatever the
+        # date. The second draw once picked a day of the month; it is still taken so the rest of the demo comes out the same.
+        start, _ = self.when(lo, hi), self.when(lo, hi)
+        self.same_day.append([self.txn(p, start + timedelta(hours=2 * i), self.r.uniform(6000, 24000), "out", "wire",
+                                       self.shell(), self.r.choice(["IR", "SY", "MM"])) for i in range(self.r.randint(2, 4))])
         return p
 
     def sanctions(self, lo: int, hi: int, name: str, country: str) -> Party:
@@ -208,13 +232,15 @@ class Desk:
         requests.answer_request(self.s, r, self.member(c), text, ts=min(at, self.g.end - timedelta(minutes=40)))
 
 
-def _work_monitoring(d: Desk, cases: list[Case]) -> None:
-    """Walk monitoring and sanctions cases through their workflows, mostly following the agent."""
+def _work_monitoring(d: Desk, cases: list[Case], confirmed: frozenset[str] | set[str] = frozenset()) -> None:
+    """Walk monitoring and sanctions cases through their workflows, mostly following the agent.
+
+    People escalate the screening hits on the customers in `confirmed`, whatever the agent recommends."""
     g = d.g
     for n, c in enumerate(cases):
         age_h = (g.end - c.created).total_seconds() / 3600
         follow = g.r.random() < 0.88
-        escalate = (c.agent_recommendation == "escalate") == follow
+        escalate = (c.agent_recommendation == "escalate") == follow or (c.case_type == "sanctions_hit" and c.party_id in confirmed)
         t = c.created + timedelta(hours=g.r.randint(2, 20))
         if c.case_type == "sanctions_hit":
             if age_h < 30:
@@ -588,6 +614,9 @@ PROFILES = {
 }
 SANCTIONS = [("Volkov Maritime Trading", "RU", 1, 3), ("Darya Shipping Lines", "IR", 8, 30), ("Volkov Maritime Trading Co", None, 1, 35),
              ("Darya Shipping Line LLC", None, 1, 35), ("Zarin Exchange Houses", None, 1, 35), ("Northgate Petrochem FZC", None, 1, 35)]
+# A variant of a listed name that the screening agent rates weak but that is the listed firm. People confirm it, so
+# an evaluation of an agent that would discount weak hits always has a true match it would have closed.
+CONFIRMED_DESPITE_NAME = "Volkov Maritime Trading Co"
 
 
 def _seed_media(s: Session, end: datetime, geo: list[Party], rapid: list[Party], benign: list[Party], ordinary: list[Party]) -> None:
@@ -653,8 +682,11 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     geo = [g.geo(1, 40) for _ in range(profile.geo)]
     s.flush()  # customers must exist before anything that points at them by id alone
     _seed_media(s, g.end, geo, rapid, benign, ordinary)
+    confirmed = set()  # the planted weak name match that people confirm: the case an agent must not be allowed to discount
     for name, country, lo, hi in SANCTIONS[:profile.sanctions]:
-        g.sanctions(lo, hi, name, country or g.r.choice(["DE", "SG", "AE", "GB"]))
+        p = g.sanctions(lo, hi, name, country or g.r.choice(["DE", "SG", "AE", "GB"]))
+        if name == CONFIRMED_DESPITE_NAME:
+            confirmed.add(p.id)
     g.settle()
     # Fraud is planted after settling, so "35 minutes ago" stays 35 minutes ago.
     planted = _plant_fraud(g, g.r.sample(ordinary, profile.fraud)) if "fraud_claim" in types else []
@@ -665,7 +697,7 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     for c in cases:
         investigate(s, c, ts=c.created + timedelta(minutes=2))
     desk = Desk(s, g)
-    _work_monitoring(desk, sorted(cases, key=lambda c: c.created))
+    _work_monitoring(desk, sorted(cases, key=lambda c: c.created), confirmed)
     _seed_fraud(desk, planted)
     if "kyc_refresh" in types:
         _seed_kyc_refresh(desk, profile.kyc_refresh)
@@ -815,7 +847,7 @@ def _alder_own_workflow(s: Session) -> None:
     publishing.publish(s, source, admin, "Medium-risk clients now go to enhanced due diligence; analyst review within two days.")
     ct = load_case_types(tenant_of(s))["kyc_refresh"]
     for p in s.scalars(select(Party).where(Party.risk_rating == "medium").order_by(Party.id).limit(2)):
-        create_case(s, ct, p.id, "medium", created=now() - timedelta(hours=5), actor="kyc-scheduler")
+        create_case(s, ct, p.id, "medium", created=demo_clock() - timedelta(hours=5), actor="kyc-scheduler")
 
 
 def _clear_evidence(tenant_id: str) -> None:
@@ -840,17 +872,18 @@ def seed_demo() -> dict:
                 _alder_own_workflow(s)
     from .ingest.locations import store_for
 
+    end = demo_clock()
     for n, client in enumerate(DEMO_CLIENTS):
         tid = client["tenant_id"]
         with session_scope(tid) as s:
-            out[tid]["landed"] = land_core_banking_files(store_for(tid, "landing"), now(), seed=11 + n)
+            out[tid]["landed"] = land_core_banking_files(store_for(tid, "landing"), end, seed=11 + n)
             admin = next(p for p in policy_of(tid).people.values() if p.can("load_data"))
             register_core_banking_sources(s, admin.id)
             from .lineage import demo as lineage_demo
 
-            out[tid]["lineage_events"] = lineage_demo.seed(s, now(), store_for(tid, "landing").url)
+            out[tid]["lineage_events"] = lineage_demo.seed(s, end, store_for(tid, "landing").url)
     out["managed_service"] = seed_managed_service()
-    out["sample_feed_rows"] = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", now())
+    out["sample_feed_rows"] = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", end)
     return out
 
 
