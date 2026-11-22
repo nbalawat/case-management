@@ -201,7 +201,8 @@ cmd_cloudcheck() {
   # On AWS the key service is KMS; elsewhere the stack's own KEY_PROVIDER applies.
   [ -n "${account:-}" ] && keys=(-e KEY_PROVIDER=aws-kms -e "AWS_REGION=$region" -e "KMS_REGION=$region")
   cd "$SRC"
-  image="$(docker inspect --format '{{.Image}}' "$(docker compose ps -q app 2>/dev/null | head -1)" 2>/dev/null)" \
+  # The image by name: with Docker's containerd image store, the container's .Image digest cannot be run.
+  image="$(docker inspect --format '{{.Config.Image}}' "$(docker compose ps -q app 2>/dev/null | head -1)" 2>/dev/null)" \
     || die "the app container is not there yet; wait for the stack (caseforge wait) and try again"
   # The host's network, so the container reaches the instance's credentials with IMDSv2's hop limit of 1 kept as is:
   # the stack's own containers, on Docker's bridge network, still cannot.
