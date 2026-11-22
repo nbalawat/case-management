@@ -27,7 +27,7 @@ from .db import Base, engine, ensure_schema, session_scope
 from .detection.engine import run_detection
 from .domain.access import Persona
 from .customers import demo as customers_demo
-from .domain.models import Account, Case, MediaItem, Party, Transaction, now, repeatable_ids, side_ids
+from .domain.models import Account, Case, CaseEvent, MediaItem, Party, Transaction, now, repeatable_ids, side_ids
 from .domain.personas import policy_of
 from .tenancy import tenant_of
 from .tenants.onboarding import onboard, set_filing
@@ -319,6 +319,8 @@ def _work_qa(d: Desk) -> None:
     # sampled varies from run to run, so the choice must not depend on the sample.
     monitoring = [c for c in due if (p := d.s.get(Case, c.parent_id)) is not None and p.case_type == "tm_alert_investigation"]
     to_fail = (monitoring or due)[-1] if due else None
+    if not [c for c in reviews if c not in due] + [c for n, c in enumerate(due) if n % 4 == 3 and c is not to_fail]:
+        _add_to_qa_sample(d)  # which closures the sampler picks depends on case ids: make sure one review waits to be scored
     for n, c in enumerate(due):
         if c is to_fail:
             at = d.g.end - timedelta(hours=7)
@@ -338,6 +340,20 @@ def _work_qa(d: Desk) -> None:
                 marks["evidence_complete"] = {"mark": "partly", "root_cause": "missing_evidence"}
             scorecard.score(d.s, c, d.own(c, at - timedelta(hours=1)), marks, ts=min(at, d.g.end - timedelta(hours=1)) - timedelta(minutes=30))
             d.step(c, "passed", at)
+
+
+def _add_to_qa_sample(d: Desk) -> None:
+    """A QA lead adds yesterday's most recent monitoring closure to the sample, so the demo has a review waiting."""
+    from .cases import qa
+
+    at = d.g.end - timedelta(hours=24)
+    closed = d.s.scalars(select(Case).where(Case.case_type == "tm_alert_investigation", Case.closed.is_not(None), Case.closed <= at)
+                         .order_by(Case.closed.desc(), Case.id)).all()
+    pick = next((c for c in closed if not (c.data or {}).get("qa_done")), None)
+    if pick is not None:
+        closer = d.s.scalars(select(CaseEvent.actor).where(CaseEvent.case_id == pick.id, CaseEvent.actor_kind == "human")
+                             .order_by(CaseEvent.ts.desc())).first() or ""
+        qa.open_review(d.s, pick, closer, at, {"added_by": "qa lead"})
 
 
 APPLICANTS = [("Helena Brandt", "architect", "low", False, 30), ("Rashid Al-Amin", "import-export trader", "high", False, 70),
