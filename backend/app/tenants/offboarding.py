@@ -403,6 +403,10 @@ def offboard(tenant_id: str, actor: str, confirm: str) -> dict:
         erased["key"] = {k: v for k, v in client_keys.destroy(tenant_id, actor).items() if k in ("provider", "destroyed", "documents", "summary")}
         erased["database"] = _erase_rows(tenant_id)
         with session_scope(platform=True) as s:
+            from ..auth.models import AuthSession  # its people's sign-in sessions, tokens included
+
+            n = s.execute(delete(AuthSession).where(AuthSession.realm == tenant_id)).rowcount
+            erased["database"] |= {"auth_session": int(n)} if n else {}
             s.delete(_client_row(s, tenant_id))
             rec = s.get(Offboarding, oid)
             rec.status, rec.completed_by, rec.completed_at, rec.erased, rec.remains, rec.error = "completed", actor, _now(), erased, remains, ""

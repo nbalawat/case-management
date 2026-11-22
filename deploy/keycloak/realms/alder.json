@@ -1,0 +1,309 @@
+{
+  "realm": "alder",
+  "enabled": true,
+  "displayName": "Alder Private Bank",
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 43200,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "clients": [
+    {
+      "clientId": "caseforge-web",
+      "name": "CaseForge",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/api/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8000/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "caseforge audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "caseforge-web",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "AML Investigators"
+    },
+    {
+      "name": "Internal Audit"
+    }
+  ],
+  "users": [
+    {
+      "username": "mira",
+      "enabled": true,
+      "firstName": "Mira",
+      "lastName": "Solberg",
+      "email": "mira@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "theo",
+      "enabled": true,
+      "firstName": "Theo",
+      "lastName": "Varga",
+      "email": "theo@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "ines",
+      "enabled": true,
+      "firstName": "Ines",
+      "lastName": "Carvalho",
+      "email": "ines@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "beth",
+      "enabled": true,
+      "firstName": "Beth",
+      "lastName": "Larkin",
+      "email": "beth@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "carl",
+      "enabled": true,
+      "firstName": "Carl",
+      "lastName": "Jensen",
+      "email": "carl@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "dana",
+      "enabled": true,
+      "firstName": "Dana",
+      "lastName": "Whitfield",
+      "email": "dana@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "noel",
+      "enabled": true,
+      "firstName": "Noel",
+      "lastName": "Adair",
+      "email": "noel@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "vera",
+      "enabled": true,
+      "firstName": "Vera",
+      "lastName": "Lindholm",
+      "email": "vera@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "lars",
+      "enabled": true,
+      "firstName": "Lars",
+      "lastName": "Engel",
+      "email": "lars@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "june",
+      "enabled": true,
+      "firstName": "June",
+      "lastName": "Abara",
+      "email": "june@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "gwen",
+      "enabled": true,
+      "firstName": "Gwen",
+      "lastName": "Ashby",
+      "email": "gwen@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "otto",
+      "enabled": true,
+      "firstName": "Otto",
+      "lastName": "Reinhardt",
+      "email": "otto@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "ruth",
+      "enabled": true,
+      "firstName": "Ruth",
+      "lastName": "Okafor",
+      "email": "ruth@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "zara",
+      "enabled": true,
+      "firstName": "Zara",
+      "lastName": "Khan",
+      "email": "zara@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/AML Investigators"
+      ]
+    },
+    {
+      "username": "ines.audit",
+      "enabled": true,
+      "firstName": "Ines",
+      "lastName": "Duarte",
+      "email": "ines.audit@alder.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/Internal Audit"
+      ]
+    }
+  ]
+}

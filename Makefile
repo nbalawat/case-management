@@ -1,7 +1,17 @@
-.PHONY: backup backup-drill observability lineage load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
+.PHONY: sso backup backup-drill observability lineage load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
+
+# Sign-in through Keycloak: each demo client signs in through a realm of its own, platform staff through another.
+# Users are the people each client's access policy names; every password is "caseforge". Keycloak's admin console
+# is on http://localhost:8080 (admin / caseforge-local-only).
+SSO_ISSUERS := meridian=http://localhost:8080/realms/meridian,kestrel=http://localhost:8080/realms/kestrel,alder=http://localhost:8080/realms/alder
+
+sso:             ## Docker: the demo with sign-in through Keycloak (http://localhost:8080) instead of the persona picker
+	AUTH_MODE=oidc API_SECRET_KEY=caseforge-local-only-session-key-0123456789 OIDC_CLIENTS='$(SSO_ISSUERS)' \
+	OIDC_OPERATOR_ISSUER=http://localhost:8080/realms/platform OIDC_OPERATOR_AUDIENCE=caseforge-web OIDC_OPERATOR_MFA=0 \
+	OIDC_BACKCHANNEL=http://localhost:8080=http://keycloak:8080 docker compose --profile sso up --build
 
 # An Iceberg catalog kept in the demo's own Postgres, with the tables on a Docker volume.
 GRAPH := age://caseforge:caseforge-local-only@graph:5432/graph

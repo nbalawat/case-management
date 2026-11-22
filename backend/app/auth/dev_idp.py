@@ -28,6 +28,8 @@ router = APIRouter(prefix="/dev-idp")
 _private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 KID = "dev-" + secrets.token_hex(4)
 _codes: dict[str, dict] = {}
+_refresh: dict[str, dict] = {}  # refresh token -> who it is for; each is used once (rotation, as Keycloak can do)
+REFRESH_TTL = 8 * 3600
 
 
 def issuer(realm: str) -> str:
@@ -79,7 +81,8 @@ def discovery(realm: str):
     _people(realm)
     base = issuer(realm)
     return {"issuer": base, "authorization_endpoint": f"{base}/authorize", "token_endpoint": f"{base}/token", "jwks_uri": f"{base}/jwks",
-            "response_types_supported": ["code"], "grant_types_supported": ["authorization_code"], "subject_types_supported": ["public"],
+            "end_session_endpoint": f"{base}/logout", "revocation_endpoint": f"{base}/revoke",
+            "response_types_supported": ["code"], "grant_types_supported": ["authorization_code", "refresh_token"], "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256"], "code_challenge_methods_supported": ["S256"]}
 
 
@@ -134,6 +137,11 @@ async def token(realm: str, request: Request):
     form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
     grant_type, code, redirect_uri = form.get("grant_type", ""), form.get("code", ""), form.get("redirect_uri", "")
     client_id, code_verifier = form.get("client_id", ""), form.get("code_verifier", "")
+    if grant_type == "refresh_token" and client_id == CLIENT_ID:
+        held = _refresh.pop(form.get("refresh_token", ""), None)  # a refresh token works once
+        if held is None or held["realm"] != realm or time.time() - held["at"] > REFRESH_TTL or not _still_here(realm, held["user"]):
+            raise HTTPException(400, "invalid_grant")
+        return _tokens(realm, held["user"], {})
     grant = _codes.pop(code, None)  # a code works once
     if grant_type != "authorization_code" or client_id != CLIENT_ID or grant is None:
         raise HTTPException(400, "invalid_grant")
@@ -141,6 +149,37 @@ async def token(realm: str, request: Request):
     if grant["realm"] != realm or grant["redirect_uri"] != redirect_uri or time.time() - grant["at"] > CODE_TTL \
             or not secrets.compare_digest(challenge, grant["challenge"]):
         raise HTTPException(400, "invalid_grant")
-    extra = {"nonce": grant["nonce"]} if grant["nonce"] else {}
-    signed = mint(realm, grant["user"], **extra)
-    return {"access_token": signed, "id_token": signed, "token_type": "Bearer", "expires_in": TOKEN_TTL}
+    return _tokens(realm, grant["user"], {"nonce": grant["nonce"]} if grant["nonce"] else {})
+
+
+def _tokens(realm: str, user: str, extra: dict) -> dict:
+    refresh = secrets.token_urlsafe(32)
+    _refresh[refresh] = {"realm": realm, "user": user, "at": time.time()}
+    signed = mint(realm, user, **extra)
+    return {"access_token": signed, "id_token": signed, "refresh_token": refresh, "token_type": "Bearer", "expires_in": TOKEN_TTL}
+
+
+def _still_here(realm: str, user: str) -> bool:
+    try:
+        return user in {pid for pid, _, _ in _people(realm)}
+    except HTTPException:
+        return False
+
+
+@router.post("/{realm}/revoke")
+async def revoke(realm: str, request: Request):
+    """RFC 7009: forget a refresh token. Answers 200 whether or not it was known."""
+    form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
+    held = _refresh.get(form.get("token", ""))
+    if held is not None and held["realm"] == realm:
+        _refresh.pop(form["token"], None)
+    return {}
+
+
+@router.get("/{realm}/logout")
+def logout(realm: str, post_logout_redirect_uri: str = "", id_token_hint: str = "", client_id: str = ""):
+    """RP-initiated logout: the development provider keeps no sign-in of its own, so it only sends the browser back."""
+    _people(realm)
+    if post_logout_redirect_uri and _redirect_ok(post_logout_redirect_uri):
+        return RedirectResponse(post_logout_redirect_uri, status_code=302)
+    return HTMLResponse("<!doctype html><title>Signed out</title><p>You are signed out.</p>")

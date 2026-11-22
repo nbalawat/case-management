@@ -1,0 +1,245 @@
+{
+  "realm": "kestrel",
+  "enabled": true,
+  "displayName": "Kestrel Payments",
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 43200,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "clients": [
+    {
+      "clientId": "caseforge-web",
+      "name": "CaseForge",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/api/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8000/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "caseforge audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "caseforge-web",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "AML Investigators"
+    },
+    {
+      "name": "Internal Audit"
+    }
+  ],
+  "users": [
+    {
+      "username": "nia",
+      "enabled": true,
+      "firstName": "Nia",
+      "lastName": "Okoye",
+      "email": "nia@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "dev",
+      "enabled": true,
+      "firstName": "Dev",
+      "lastName": "Malhotra",
+      "email": "dev@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "ravi",
+      "enabled": true,
+      "firstName": "Ravi",
+      "lastName": "Shah",
+      "email": "ravi@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "cleo",
+      "enabled": true,
+      "firstName": "Cleo",
+      "lastName": "Martin",
+      "email": "cleo@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "joy",
+      "enabled": true,
+      "firstName": "Joy",
+      "lastName": "Tanaka",
+      "email": "joy@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "sam",
+      "enabled": true,
+      "firstName": "Sam",
+      "lastName": "Whitaker",
+      "email": "sam@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "pat",
+      "enabled": true,
+      "firstName": "Pat",
+      "lastName": "Novak",
+      "email": "pat@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "noor",
+      "enabled": true,
+      "firstName": "Noor",
+      "lastName": "Rahman",
+      "email": "noor@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "eli",
+      "enabled": true,
+      "firstName": "Eli",
+      "lastName": "Brandt",
+      "email": "eli@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "zara",
+      "enabled": true,
+      "firstName": "Zara",
+      "lastName": "Khan",
+      "email": "zara@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/AML Investigators"
+      ]
+    },
+    {
+      "username": "ines.audit",
+      "enabled": true,
+      "firstName": "Ines",
+      "lastName": "Duarte",
+      "email": "ines.audit@kestrel.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/Internal Audit"
+      ]
+    }
+  ]
+}

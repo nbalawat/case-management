@@ -95,7 +95,8 @@ FACTORY = {
     "AccessEvent": lambda k: m.AccessEvent(actor="x", org="provider", kind="provider.request"),
 }
 # Tables that hold no client data at all: the client list itself and the provider's own staff directory.
-PLATFORM_TABLES = {"Tenant", "ProviderStaff", "Offboarding"}  # Offboarding outlives the client it records, so it cannot be the client's
+PLATFORM_TABLES = {"Tenant", "ProviderStaff", "Offboarding",  # Offboarding outlives the client it records, so it cannot be the client's
+                   "AuthSession"}  # a sign-in session exists before it is known which client it is for, and staff have one too
 ORDER = ["Party", "Account", "Transaction", "Case", "Alert"]  # parents first; the rest in any order
 
 

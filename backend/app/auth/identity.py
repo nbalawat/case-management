@@ -45,7 +45,21 @@ def provider_of(rt: TenantRuntime) -> Provider | None:
     cfg = (rt.settings or {}).get("identity")
     if cfg:
         return Provider(**cfg)
+    declared = configured().get(rt.id)
+    if declared:
+        return declared
     return dev_idp.provider(rt.id) if settings.dev_idp else None
+
+
+def configured() -> dict[str, Provider]:
+    """The providers OIDC_CLIENTS declares, by client. A deployment managed as code sets these instead of the console."""
+    out = {}
+    for pair in filter(None, (x.strip() for x in settings.oidc_clients.split(","))):
+        tenant, _, issuer = pair.partition("=")
+        if tenant.strip() and trusted_url(issuer.strip()):
+            aud = settings.oidc_clients_audience
+            out[tenant.strip()] = Provider(issuer.strip(), aud, PERSON_CLAIMS[0], aud)
+    return out
 
 
 def operator_provider() -> Provider | None:

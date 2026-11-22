@@ -1,0 +1,122 @@
+{
+  "realm": "platform",
+  "enabled": true,
+  "displayName": "Platform staff",
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 43200,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "clients": [
+    {
+      "clientId": "caseforge-web",
+      "name": "CaseForge",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/api/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8000/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "caseforge audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "caseforge-web",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "groups": [],
+  "users": [
+    {
+      "username": "olivia",
+      "enabled": true,
+      "firstName": "Olivia",
+      "lastName": "Grant",
+      "email": "olivia@provider.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "priya",
+      "enabled": true,
+      "firstName": "Priya",
+      "lastName": "Raman",
+      "email": "priya@provider.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "marcus",
+      "enabled": true,
+      "firstName": "Marcus",
+      "lastName": "Webb",
+      "email": "marcus@provider.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    },
+    {
+      "username": "tomas",
+      "enabled": true,
+      "firstName": "Tomas",
+      "lastName": "Lindqvist",
+      "email": "tomas@provider.example",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "caseforge",
+          "temporary": false
+        }
+      ],
+      "groups": []
+    }
+  ]
+}
