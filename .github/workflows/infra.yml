@@ -48,6 +48,23 @@ jobs:
       - name: Tests against mocked providers
         run: infra/bin/each.sh test
 
+  cloud-machine:
+    name: Cloud machine command and on-machine script
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]  # 3.9: the oldest the command supports (macOS's own python3)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with: {python-version: "${{ matrix.python }}"}
+      - name: ShellCheck the on-machine script
+        run: shellcheck infra/modules/common/machine-bootstrap/files/caseforge.sh
+      - name: Unit tests
+        run: python -m unittest discover -v -s infra/cloud/tests -t infra/cloud/tests
+
   tflint:
     name: TFLint (AWS, Azure and Google rulesets)
     runs-on: ubuntu-latest

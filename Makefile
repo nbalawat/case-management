@@ -1,4 +1,4 @@
-.PHONY: sso backup backup-drill observability lineage load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check
+.PHONY: sso backup backup-drill observability lineage load-test lake-backfill migration full streaming flink-job backbone backbone-cdc demo dev-api dev-ui test seed build reset infra-fmt infra-contract infra-validate infra-test infra-lint infra-scan infra-lock charts-check cloud-setup cloud-up cloud-stop cloud-start cloud-down cloud-status cloud-test
 
 demo:            ## Docker: Postgres + app on http://localhost:8000
 	docker compose up --build
@@ -78,6 +78,29 @@ seed:            ## Reset the demo data
 
 reset:           ## Docker: wipe the database and document volumes
 	docker compose down -v
+
+# ---- The cloud machine (infra/cloud/README.md): the whole stack on one cloud VM, used over `ssh caseforge`.
+# These create and delete real cloud resources, and each asks before it changes anything. ARGS="--size xlarge" etc.
+cloud-setup:     ## Once per cloud account: state store, state key, least-privilege operator role, SSH config include
+	python3 infra/bin/cloud.py setup $(ARGS)
+
+cloud-up:        ## Create or update the cloud machine and start the full stack on it; then: ssh caseforge
+	python3 infra/bin/cloud.py up $(ARGS)
+
+cloud-stop:      ## Stop the cloud machine, keep its disk and data (only storage bills)
+	python3 infra/bin/cloud.py stop $(ARGS)
+
+cloud-start:     ## Start the cloud machine again
+	python3 infra/bin/cloud.py start $(ARGS)
+
+cloud-down:      ## Delete the cloud machine and everything created for it
+	python3 infra/bin/cloud.py down $(ARGS)
+
+cloud-status:    ## Where the cloud machine is and what runs on it
+	python3 infra/bin/cloud.py status $(ARGS)
+
+cloud-test:      ## Unit tests of the cloud machine command and the on-machine script (no cloud needed)
+	python3 -m unittest discover -s infra/cloud/tests -t infra/cloud/tests
 
 # ---- Infrastructure as code and charts (infra/README.md). Nothing here touches a cloud account.
 TOFU ?= tofu

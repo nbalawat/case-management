@@ -211,3 +211,14 @@ resource "aws_iam_role_policy" "apply_iam" {
   role     = aws_iam_role.github[each.key].id
   policy   = data.aws_iam_policy_document.apply_iam.json
 }
+
+# ---- the cloud machine (infra/bin/cloud.py): its least-privilege operator role and the machine's instance profile
+module "machine_operator" {
+  source                   = "../../../modules/aws/machine-operator"
+  prefix                   = var.prefix
+  regions                  = length(var.machine_regions) > 0 ? var.machine_regions : [var.region]
+  state_bucket_arn         = aws_s3_bucket.state.arn
+  state_key_arn            = module.state_key.key_arn
+  trusted_principals       = var.machine_operators
+  permissions_boundary_arn = var.permissions_boundary_arn
+}

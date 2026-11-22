@@ -1,0 +1,52 @@
+#cloud-config
+# CaseForge cloud machine (infra/modules/common/machine-bootstrap). Ubuntu 24.04 on any cloud.
+users:
+  - name: ${ssh_user}
+    gecos: CaseForge
+    shell: /bin/bash
+    groups: [sudo]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+ssh_pwauth: false
+disable_root: true
+package_update: true
+package_upgrade: true
+packages: [ca-certificates, curl, git, make, jq, unattended-upgrades]
+
+write_files:
+  - path: /etc/caseforge/machine.env
+    permissions: "0644"
+    content: |
+      ${indent(6, settings)}
+  - path: /usr/local/bin/caseforge
+    permissions: "0755"
+    encoding: b64
+    content: ${helper}
+  - path: /etc/systemd/system/caseforge.service
+    permissions: "0644"
+    encoding: b64
+    content: ${service}
+  - path: /etc/systemd/system/caseforge-autostop.service
+    permissions: "0644"
+    encoding: b64
+    content: ${autostop}
+  # OpenSearch needs more memory map areas than Ubuntu allows by default.
+  - path: /etc/sysctl.d/90-caseforge.conf
+    permissions: "0644"
+    content: |
+      vm.max_map_count=262144
+  - path: /etc/ssh/sshd_config.d/90-caseforge.conf
+    permissions: "0644"
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+      AllowUsers ${ssh_user}
+
+runcmd:
+  - [sysctl, --system]
+  - [systemctl, reload, ssh]
+  - [/usr/local/bin/caseforge, provision]
