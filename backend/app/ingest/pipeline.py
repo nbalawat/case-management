@@ -15,6 +15,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..lineage import jobs as lineage_jobs
 from ..domain.models import DataSource, IngestedObject, PipelineRun, new_id, now
 from ..storage import ObjectInfo, ObjectStore, StorageError, safe_key
 from ..tenancy import tenant_of
@@ -377,6 +378,11 @@ def _finish(s: Session, source: DataSource, run: PipelineRun, totals: dict) -> P
     source.last_run_at = run.finished
     source.state = dict(source.state or {}) | {"last_status": run.status, "last_run": run.id}
     s.flush()
+    try:
+        store_url = locations.root_of(run.tenant_id, source.root)["url"]
+    except StorageError:
+        store_url = None
+    lineage_jobs.pipeline_run(s, source, run, totals, store_url)
     return run
 
 

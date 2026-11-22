@@ -696,6 +696,9 @@ def seed_tenant(s: Session, profile: Profile = PROFILES["large"]) -> dict:
     governance_demo.seed(s, g.end)
     customers_demo.seed(s, g.end)  # again, for the customers the steps above added; it never overwrites
     extra["parties"] += customers_demo.plant_duplicate(s, g.end)
+    from .ml import demo as ml_demo
+
+    ml_demo.seed(s, g.end)
     resolved = resolution.resolve(s)
     sweep = run_timers(s, at=g.end)
     total = len(list(s.scalars(select(Case.id))))
@@ -843,6 +846,9 @@ def seed_demo() -> dict:
             out[tid]["landed"] = land_core_banking_files(store_for(tid, "landing"), now(), seed=11 + n)
             admin = next(p for p in policy_of(tid).people.values() if p.can("load_data"))
             register_core_banking_sources(s, admin.id)
+            from .lineage import demo as lineage_demo
+
+            out[tid]["lineage_events"] = lineage_demo.seed(s, now(), store_for(tid, "landing").url)
     out["managed_service"] = seed_managed_service()
     out["sample_feed_rows"] = write_sample_feed(settings.samples_dir / "legacy_core_transactions.csv", now())
     return out
@@ -904,9 +910,20 @@ def _staff_claims(s: Session, p: Persona, n: int = 2) -> int:
     return len(cases)
 
 
+def rebuild_schema(eng=None) -> None:
+    """Drop every table and build the schema again from the migrations. The migrations' own version table goes too:
+    left behind, it would say the schema is current and nothing would be built."""
+    from sqlalchemy import text
+
+    eng = eng or engine
+    Base.metadata.drop_all(eng)
+    with eng.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    ensure_schema(eng)
+
+
 def main() -> None:
-    Base.metadata.drop_all(engine)
-    ensure_schema()
+    rebuild_schema()
     reset()
     print("Seeded:", seed_demo())
 

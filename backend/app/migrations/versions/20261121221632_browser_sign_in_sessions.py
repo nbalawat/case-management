@@ -1,14 +1,14 @@
 """browser sign-in sessions
 
 Revision: 20261121221632
-Follows: 20261121214233
+Follows: 0032
 """
 from alembic import op
 import sqlalchemy as sa
 
 
 revision = '20261121221632'
-down_revision = '20261121214233'
+down_revision = '0032'
 branch_labels = None
 depends_on = None
 

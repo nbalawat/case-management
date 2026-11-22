@@ -26,6 +26,7 @@ from ..domain.models import Alert, StreamStat, now
 from ..ingest.datasets import load_transactions
 from ..ingest.mapping import CANONICAL_FIELDS
 from ..ingest.service import transform as canonical_transaction
+from ..lineage import jobs as lineage_jobs
 from ..observability import metrics, tracing
 from ..tenants import registry
 from ..visibility import system_work
@@ -165,6 +166,7 @@ class StreamConsumer:
         self.refresh = refresh  # a process that is not the API reloads its list of clients through this
         self.group = group or f"{settings.event_topic_prefix}-{stream}"
         self._sub: Subscription | None = None
+        self.lineage = lineage_jobs.stream_tally(stream)
 
     def step(self, max_messages: int = 500, timeout: float = 1.0) -> dict[str, Outcome]:
         if self._sub is None:
@@ -209,8 +211,10 @@ class StreamConsumer:
             metrics.record_stream(self.stream, tenant_id, out.received, out.loaded, out.duplicates, len(out.rejects), out.alerts, time.perf_counter() - t0)
             if out.rejects:  # after the database commit, before the position moves: a crash here repeats them, never drops them
                 self.bus.publish(dead_letter(m, tenant_id, reason) for m, reason in out.rejects)
+            lineage_jobs.stream_batch(self.lineage, tenant_id, self.stream, out)
             done[tenant_id] = out
         self._sub.commit()
+        lineage_jobs.flush_if_due(self.lineage)
         return done
 
     def close(self) -> None:

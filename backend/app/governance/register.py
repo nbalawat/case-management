@@ -14,12 +14,12 @@ from sqlalchemy.orm import Session
 
 from ..cases.case_types import library, load_case_types
 from ..detection.scenarios import describe
-from ..domain.models import (AccessPolicyVersion, AccessReview, AgentPolicyVersion, CodeList, DecisionVersion, FormVersion, Lookback, ScenarioVersion,
+from ..domain.models import (AccessPolicyVersion, AccessReview, AgentPolicyVersion, CodeList, DecisionVersion, FormVersion, Lookback, ModelVersion, ScenarioVersion,
                              ScreeningExemption, Watchlist, WorkflowVersion)
 from ..tenancy import tenant_of
 from ..visibility import system_work
 
-AREAS = ("Workflows", "Decisions", "Forms", "Access", "Agents", "Detection", "Screening", "Reference lists")
+AREAS = ("Workflows", "Decisions", "Forms", "Access", "Agents", "Detection", "Models", "Screening", "Reference lists")
 
 
 def _entry(at: datetime, area: str, subject: str, what: str, by: str, second: str | None = None, note: str = "", link: str = "") -> dict:
@@ -58,6 +58,13 @@ def entries(s: Session, area: str | None = None, since: datetime | None = None) 
             out.append(_entry(lb.run_at, "Detection", lb.name, f"Lookback run: {lb.preview.get('raised', 0)} alert(s) raised", lb.run_by or "", note=lb.reason, link="/detection"))
         if lb.closed_at:
             out.append(_entry(lb.closed_at, "Detection", lb.name, "Lookback signed off", lb.run_by or "", lb.closed_by, lb.conclusion, "/detection"))
+    for mv in s.scalars(select(ModelVersion)):
+        subject = f"{mv.name.replace('_', ' ').capitalize()} v{mv.version}"
+        out.append(_entry(mv.trained, "Models", subject, f"Trained: AUC {mv.metrics.get('auc', 0):.2f} on {mv.data.get('test_rows', 0)} unseen alerts", mv.trained_by,
+                          note=mv.note, link="/models"))
+        for h in mv.history or []:
+            second = h["by"] if h["what"] == "approved" else None
+            out.append(_entry(datetime.fromisoformat(h["at"]), "Models", subject, h["what"].capitalize(), mv.trained_by if second else h["by"], second, h.get("note", ""), "/models"))
     for wl in s.scalars(select(Watchlist)):
         for h in wl.history:
             moved = ", ".join(f"{h[k]} {k}" for k in ("added", "changed", "removed") if h.get(k))
