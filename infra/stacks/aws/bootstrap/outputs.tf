@@ -27,3 +27,8 @@ output "region" {
   description = "Region of the state bucket and key."
   value       = var.region
 }
+
+output "data_bucket" {
+  description = "The cloud machine's data bucket (s3://<this>/...), which its instance role can read and write."
+  value       = aws_s3_bucket.data.bucket
+}

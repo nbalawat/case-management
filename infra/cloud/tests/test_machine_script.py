@@ -44,7 +44,7 @@ class MachineScriptTest(unittest.TestCase):
 
     def test_help_lists_the_commands(self):
         out = self.run_script("help").stdout
-        for word in ("status", "logs", "restart", "update", "extend", "reset"):
+        for word in ("status", "logs", "restart", "update", "extend", "reset", "cloudcheck"):
             self.assertIn(f"caseforge {word}", out)
 
     def test_extend_reschedules_the_stop(self):
@@ -90,6 +90,49 @@ class MachineScriptTest(unittest.TestCase):
         result = subprocess.run(["bash", str(SCRIPT), "extend", "1"], env=env, text=True, capture_output=True, timeout=30)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("sudo did not provide it", result.stderr)
+
+    def _stub(self, tool, body):
+        stub = self.tmp / "bin" / tool
+        stub.write_text(f"#!/usr/bin/env bash\n{body}\n")
+        stub.chmod(0o755)
+
+    def test_cloudcheck_on_aws_uses_the_setup_bucket_and_kms_through_the_host_network(self):
+        doc = self.tmp / "identity.json"
+        doc.write_text('{\n  "accountId" : "613112965612",\n  "region" : "us-east-1",\n  "instanceId" : "i-1"\n}\n')
+        self._stub("curl", f'case "$*" in *api/token*) echo tok ;; *identity*) cat "{doc}" ;; *) exit 7 ;; esac')
+        self._stub("docker", f'echo "docker $*" >> "{self.log}"; case "$1 $2" in "compose ps") echo c0ffee ;; inspect*) echo sha256:abc ;; esac')
+        self.run_script("cloudcheck")
+        run = next(c for c in self.calls() if c.startswith("docker run"))
+        self.assertIn("--network host", run)
+        self.assertIn("KEY_PROVIDER=aws-kms", run)
+        self.assertIn("AWS_REGION=us-east-1", run)
+        self.assertTrue(run.endswith("sha256:abc uv run --no-dev python -m app.cloudcheck all s3://caseforge-data-613112965612-us-east-1/"), run)
+
+    def test_cloudcheck_elsewhere_needs_a_location(self):
+        self._stub("curl", "exit 7")
+        result = self.run_script("cloudcheck", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("give the storage location", result.stderr)
+        self._stub("docker", f'echo "docker $*" >> "{self.log}"; case "$1 $2" in "compose ps") echo c0ffee ;; inspect*) echo sha256:abc ;; esac')
+        self.run_script("cloudcheck", "gs://bucket/check")
+        run = next(c for c in self.calls() if c.startswith("docker run"))
+        self.assertNotIn("aws-kms", run)
+        self.assertTrue(run.endswith("all gs://bucket/check"))
+
+    def test_update_installs_this_command_from_the_new_source(self):
+        files = self.src / "infra" / "modules" / "common" / "machine-bootstrap" / "files"
+        files.mkdir(parents=True)
+        (files / "caseforge.sh").write_text("#!/usr/bin/env bash\necho new\n")
+        self._stub("git", 'case "$*" in *"rev-parse --verify"*) exit 0 ;; *rev-parse*) echo abc123 ;; esac')
+        (self.src / ".git").mkdir()
+        import getpass
+        with self.conf.open("a") as f:
+            f.write(f"OWNER={getpass.getuser()}\n")
+        target = self.tmp / "installed-caseforge"
+        self.env["CASEFORGE_BIN"] = str(target)
+        self.run_script("update", "main")
+        self.assertEqual(target.read_text(), "#!/usr/bin/env bash\necho new\n")
+        self.assertIn("systemctl restart caseforge.service", self.calls())
 
     def test_unknown_command(self):
         self.assertNotEqual(self.run_script("explode", check=False).returncode, 0)

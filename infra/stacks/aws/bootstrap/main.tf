@@ -216,6 +216,75 @@ resource "aws_iam_role_policy" "apply_iam" {
   policy   = data.aws_iam_policy_document.apply_iam.json
 }
 
+# ---- the cloud machine's data bucket: where `caseforge cloudcheck` proves object storage, and where a stack can keep
+# client documents (EVIDENCE_URL=s3://<bucket>/evidence). Empty, it costs nothing. Documents are sealed by the
+# application under each client's own key before they are written, so the bucket's own encryption is S3's.
+resource "aws_s3_bucket" "data" {
+  #checkov:skip=CKV_AWS_18:A single-operator demo bucket; access is recorded by CloudTrail data events where enabled
+  #checkov:skip=CKV_AWS_144:Demo data only; nothing here needs a second region
+  #checkov:skip=CKV2_AWS_62:No consumers of bucket events
+  #checkov:skip=CKV_AWS_145:SSE-S3: documents are already sealed under per-client KMS keys by the application, and a bucket KMS key would bill monthly
+  bucket = "${var.prefix}-data-${data.aws_caller_identity.current.account_id}-${var.region}"
+  # Like the state bucket: only `infra/bin/cloud.py teardown` lets it be deleted with its contents.
+  force_destroy = var.teardown
+}
+
+resource "aws_s3_bucket_public_access_block" "data" {
+  bucket                  = aws_s3_bucket.data.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "data" {
+  bucket = aws_s3_bucket.data.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "data" {
+  bucket = aws_s3_bucket.data.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
+  bucket = aws_s3_bucket.data.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "data" {
+  bucket = aws_s3_bucket.data.id
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+  }
+  rule {
+    id     = "expire-cloud-check-probes"
+    status = "Enabled"
+    filter {
+      prefix = "_cloudcheck/"
+    }
+    expiration {
+      days = 1
+    }
+  }
+}
+
 # ---- the cloud machine (infra/bin/cloud.py): its least-privilege operator role and the machine's instance profile
 module "machine_operator" {
   source                   = "../../../modules/aws/machine-operator"
@@ -223,6 +292,7 @@ module "machine_operator" {
   regions                  = length(var.machine_regions) > 0 ? var.machine_regions : [var.region]
   state_bucket_arn         = aws_s3_bucket.state.arn
   state_key_arn            = module.state_key.key_arn
+  data_bucket_arn          = aws_s3_bucket.data.arn
   trusted_principals       = var.machine_operators
   permissions_boundary_arn = var.permissions_boundary_arn
 }

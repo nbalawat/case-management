@@ -118,6 +118,24 @@ class World:
     instance_id: str = "i-0abc"
     reachable: bool = True
     remote_rc: int = 0
+    # The application's client keys in AWS KMS: alias -> [key id, state]
+    kms: Dict[str, List[str]] = field(default_factory=dict)
+
+    def aws_cli(self, args: List[str]):
+        self.calls.append(("aws", *args))
+        if args[:2] == ["kms", "list-aliases"]:
+            return 0, json.dumps({"Aliases": [{"AliasName": a, "TargetKeyId": k[0]} for a, k in self.kms.items()]
+                                  + [{"AliasName": "alias/aws/s3"}]}), ""
+        key = next((k for k in self.kms.values() if k[0] == args[args.index("--key-id") + 1]), None) if "--key-id" in args else None
+        if key is None:
+            return 254, "", "NotFoundException"
+        if args[1] == "describe-key":
+            return 0, json.dumps({"KeyMetadata": {"KeyId": key[0], "KeyState": key[1]}}), ""
+        if args[1] == "disable-key":
+            key[1] = "Disabled"
+        if args[1] == "schedule-key-deletion":
+            key[1] = "PendingDeletion"
+        return 0, "{}", ""
 
     def keygen(self, directory: Path, comment: str) -> Path:
         directory.mkdir(parents=True, exist_ok=True)
@@ -129,7 +147,7 @@ class World:
 
     def lifecycle(self, assume_yes: bool = True, as_caller: bool = False) -> Lifecycle:
         return Lifecycle(
-            cloud=Aws(), home=Home(self.tmp / "home"), out=self.output.append,
+            cloud=Aws(cli=self.aws_cli), home=Home(self.tmp / "home"), out=self.output.append,
             prompt=lambda q: self.answers.pop(0) if self.answers else "", assume_yes=assume_yes, as_caller=as_caller,
             tofu_factory=lambda root, data, env: FakeTofu(root, data, env, self),
             ssh_factory=lambda config, alias: FakeSsh(config, alias, self),
