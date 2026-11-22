@@ -38,3 +38,9 @@ variable "machine_operators" {
   type        = list(string)
   default     = []
 }
+
+variable "teardown" {
+  description = "Set only by `infra/bin/cloud.py teardown`, just before destroying: lets the state bucket be deleted with its contents and shortens the key's deletion window to 7 days."
+  type        = bool
+  default     = false
+}

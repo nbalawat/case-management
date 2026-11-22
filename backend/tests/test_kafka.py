@@ -92,6 +92,38 @@ def test_one_subscription_reads_every_clients_topic_of_its_kind_only(world):
     assert sorted(x.value for x in got) == [b"1", b"2"]
 
 
+def test_consumers_in_one_group_share_every_clients_topic(world):
+    """Each client's topic is spread over the group's members, so adding consumers speeds up every client."""
+    group = f"g-{uuid.uuid4().hex}"
+    names = [topics.topic(t, topics.TRANSACTIONS) for t in (T, OTHER)]
+    parts = world.bus.partitions(names[0])
+    assert parts and parts >= 2, "the test needs topics with at least two partitions"
+    subs = [world.bus.subscribe(group, topics.pattern(topics.TRANSACTIONS)) for _ in range(2)]
+    end = time.monotonic() + 45
+    held: list[set] = [set(), set()]
+    while time.monotonic() < end:
+        for s in subs:
+            s.poll(timeout=0.5)
+        held = [{(tp.topic, tp.partition) for tp in s._consumer.assignment()} for s in subs]
+        if all(held) and sum(len(h) for h in held) == parts * len(names):
+            break
+    for name in names:
+        per_member = [sum(1 for t, _ in h if t == name) for h in held]
+        assert all(n >= 1 for n in per_member), f"{name} is held by one member only: {held}"
+    for s in subs:
+        s.close()
+
+
+def test_kafka_config_can_choose_another_assignment_strategy(monkeypatch):
+    from app.backbone import kafka as kmod
+    seen = {}
+    monkeypatch.setattr(kmod.ck, "Consumer", lambda conf: seen.update(conf) or type("C", (), {"subscribe": lambda self, t: None})())
+    kmod.KafkaSubscription({"bootstrap.servers": "x", "partition.assignment.strategy": "roundrobin"}, "g", "p")
+    assert seen["partition.assignment.strategy"] == "roundrobin"
+    kmod.KafkaSubscription({"bootstrap.servers": "x"}, "g", "p")
+    assert seen["partition.assignment.strategy"] == "range"
+
+
 def test_what_was_not_committed_is_delivered_again(world):
     name, group = topics.topic(T, topics.ALERTS), f"g-{uuid.uuid4().hex}"
     world.bus.publish(Message(name, "k", str(i).encode()) for i in range(3))

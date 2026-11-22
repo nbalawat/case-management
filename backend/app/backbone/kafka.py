@@ -137,10 +137,14 @@ class KafkaBus:
 
 class KafkaSubscription:
     def __init__(self, base: dict, group: str, pattern: str) -> None:
-        self._consumer = ck.Consumer(base | {
+        # The range assignor shares out each topic's partitions on its own, so every client's topic is spread across
+        # the consumers. cooperative-sticky balanced only the total across all clients' topics: a new client's three
+        # partitions could all land on one consumer while the others held older clients', and adding consumers then
+        # did nothing for that client (measured on an 8-core machine: three consumers no faster than one).
+        # KAFKA_CONFIG may still choose another strategy.
+        self._consumer = ck.Consumer({"partition.assignment.strategy": "range"} | base | {
             "group.id": group, "enable.auto.commit": False, "auto.offset.reset": "earliest",
-            "topic.metadata.refresh.interval.ms": 10_000,  # a new client's topics join within seconds
-            "partition.assignment.strategy": "cooperative-sticky"})
+            "topic.metadata.refresh.interval.ms": 10_000})  # a new client's topics join within seconds
         self._consumer.subscribe([pattern if pattern.startswith("^") else "^" + pattern])
         self._closed = False
 

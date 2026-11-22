@@ -19,9 +19,11 @@ data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 
 module "state_key" {
-  source      = "../../../modules/aws/kms"
-  name        = "${var.prefix}-tofu-state"
-  description = "OpenTofu state: bucket encryption and client-side state encryption"
+  source = "../../../modules/aws/kms"
+  # A teardown schedules the key's deletion after AWS's shortest window; otherwise 30 days to notice a mistake.
+  deletion_window_days = var.teardown ? 7 : 30
+  name                 = "${var.prefix}-tofu-state"
+  description          = "OpenTofu state: bucket encryption and client-side state encryption"
 }
 
 resource "aws_s3_bucket" "state" {
@@ -29,6 +31,8 @@ resource "aws_s3_bucket" "state" {
   #checkov:skip=CKV_AWS_144:State is versioned; cross-region replication is optional per account
   #checkov:skip=CKV2_AWS_62:No consumers of state bucket events
   bucket = "${var.prefix}-tofu-state-${data.aws_caller_identity.current.account_id}"
+  # Only `infra/bin/cloud.py teardown` turns this on, in an apply just before it destroys the setup.
+  force_destroy = var.teardown
 }
 
 resource "aws_s3_bucket_public_access_block" "state" {
