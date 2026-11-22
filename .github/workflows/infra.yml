@@ -58,12 +58,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {persist-credentials: false}
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-        with: {python-version: "${{ matrix.python }}"}
       - name: ShellCheck the on-machine script
         run: shellcheck infra/modules/common/machine-bootstrap/files/caseforge.sh
+      # uv provides any Python version on any runner image (setup-python has no 3.9 for the newest Ubuntu).
       - name: Unit tests
-        run: python -m unittest discover -v -s infra/cloud/tests -t infra/cloud/tests
+        env: {PY: "${{ matrix.python }}"}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --user uv
+          ~/.local/bin/uv run --no-project --python "$PY" python -m unittest discover -v -s infra/cloud/tests -t infra/cloud/tests
 
   tflint:
     name: TFLint (AWS, Azure and Google rulesets)
