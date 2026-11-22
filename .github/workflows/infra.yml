@@ -66,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           pipx install uv  # pipx: the runner's system Python refuses pip installs (PEP 668)
-          ~/.local/bin/uv run --no-project --python "$PY" python -m unittest discover -v -s infra/cloud/tests -t infra/cloud/tests
+          uv run --no-project --python "$PY" python -m unittest discover -v -s infra/cloud/tests -t infra/cloud/tests
 
   tflint:
     name: TFLint (AWS, Azure and Google rulesets)
