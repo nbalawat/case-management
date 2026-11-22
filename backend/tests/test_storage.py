@@ -1,7 +1,13 @@
-"""One contract, every kind of store: a directory, an in-memory store, and S3 through an emulated S3 API.
+"""One contract, every kind of store: a directory, an in-memory store, S3, Azure and Google Cloud Storage.
 
-Azure Data Lake and Google Cloud Storage go through the same adapter with their own drivers. Those drivers are not
-installed here and no real cloud account was used, so for those two only the URL handling is tested.
+S3 runs against moto's emulated S3 API, always. Azure (adlfs) and Google Cloud Storage (gcsfs) run against the
+open-source emulators when they are reachable, as CI starts them:
+
+    TEST_AZURE_STORAGE_CONNECTION_STRING   Azurite's blob service (the connection string, with Azurite's public dev key)
+    TEST_GCS_EMULATOR_URL                  fake-gcs-server, for example http://127.0.0.1:4443
+
+Without them those two are skipped and only their URL handling is tested. Real accounts are checked with
+`python -m app.cloudcheck`.
 """
 import os
 import uuid
@@ -32,14 +38,65 @@ def s3_endpoint():
         os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
-@pytest.fixture(params=["file", "memory", "s3"])
+@pytest.fixture(scope="module")
+def azurite():
+    conn = os.getenv("TEST_AZURE_STORAGE_CONNECTION_STRING", "")
+    if not conn:
+        pytest.skip("set TEST_AZURE_STORAGE_CONNECTION_STRING to an Azurite blob service")
+    pytest.importorskip("adlfs")
+    from azure.core.exceptions import ResourceExistsError
+    from azure.storage.blob import BlobServiceClient
+
+    saved = {k: os.environ.get(k) for k in ("AZURE_STORAGE_CONNECTION_STRING", "NO_PROXY", "no_proxy")}
+    # The driver finds credentials the way Azure intends, here the standard connection-string variable.
+    os.environ.update(AZURE_STORAGE_CONNECTION_STRING=conn, NO_PROXY="127.0.0.1,localhost", no_proxy="127.0.0.1,localhost")
+    try:
+        BlobServiceClient.from_connection_string(conn).create_container("client-landing")
+    except ResourceExistsError:
+        pass
+    account = next(p.split("=", 1)[1] for p in conn.split(";") if p.startswith("AccountName="))
+    yield account
+    for k, v in saved.items():
+        os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
+@pytest.fixture(scope="module")
+def gcs_endpoint():
+    endpoint = os.getenv("TEST_GCS_EMULATOR_URL", "").rstrip("/")
+    if not endpoint:
+        pytest.skip("set TEST_GCS_EMULATOR_URL to a fake-gcs-server")
+    pytest.importorskip("gcsfs")
+    import httpx
+
+    saved = {k: os.environ.get(k) for k in ("NO_PROXY", "no_proxy")}
+    os.environ.update(NO_PROXY="127.0.0.1,localhost", no_proxy="127.0.0.1,localhost")
+    r = httpx.post(f"{endpoint}/storage/v1/b", json={"name": "client-landing"}, timeout=10)
+    assert r.status_code in (200, 409), r.text
+    yield endpoint
+    for k, v in saved.items():
+        os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
+def _cloud(request, scheme: str) -> tuple[str, dict | None]:
+    """The parent URL and options for a cloud store under a fresh prefix."""
+    run = uuid.uuid4().hex
+    if scheme == "s3":
+        return f"s3://client-landing/{run}", {"endpoint_url": request.getfixturevalue("s3_endpoint")}
+    if scheme == "abfs":
+        return f"abfs://client-landing@{request.getfixturevalue('azurite')}/{run}", None
+    return f"gs://client-landing/{run}", {"endpoint_url": request.getfixturevalue("gcs_endpoint")}
+
+
+@pytest.fixture(params=["file", "memory", "s3", "abfs", "gs"])
 def store(request, tmp_path):
     if request.param == "file":
         return open_store(f"file://{tmp_path}/root")
     if request.param == "memory":
         return open_store(f"memory://{uuid.uuid4().hex}/root")
-    endpoint = request.getfixturevalue("s3_endpoint")
-    return open_store(f"s3://client-landing/{uuid.uuid4().hex}/root", {"endpoint_url": endpoint})
+    base, options = _cloud(request, request.param)
+    made = open_store(f"{base}/root", options)
+    made.test_options = options  # so a test can open a neighbour the same way
+    return made
 
 
 def test_empty_location_lists_nothing(store):
@@ -79,7 +136,7 @@ def test_keys_cannot_leave_the_location(store, key):
 def test_a_store_sees_only_its_own_root(store, tmp_path):
     """Two stores side by side under one parent: neither lists nor reads the other's objects."""
     base = store.url.rstrip("/").rsplit("/", 1)[0]
-    options = {"endpoint_url": store._fs.client_kwargs["endpoint_url"]} if base.startswith("s3://") else None
+    options = getattr(store, "test_options", None)
     a, b = open_store(base + "/tenant-a", options), open_store(base + "/tenant-b", options)
     a.write("data.csv", b"A")
     b.write("data.csv", b"B")

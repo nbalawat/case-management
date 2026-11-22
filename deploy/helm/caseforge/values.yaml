@@ -100,6 +100,7 @@ storage:
 
 # Per-client keys: customer documents are sealed under their client's own key (envelope encryption, app/keys).
 #   transit  OpenBao or Vault Transit holds the keys. TRANSIT_TOKEN goes in existingSecret. Required unless demoTenants.
+#   aws-kms  AWS KMS: one customer-managed key per client, reached with the pod's own role (IRSA or EKS Pod Identity).
 #   none     documents are stored as given (demos only).
 # The local keyring is not offered here: pods keep nothing on local disk, and a lost keyring is lost data.
 keys:
@@ -108,6 +109,10 @@ keys:
     addr: ""            # https://openbao.security.svc:8200
     mount: transit
     prefix: caseforge-
+  awsKms:
+    region: ""          # empty: the pod's AWS_REGION
+    aliasPrefix: caseforge-client-
+    deletionDays: 7     # AWS's waiting period before a destroyed client key is deleted (7 to 30)
 
 llm:
   agentMode: rules      # rules | model

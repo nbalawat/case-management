@@ -114,6 +114,11 @@ jobs:
           docker run -d --name openbao -p 8200:8200 --cap-add IPC_LOCK openbao/openbao:2.7.3 server -dev -dev-root-token-id=ci-only -dev-listen-address=0.0.0.0:8200
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8200/v1/sys/health >/dev/null && break; sleep 1; done
           curl -sf -X POST -H "X-Vault-Token: ci-only" -d '{"type":"transit"}' http://127.0.0.1:8200/v1/sys/mounts/transit
+      - name: Start the Azure Blob (Azurite) and Google Cloud Storage (fake-gcs-server) emulators
+        run: |
+          docker run -d --name azurite -p 10000:10000 mcr.microsoft.com/azure-storage/azurite:3.38.0 azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose --disableTelemetry
+          docker run -d --name fakegcs -p 4443:4443 fsouza/fake-gcs-server:1.52.2 -scheme http -port 4443 -backend memory -public-host 127.0.0.1:4443
+          for i in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/10000) 2>/dev/null && (echo > /dev/tcp/127.0.0.1/4443) 2>/dev/null && break; sleep 1; done
       - name: The whole demo on Postgres, the event backbone on a real broker, search on a real engine
         working-directory: backend
         env:
@@ -124,7 +129,10 @@ jobs:
           TEST_TEMPORAL_URL: temporal://localhost:7233
           TEST_TRANSIT_ADDR: http://localhost:8200
           TEST_TRANSIT_TOKEN: ci-only
-        run: uv run pytest -q tests/test_postgres.py tests/test_rls.py tests/test_keys.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
+          # Azurite's documented development account and key: public, emulator-only
+          TEST_AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+          TEST_GCS_EMULATOR_URL: http://127.0.0.1:4443
+        run: uv run pytest -q tests/test_postgres.py tests/test_rls.py tests/test_keys.py tests/test_storage.py tests/test_cloudcheck.py tests/test_kafka.py tests/test_opensearch.py tests/test_age.py tests/test_temporal.py
 
   frontend:
     name: Frontend lint and build
@@ -189,6 +197,10 @@ jobs:
           # Offboarding bundles sit beside the documents unless placed elsewhere
           helm template stamp . $ARGS | grep -q 'EXPORTS_URL: "s3://bucket/evidence-exports"'
           helm template stamp . $ARGS --set storage.exportsUrl=s3://vault/exports | grep -q 'EXPORTS_URL: "s3://vault/exports"'
+          # AWS KMS as the key service: no Transit address needed, its settings reach the pods
+          helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.provider=aws-kms --set keys.awsKms.region=us-east-1 | grep -q 'KEY_PROVIDER: "aws-kms"'
+          helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.provider=aws-kms | grep -q 'KMS_ALIAS_PREFIX: "caseforge-client-"'
+          refuse --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.provider=azure-kv
           # And the least it must accept
           helm template stamp . --set existingSecret=s --set storage.evidenceUrl=s3://b/e --set keys.transit.addr=https://bao:8200 > /dev/null
           helm template demo . --set existingSecret=s --set demoTenants=true --set schemaOnMismatch=rebuild --set auth.mode=demo > /dev/null

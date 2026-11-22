@@ -52,7 +52,7 @@ class Settings:
     exports_url: str = os.getenv("EXPORTS_URL", f"file://{ROOT / 'data' / 'exports'}")
     # Per-client keys (app/keys). Customer documents are sealed with envelope encryption under their client's key.
     # local: a keyring under KEYS_DIR sealed by KEYS_MASTER_KEY (32 bytes, base64; a random one is written beside the
-    # keyring when unset, for demos). transit: OpenBao or Vault Transit at TRANSIT_ADDR. none: documents are stored as given.
+    # keyring when unset, for demos). transit: OpenBao or Vault Transit at TRANSIT_ADDR. aws-kms: AWS KMS. none: documents are stored as given.
     key_provider: str = os.getenv("KEY_PROVIDER", "local")
     keys_dir: Path = Path(os.getenv("KEYS_DIR", ROOT / "data" / "keys"))
     keys_master_key: str = os.getenv("KEYS_MASTER_KEY", "")
@@ -60,6 +60,11 @@ class Settings:
     transit_token: str = os.getenv("TRANSIT_TOKEN", "")
     transit_mount: str = os.getenv("TRANSIT_MOUNT", "transit")
     transit_prefix: str = os.getenv("TRANSIT_PREFIX", "caseforge-")
+    # aws-kms: one customer-managed AWS KMS key per client, alias/<KMS_ALIAS_PREFIX><client> (app/keys/aws_kms.py).
+    kms_region: str = os.getenv("KMS_REGION", os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1")))
+    kms_endpoint_url: str = os.getenv("KMS_ENDPOINT_URL", "")  # an emulator only (LocalStack, moto); empty for AWS itself
+    kms_alias_prefix: str = os.getenv("KMS_ALIAS_PREFIX", "caseforge-client-")
+    kms_deletion_days: int = int(os.getenv("KMS_DELETION_DAYS", "7"))
     # Regulator schemas. FinCEN's ship with the app. goAML schemas are published by each FIU, often on terms that forbid
     # redistributing them, so the operator downloads the client's FIU schema and points this at the folder holding it.
     goaml_schema_dir: Path = Path(os.getenv("GOAML_SCHEMA_DIR", ROOT / "data" / "schemas" / "goaml"))

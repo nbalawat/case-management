@@ -36,6 +36,13 @@ data:
   TRANSIT_ADDR: {{ .Values.keys.transit.addr | quote }}
   TRANSIT_MOUNT: {{ .Values.keys.transit.mount | quote }}
   TRANSIT_PREFIX: {{ .Values.keys.transit.prefix | quote }}
+  {{- if eq .Values.keys.provider "aws-kms" }}
+  {{- with .Values.keys.awsKms.region }}
+  KMS_REGION: {{ . | quote }}
+  {{- end }}
+  KMS_ALIAS_PREFIX: {{ .Values.keys.awsKms.aliasPrefix | quote }}
+  KMS_DELETION_DAYS: {{ .Values.keys.awsKms.deletionDays | quote }}
+  {{- end }}
   {{- with .Values.storage.evidenceUrl }}
   EVIDENCE_URL: {{ . | quote }}
   {{- end }}

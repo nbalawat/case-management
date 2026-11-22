@@ -8,9 +8,10 @@ never leaves the key service, so whoever holds the service decides who can read 
   * destroy  the KEK is gone, so nothing sealed under it can ever be opened again (crypto-shredding). This is how a
              client's data is erased at offboarding even from backups and object versions nobody can find.
 
-Providers: `local` (a keyring on disk under a master key, for development and single-node installs) and `transit`
-(OpenBao or HashiCorp Vault's Transit engine, the open-source key service). A cloud KMS (AWS KMS, Azure Key Vault,
-Google Cloud KMS) is one more class with these five methods.
+Providers: `local` (a keyring on disk under a master key, for development and single-node installs), `transit`
+(OpenBao or HashiCorp Vault's Transit engine, the open-source key service) and `aws-kms` (AWS Key Management Service).
+Azure Key Vault and Google Cloud KMS are one more class each with these six methods, selected the same way in
+`keys.provider()`; nothing else in the application changes.
 """
 from __future__ import annotations
 

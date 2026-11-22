@@ -9,7 +9,7 @@ type Client = {
 }
 type Keys = { provider: string; clients: Client[] }
 
-const PROVIDER: Record<string, string> = { local: 'Local keyring', transit: 'OpenBao / Vault Transit', none: 'None: documents stored as given' }
+const PROVIDER: Record<string, string> = { local: 'Local keyring', transit: 'OpenBao / Vault Transit', 'aws-kms': 'AWS KMS', none: 'None: documents stored as given' }
 
 /** Each client's own key: which service holds it, its version, how many documents it seals, and rotating it. */
 export default function ClientKeysCard() {
