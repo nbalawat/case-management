@@ -44,6 +44,13 @@ class LifecycleTest(unittest.TestCase):
         self.assertIn("Host other", ssh_config)
         self.assertTrue((self.tmp / "dot-ssh" / "config.caseforge-backup").exists())
 
+    def test_setup_survives_an_unwritable_ssh_config(self):
+        life = self.world.lifecycle()
+        with mock.patch("caseforge_cloud.ssh.ensure_included", side_effect=PermissionError(13, "Permission denied")):
+            life.setup("us-east-1")
+        self.assertTrue(life.home.setup_outputs("aws"))
+        self.assertTrue(any("sudo chown $(whoami) ~/.ssh" in line for line in self.world.output))
+
     def test_setup_twice_changes_nothing_the_second_time(self):
         self.setup_done()
         before = (self.tmp / "aws-config").read_text()
