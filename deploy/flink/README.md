@@ -104,7 +104,11 @@ Run on a MacBook under Docker, built from nothing (`make streaming` beside Kafka
 Temporal): the image with the function compiled into it, the SQL Gateway answering the application, and all four
 jobs submitted for one client and running. A payment to a misspelt listed name came through as one Flink alert at
 97% in a case, beside the application's own alert for the same payment. Earlier, three test deposits through to one
-structuring alert. Starting a job from the Integrations page has not been tried under Docker, only by hand.
+structuring alert.
+
+Run once on a single AWS machine under Docker (`make streaming`): all four jobs started from the product through
+the SQL Gateway service, running within seconds, a misspelt payee through to a name-screening alert at 97%, and all
+four stopped from the product. The app and both workers were healthy on the first `up`.
 
 Never run: Flink on Kubernetes, a managed Flink service, checkpoints
 to object storage, recovery from a failure, or any volume beyond a handful of records. These tests are not in the
