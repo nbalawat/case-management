@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ipaddress
+import shutil
+import subprocess
 import urllib.request
 from typing import Callable, Optional, Sequence
 
@@ -12,9 +14,19 @@ DEFAULT_SOURCES = ("https://checkip.amazonaws.com", "https://api.ipify.org", "ht
 
 
 def _fetch(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "caseforge-cloud"})
-    with urllib.request.urlopen(req, timeout=8) as resp:  # noqa: S310 - fixed https URLs
-        return resp.read(64).decode("ascii", "replace")
+    """Python's own HTTPS first; then curl, which uses the system's certificates. python.org's macOS Python cannot
+    verify any site until its "Install Certificates" step has run, so without curl the lookup would fail there."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "caseforge-cloud"})
+        with urllib.request.urlopen(req, timeout=8) as resp:  # noqa: S310 - fixed https URLs
+            return resp.read(64).decode("ascii", "replace")
+    except OSError:
+        if shutil.which("curl") is None:
+            raise
+        result = subprocess.run(["curl", "-fsS", "--max-time", "8", url], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise OSError(result.stderr.strip() or "curl failed")
+        return result.stdout[:64]
 
 
 def public_ipv4(sources: Sequence[str] = DEFAULT_SOURCES, fetch: Fetch = _fetch) -> Optional[str]:
