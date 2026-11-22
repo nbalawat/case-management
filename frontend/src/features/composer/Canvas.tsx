@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
   Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow, useReactFlow,
-  type Connection, type FinalConnectionState, type NodeChange, type OnSelectionChangeParams,
+  type Connection, type FinalConnectionState, type NodeChangeset, type OnSelectionChangeParams,
 } from '@xyflow/react'
 import BlockNode, { type BlockFlowNode } from './nodes/BlockNode'
 import StepEdge, { type StepFlowEdge } from './nodes/StepEdge'
@@ -62,7 +62,7 @@ export default function Canvas({ cat, design, issues, selection, readOnly, trial
   })
   }, [design.edges, design.nodes, cat, selection, readOnly, byTarget, trial])
 
-  const onNodesChange = useCallback((changes: NodeChange<BlockFlowNode>[]) => {
+  const onNodesChange = useCallback((changes: NodeChangeset<BlockFlowNode>) => {
     const moves: Record<string, { x: number; y: number }> = {}
     const measured: Record<string, { width: number; height: number }> = {}
     let done = false

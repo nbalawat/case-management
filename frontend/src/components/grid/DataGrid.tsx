@@ -1,18 +1,16 @@
 import { useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import {
-  flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type ColumnDef, type SortingState, type VisibilityState,
-} from '@tanstack/react-table'
+import { flexRender, useTable, type ColumnVisibilityState, type RowData, type SortingState } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Rows3, Rows4 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { Button } from '../kit/button'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '../kit/dropdown-menu'
 import { useGridPrefs } from './prefs'
-import type { Density, GridColumn, SortState } from './types'
+import { gridFeatures, type Density, type GridColumn, type SortState } from './types'
 
 const VIRTUAL_FROM = 120 // rows; below this every row is in the page, above it only what is on screen
 
-type Props<T> = {
+type Props<T extends RowData> = {
   /** Names the grid for saved preferences. */
   id: string
   label: string
@@ -41,17 +39,17 @@ type Props<T> = {
  * The one table every list uses. Sorting (client or server), column choice, density, selection, keyboard
  * movement (J and K or arrows, Enter to open, Space to preview, X to select) and row virtualisation for long lists.
  */
-export default function DataGrid<T>({
+export default function DataGrid<T extends RowData>({
   id, label, columns, rows, getRowId, sorting, onSortingChange, manualSorting, selectable, selected = [], onSelectedChange,
   onOpen, onPreview, loading, empty, toolbar, footer, rowClassName,
 }: Props<T>) {
   const prefs = useGridPrefs(id)
-  const visibility = prefs.setting<VisibilityState>('columns', Object.fromEntries(columns.filter(c => c.meta?.hidden).map(c => [c.id ?? '', false])))
+  const visibility = prefs.setting<ColumnVisibilityState>('columns', Object.fromEntries(columns.filter(c => c.meta?.hidden).map(c => [c.id ?? '', false])))
   const density = prefs.setting<Density>('density', 'comfortable')
   const chosen = useMemo(() => new Set(selected), [selected])
   const pickable = useMemo(() => (selectable ? rows.filter(selectable) : []), [rows, selectable])
 
-  const selectCol: ColumnDef<T, unknown> = {
+  const selectCol: GridColumn<T> = {
     id: '__select', enableSorting: false, enableHiding: false, meta: { pinned: true, className: 'w-9' },
     header: () => <input type="checkbox" aria-label="Select all shown" checked={pickable.length > 0 && pickable.every(r => chosen.has(getRowId(r)))}
       onChange={e => onSelectedChange?.(e.target.checked ? pickable.map(getRowId) : [])} />,
@@ -60,21 +58,20 @@ export default function DataGrid<T>({
   }
   const toggle = (rid: string) => onSelectedChange?.(chosen.has(rid) ? selected.filter(x => x !== rid) : [...selected, rid])
 
-  // TanStack Table hands back functions the React Compiler cannot memoise. Nothing here is memoised on them.
-  // oxlint-disable-next-line react/incompatible-library
-  const table = useReactTable<T>({
-    data: rows, columns: selectable ? [selectCol, ...columns] : columns, getRowId,
+  const table = useTable({
+    features: gridFeatures, data: rows, columns: selectable ? [selectCol, ...columns] : columns, getRowId,
     state: { sorting: sorting as SortingState, columnVisibility: visibility },
     onSortingChange: up => onSortingChange((typeof up === 'function' ? up(sorting as SortingState) : up) as SortState),
     onColumnVisibilityChange: up => prefs.putSetting('columns', typeof up === 'function' ? up(visibility) : up),
     manualSorting, enableMultiSort: true, isMultiSortEvent: e => (e as MouseEvent).shiftKey,
-    getCoreRowModel: getCoreRowModel(), getSortedRowModel: manualSorting ? undefined : getSortedRowModel(),
   })
   const model = table.getRowModel().rows
 
   const scroller = useRef<HTMLDivElement>(null)
   const virtual = model.length > VIRTUAL_FROM
   const rowHeight = density === 'compact' ? 36 : 52
+  // TanStack Virtual hands back functions the React Compiler cannot memoise. Nothing here is memoised on them.
+  // oxlint-disable-next-line react/incompatible-library
   const virtualizer = useVirtualizer({ count: model.length, getScrollElement: () => scroller.current, estimateSize: () => rowHeight, overscan: 12, enabled: virtual })
   const items = virtual ? virtualizer.getVirtualItems() : null
   const shown = items ? items.map(i => model[i.index]) : model
