@@ -12,11 +12,19 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: {interval: weekly}
+    ignore:
+      # Python 3.15 has no wheels yet for pyiceberg and zstandard (the lake group), so the image cannot install without a
+      # compiler. Lift this once both publish cp315 wheels; the backend tests then need to move to 3.15 in the same PR.
+      - dependency-name: python
+        versions: [">=3.15"]
   - package-ecosystem: uv
     directory: /backend
     schedule: {interval: weekly}
     open-pull-requests-limit: 5
+    # Minor and patch releases arrive as one pull request; each major version keeps its own, since those can break.
+    groups: {minor-and-patch: {update-types: [minor, patch]}}
   - package-ecosystem: npm
     directory: /frontend
     schedule: {interval: weekly}
     open-pull-requests-limit: 5
+    groups: {minor-and-patch: {update-types: [minor, patch]}}

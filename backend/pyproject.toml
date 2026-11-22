@@ -19,7 +19,7 @@ dependencies = [
   # Form data is validated against the JSON Schema each form compiles to.
   "jsonschema>=4.23",
   # 49 and later ship no Intel macOS wheel, and building from source needs a recent Rust.
-  "cryptography>=44,<49",
+  "cryptography>=44,<51",
   "xmlschema>=4.3.2",
   "prometheus-client>=0.21",
   "anyascii>=0.3.3",
