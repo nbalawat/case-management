@@ -28,6 +28,13 @@ class NetaddrTest(unittest.TestCase):
             raise OSError("offline")
         self.assertIsNone(netaddr.public_ipv4(["x"], fetch=fetch))
 
+    def test_falls_back_to_curl_when_python_cannot_verify_https(self):
+        with mock.patch("urllib.request.urlopen", side_effect=OSError("CERTIFICATE_VERIFY_FAILED")), \
+             mock.patch("shutil.which", return_value="/usr/bin/curl"), \
+             mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "34.200.1.7\n", "")) as run:
+            self.assertEqual(netaddr.public_ipv4(["https://checkip.amazonaws.com"]), "34.200.1.7")
+        self.assertEqual(run.call_args[0][0][0], "curl")
+
     def test_normalise(self):
         self.assertEqual(netaddr.normalise_cidr("198.51.100.7"), "198.51.100.7/32")
         self.assertEqual(netaddr.normalise_cidr("192.0.2.9/28"), "192.0.2.0/28")

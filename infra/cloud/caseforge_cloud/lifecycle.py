@@ -115,7 +115,7 @@ class Lifecycle:
             plan.unlink(missing_ok=True)
             return False
         self.confirm(question, expect)
-        tofu.apply(plan)
+        tofu.apply(plan, var_file=var_file)
         plan.unlink(missing_ok=True)
         return True
 
@@ -170,6 +170,21 @@ class Lifecycle:
         result = ssh.run(["caseforge", "wait", str(minutes)], timeout=15)
         return result.returncode == 0
 
+    def include_ssh_config(self) -> None:
+        """Make `ssh <name>` work; if ~/.ssh/config cannot be written, say how to fix it and carry on."""
+        try:
+            changed = sshmod.ensure_included(self.user_ssh_config, self.home.ssh_config)
+        except OSError as e:
+            self.out(f"Could not edit {self.user_ssh_config} ({e.strerror}). Everything else is set up. Fix the "
+                     "file's owner and run setup again (it creates nothing new):\n"
+                     "  sudo chown $(whoami) ~/.ssh ~/.ssh/config && chmod 700 ~/.ssh && chmod 600 ~/.ssh/config\n"
+                     f"Or add this line at the top of {self.user_ssh_config} yourself:\n"
+                     f"  Include \"{self.home.ssh_config}\"")
+            return
+        if changed:
+            self.out(f"Added an Include of {self.home.ssh_config} at the top of {self.user_ssh_config} "
+                     "(a backup of the original is next to it).")
+
     # ---- commands
     def setup(self, region: Optional[str]) -> Dict[str, Any]:
         region = region or self.cloud.default_region()
@@ -186,18 +201,16 @@ class Lifecycle:
         changed = tofu.plan(out=sdir / "setup.tfplan", var_file=var_file, state=state)
         if changed:
             self.confirm("Create or update these setup resources?")
-            tofu.apply(sdir / "setup.tfplan", state=state)
+            tofu.apply(sdir / "setup.tfplan", state=state, var_file=var_file)
         (sdir / "setup.tfplan").unlink(missing_ok=True)
-        summary = self.cloud.setup_summary(tofu.outputs(state=state))
+        summary = self.cloud.setup_summary(tofu.outputs(state=state, var_file=var_file))
         note = None if self.as_caller else self.cloud.prepare_operator(summary)
         summary["operator_profile_written"] = bool(note and note.startswith("Wrote"))
         self.home.save_setup_outputs(self.cloud.name, summary)
         if note:
             self.out(note)
         self.refresh_ssh_config()
-        if sshmod.ensure_included(self.user_ssh_config, self.home.ssh_config):
-            self.out(f"Added an Include of {self.home.ssh_config} at the top of {self.user_ssh_config} "
-                     "(a backup of the original is next to it).")
+        self.include_ssh_config()
         self.out("Setup is done. Next: infra/bin/cloud.py up")
         return summary
 
@@ -222,10 +235,11 @@ class Lifecycle:
         self.out(f"SSH will be open to {', '.join(opts.allowed_cidrs)} only. {stop_note}")
         self._plan_and_apply(tofu, mdir / "machine.tfplan", var_file,
                              f"Bring up '{opts.name}' on {self.cloud.label} ({opts.size}, stack '{opts.stack}')?")
-        outputs = tofu.outputs()
+        outputs = tofu.outputs(var_file=var_file)
         record = self._record(opts.name, opts, outputs["machine"], outputs.get("ssh_user", "caseforge"),
                               outputs.get("forwarded_ports", {}))
         self.refresh_ssh_config()
+        self.include_ssh_config()
         self._report(record)
         if previous and previous.get("machine", {}).get("id") == record["machine"].get("id"):
             self._sync_settings(opts, previous.get("options", {}))
@@ -270,7 +284,7 @@ class Lifecycle:
         verb = "Start" if running else "Stop"
         what = "compute bills again" if running else "the disk and all data are kept; only storage bills"
         self._plan_and_apply(tofu, mdir / "machine.tfplan", var_file, f"{verb} '{name}' ({what})?")
-        outputs = tofu.outputs()
+        outputs = tofu.outputs(var_file=var_file)
         record = self._record(name, opts, outputs["machine"], outputs.get("ssh_user", "caseforge"),
                               outputs.get("forwarded_ports", {}))
         self.refresh_ssh_config()
