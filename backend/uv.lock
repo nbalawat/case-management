@@ -474,10 +474,16 @@ dependencies = [
 adls = [
     { name = "adlfs" },
 ]
+aws = [
+    { name = "boto3" },
+]
 dev = [
+    { name = "adlfs" },
     { name = "anthropic" },
+    { name = "boto3" },
     { name = "confluent-kafka" },
     { name = "duckdb" },
+    { name = "gcsfs" },
     { name = "httpx" },
     { name = "moto", extra = ["server"] },
     { name = "opensearch-py" },
@@ -546,10 +552,14 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 adls = [{ name = "adlfs", specifier = ">=2024.4" }]
+aws = [{ name = "boto3", specifier = ">=1.34" }]
 dev = [
+    { name = "adlfs", specifier = ">=2024.4" },
     { name = "anthropic", specifier = ">=1.0" },
+    { name = "boto3", specifier = ">=1.34" },
     { name = "confluent-kafka", specifier = ">=2.6" },
     { name = "duckdb", specifier = ">=1.3" },
+    { name = "gcsfs", specifier = ">=2024.6" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "moto", extras = ["server"], specifier = ">=5" },
     { name = "opensearch-py", specifier = ">=2.6" },

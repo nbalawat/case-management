@@ -4,9 +4,11 @@ CLI profile the setup writes, so routine up and down never need administrator ri
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from .base import Cloud
 
@@ -18,6 +20,22 @@ MARK_END = "# <<< caseforge cloud machine operator <<<"
 HOURLY = {"small": 0.2016, "large": 0.4032, "xlarge": 0.8064}
 GP3_GB_MONTH = 0.08
 PUBLIC_IPV4_HOUR = 0.005
+# The application's per-client keys (KEY_PROVIDER=aws-kms, backend/app/keys/aws_kms.py) live behind these aliases.
+CLIENT_KEY_ALIASES = "alias/caseforge-client-"
+KEY_DELETION_DAYS = "7"  # AWS's shortest waiting period
+
+CliResult = Tuple[int, str, str]
+
+
+def aws_cli(args: List[str]) -> CliResult:
+    """Run the AWS CLI with the caller's own credentials and return (exit code, stdout, stderr)."""
+    try:
+        done = subprocess.run(["aws", *args, "--output", "json"], capture_output=True, text=True, timeout=120)
+    except FileNotFoundError:
+        return 127, "", "the AWS CLI (aws) is not installed"
+    except subprocess.TimeoutExpired:
+        return 124, "", "the AWS CLI did not answer within 2 minutes"
+    return done.returncode, done.stdout, done.stderr
 
 
 def aws_config_path() -> Path:
@@ -59,6 +77,9 @@ def write_operator_profile(path: Path, block: str) -> None:
 class Aws(Cloud):
     name = "aws"
     label = "AWS"
+
+    def __init__(self, cli: Callable[[List[str]], CliResult] = aws_cli) -> None:
+        self.cli = cli
     credentials_hint = (
         "Sign in with the AWS CLI first, as an administrator for `setup` (for example `aws configure` or "
         "`aws sso login --profile <name>` and AWS_PROFILE=<name>). After setup, up/stop/start/down run as the "
@@ -79,6 +100,7 @@ class Aws(Cloud):
             "state_key_arn": outputs["state_key_arn"],
             "operator_role_arn": outputs["machine_operator_role_arn"],
             "instance_profile": outputs["machine_instance_profile"],
+            "data_bucket": outputs.get("data_bucket", ""),
         }
 
     def backend_settings(self, setup: Mapping[str, Any], machine: str) -> Dict[str, Any]:
@@ -121,6 +143,31 @@ class Aws(Cloud):
             return None
         write_operator_profile(path, "")
         return f"Removed the [{OPERATOR_PROFILE}] profile from {path}."
+
+    def retire_client_keys(self, setup: Mapping[str, Any]) -> Optional[str]:
+        region = setup["region"]
+        rc, out, err = self.cli(["kms", "list-aliases", "--region", region])
+        if rc != 0:
+            return (f"Could not list the application's client keys ({err.strip()[:200]}). In the AWS console, KMS, "
+                    f"schedule deletion of any key whose alias starts with {CLIENT_KEY_ALIASES}.")
+        aliases = [a for a in json.loads(out or "{}").get("Aliases", [])
+                   if str(a.get("AliasName", "")).startswith(CLIENT_KEY_ALIASES) and a.get("TargetKeyId")]
+        retired, failed = [], []
+        for alias in aliases:
+            key = alias["TargetKeyId"]
+            rc, out, _ = self.cli(["kms", "describe-key", "--key-id", key, "--region", region])
+            if rc == 0 and json.loads(out)["KeyMetadata"].get("KeyState") == "PendingDeletion":
+                continue
+            self.cli(["kms", "disable-key", "--key-id", key, "--region", region])  # stops working now
+            rc, _, err = self.cli(["kms", "schedule-key-deletion", "--key-id", key, "--pending-window-in-days",
+                                   KEY_DELETION_DAYS, "--region", region])
+            (retired if rc == 0 else failed).append(alias["AliasName"][len("alias/"):] + ("" if rc == 0 else f" ({err.strip()[:120]})"))
+        notes = []
+        if retired:
+            notes.append(f"Scheduled deletion of {len(retired)} client key(s) in {KEY_DELETION_DAYS} days: {', '.join(retired)}.")
+        if failed:
+            notes.append(f"Could not schedule deletion of: {', '.join(failed)}. Do it in the AWS console (KMS).")
+        return " ".join(notes) or "No client keys were left in AWS KMS."
 
     def hourly_usd(self, size: str) -> float:
         return HOURLY[size]

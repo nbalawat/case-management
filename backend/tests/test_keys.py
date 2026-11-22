@@ -5,7 +5,9 @@ The contract tests run against every provider:
   * transit    an in-process stand-in that answers as OpenBao's Transit engine documents it (versioned keys,
                vault:vN: tokens, deletion only once allowed). Not the real thing: see the next line;
   * openbao    the real OpenBao, when TEST_TRANSIT_ADDR and TEST_TRANSIT_TOKEN name a disposable dev server with the
-               transit engine mounted (CI runs one).
+               transit engine mounted (CI runs one);
+  * aws-kms    AWS KMS as moto emulates it, in-process (moto implements key states, aliases, encryption context and
+               on-demand rotation). The real service is checked on the cloud machine with `python -m app.cloudcheck`.
 """
 from __future__ import annotations
 
@@ -83,8 +85,29 @@ class FakeTransit:
 REAL = os.getenv("TEST_TRANSIT_ADDR", "")
 
 
-@pytest.fixture(params=["local", "transit", "openbao"])
+@pytest.fixture
+def kms():
+    """An AWS KMS client against moto's in-process emulation, with throwaway credentials."""
+    moto = pytest.importorskip("moto")
+    boto3 = pytest.importorskip("boto3")
+    saved = {k: os.environ.get(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")}
+    os.environ.update(AWS_ACCESS_KEY_ID="testing", AWS_SECRET_ACCESS_KEY="testing", AWS_SESSION_TOKEN="testing")
+    with moto.mock_aws():
+        yield boto3.client("kms", region_name="us-east-1")
+    for k, v in saved.items():
+        os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
+def _aws(kms, **kw):
+    from app.keys.aws_kms import AwsKmsKeyProvider
+
+    return AwsKmsKeyProvider("us-east-1", client=kms, sleep=lambda _: None, **kw)
+
+
+@pytest.fixture(params=["local", "transit", "openbao", "aws-kms"])
 def kp(request, tmp_path):
+    if request.param == "aws-kms":
+        return _aws(request.getfixturevalue("kms"))
     if request.param == "local":
         return LocalKeyProvider(tmp_path / "keys", base64.b64encode(secrets.token_bytes(32)).decode())
     if request.param == "transit":
@@ -196,6 +219,94 @@ def test_the_transit_provider_reports_a_refusal_and_an_absent_service():
         gone.info("acme")
     with pytest.raises(KeyServiceError, match="TRANSIT_ADDR"):
         TransitKeyProvider("", "root")
+
+
+# --- AWS KMS's own guarantees -------------------------------------------------------------------------------------------
+def test_each_client_has_its_own_tagged_kms_key_behind_an_alias(kms):
+    kp = _aws(kms)
+    a, b = kp.create("acme"), kp.create("bolt")
+    assert a.reference != b.reference and a.reference.startswith("arn:aws:kms:us-east-1:")
+    aliases = {x["AliasName"]: x["TargetKeyId"] for x in kms.list_aliases()["Aliases"]}
+    assert {"alias/caseforge-client-acme", "alias/caseforge-client-bolt"} <= set(aliases)
+    tags = {t["TagKey"]: t["TagValue"] for t in kms.list_resource_tags(KeyId=aliases["alias/caseforge-client-acme"])["Tags"]}
+    assert tags["caseforge:client"] == "acme"
+    assert kms.get_key_rotation_status(KeyId=aliases["alias/caseforge-client-acme"])["KeyRotationEnabled"]
+    assert len(kms.list_keys()["Keys"]) == 2 and kp.create("acme").reference == a.reference  # made once
+
+
+def test_a_kms_token_is_bound_to_its_client_by_the_encryption_context(kms):
+    kp = _aws(kms)
+    kp.create("acme")
+    token = kp.wrap("acme", secrets.token_bytes(32))
+    blob = base64.b64decode(token.split(":", 2)[2])
+    arn = kp.info("acme").reference
+    with pytest.raises(Exception):  # the context is part of the ciphertext: without it, KMS refuses
+        kms.decrypt(KeyId=arn, CiphertextBlob=blob)
+    assert len(kms.decrypt(KeyId=arn, CiphertextBlob=blob, EncryptionContext={"caseforge:client": "acme"})["Plaintext"]) == 32
+
+
+def test_destroying_a_kms_key_disables_it_now_and_schedules_deletion(kms):
+    kp = _aws(kms, deletion_days=7)
+    kp.create("acme")
+    arn = kp.info("acme").reference
+    kp.destroy("acme")
+    meta = kms.describe_key(KeyId=arn)["KeyMetadata"]
+    assert meta["KeyState"] == "PendingDeletion" and not meta["Enabled"] and meta.get("DeletionDate")
+    assert kp.info("acme").destroyed and kp.destroy("acme").destroyed  # idempotent
+    with pytest.raises(KeyDestroyed, match="not given a new key"):
+        kp.create("acme")
+
+
+def test_a_kms_key_that_never_existed_is_missing_not_made(kms):
+    kp = _aws(kms)
+    with pytest.raises(KeyDestroyed, match="not in AWS KMS"):
+        kp.wrap("ghost", secrets.token_bytes(32))
+    assert kms.list_keys()["Keys"] == []
+
+
+@pytest.mark.parametrize("token", ["vault:v1:abc", "kms:v1:not base64!", "kms:vx:AAAA"])
+def test_a_token_that_is_not_a_kms_one_is_refused(kms, token):
+    kp = _aws(kms)
+    kp.create("acme")
+    with pytest.raises(KeyServiceError):
+        kp.unwrap("acme", token)
+
+
+def test_kms_settings_are_checked():
+    from app.keys.aws_kms import AwsKmsKeyProvider
+
+    with pytest.raises(KeyServiceError, match="between 7 and 30"):
+        AwsKmsKeyProvider(client=object(), deletion_days=3)
+    with pytest.raises(KeyServiceError, match="alias prefix"):
+        AwsKmsKeyProvider(client=object(), alias_prefix="aws/mine")
+
+
+def test_kms_refusals_read_as_key_service_errors():
+    from botocore.exceptions import ClientError, EndpointConnectionError
+
+    from app.keys.aws_kms import AwsKmsKeyProvider
+
+    class Denied:
+        def describe_key(self, **_):
+            raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": "not allowed"}}, "DescribeKey")
+
+    class Away:
+        def describe_key(self, **_):
+            raise EndpointConnectionError(endpoint_url="https://kms.us-east-1.amazonaws.com")
+
+    with pytest.raises(KeyServiceError, match="missing a KMS permission"):
+        AwsKmsKeyProvider(client=Denied()).info("acme")
+    with pytest.raises(KeyServiceError, match="did not answer"):
+        AwsKmsKeyProvider(client=Away()).info("acme")
+
+
+def test_the_configured_provider_can_be_aws_kms(kms):
+    saved = _provider("aws-kms")
+    try:
+        p = keys.provider()
+        assert p.name == "aws-kms" and p.prefix == settings.kms_alias_prefix
+    finally:
+        _provider(saved)
 
 
 # --- the sealed format ------------------------------------------------------------------------------------------------------

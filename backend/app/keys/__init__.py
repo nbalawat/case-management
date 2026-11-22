@@ -7,7 +7,7 @@ from ..config import settings
 from .base import KeyDestroyed, KeyInfo, KeyProvider, KeyServiceError
 from .envelope import Tampered, is_sealed, open_sealed, rewrap, seal
 
-PROVIDERS = ("local", "transit", "none")
+PROVIDERS = ("local", "transit", "aws-kms", "none")
 
 
 @functools.cache
@@ -24,6 +24,11 @@ def provider() -> KeyProvider | None:
         from .transit import TransitKeyProvider
 
         return TransitKeyProvider(settings.transit_addr, settings.transit_token, settings.transit_mount, settings.transit_prefix)
+    if kind == "aws-kms":
+        from .aws_kms import AwsKmsKeyProvider
+
+        return AwsKmsKeyProvider(settings.kms_region, endpoint_url=settings.kms_endpoint_url, alias_prefix=settings.kms_alias_prefix,
+                                 deletion_days=settings.kms_deletion_days)
     raise KeyServiceError(f"KEY_PROVIDER is one of {', '.join(PROVIDERS)}, not '{kind}'")
 
 

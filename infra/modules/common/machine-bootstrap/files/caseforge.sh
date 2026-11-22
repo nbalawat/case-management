@@ -11,6 +11,9 @@
 #   caseforge env KEY=VALUE     set a value in the stack's .env (for example ANTHROPIC_API_KEY); restart to apply
 #   caseforge extend [HOURS]    push the automatic stop back to HOURS from now (default: the configured hours)
 #   caseforge reset --yes       delete every container and volume (all data), then start again from a fresh seed
+#   caseforge cloudcheck [URL]  prove the cloud's object storage and key service with the machine's own role: probe
+#                               objects under URL (on AWS: the setup's data bucket) and a throwaway client key in
+#                               AWS KMS, both removed afterwards (python -m app.cloudcheck in the app's image)
 #
 # Settings live in /etc/caseforge/machine.env (written by cloud-init from the OpenTofu variables).
 set -euo pipefail
@@ -99,6 +102,14 @@ stop_time() {
   date -d "@$((usec / 1000000))" '+%Y-%m-%d %H:%M %Z'
 }
 
+IMDS="${IMDS:-http://169.254.169.254}"
+aws_identity() {  # prints "<account> <region>" on AWS (IMDSv2), nothing elsewhere
+  local token doc
+  token="$(curl -fsS -m 2 -X PUT "$IMDS/latest/api/token" -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' 2>/dev/null)" || return 0
+  doc="$(curl -fsS -m 2 -H "X-aws-ec2-metadata-token: $token" "$IMDS/latest/dynamic/instance-identity/document" 2>/dev/null)" || return 0
+  printf '%s %s\n' "$(sed -n 's/.*"accountId" *: *"\([0-9]*\)".*/\1/p' <<<"$doc")" "$(sed -n 's/.*"region" *: *"\([a-z0-9-]*\)".*/\1/p' <<<"$doc")"
+}
+
 ready() { curl -fsS -m 5 -o /dev/null http://localhost:8000/readyz; }
 
 cmd_provision() {
@@ -162,6 +173,8 @@ cmd_update() {
   need_root update "$@"
   local ref="${1:-$GIT_REF}"
   fetch_source "$ref"
+  # This command itself comes from the source too, so an update brings its new subcommands.
+  install -m 0755 "$SRC/infra/modules/common/machine-bootstrap/files/caseforge.sh" "${CASEFORGE_BIN:-/usr/local/bin/caseforge}"
   set_conf GIT_REF "$ref"
   $SYSTEMCTL restart caseforge.service
 }
@@ -176,6 +189,23 @@ cmd_env() {
   fi
   printf '%s\n' "$pair" >> "$SRC/.env"
   say "set $key in the stack's .env; run 'caseforge restart' to apply"
+}
+
+cmd_cloudcheck() {
+  local url="${1:-}" image account region keys=()
+  read -r account region <<<"$(aws_identity)" || true
+  if [ -z "$url" ]; then
+    [ -n "${account:-}" ] || die "not on AWS: give the storage location, for example: caseforge cloudcheck gs://bucket/check"
+    url="s3://caseforge-data-${account}-${region}/"
+  fi
+  # On AWS the key service is KMS; elsewhere the stack's own KEY_PROVIDER applies.
+  [ -n "${account:-}" ] && keys=(-e KEY_PROVIDER=aws-kms -e "AWS_REGION=$region" -e "KMS_REGION=$region")
+  cd "$SRC"
+  image="$(docker inspect --format '{{.Image}}' "$(docker compose ps -q app 2>/dev/null | head -1)" 2>/dev/null)" \
+    || die "the app container is not there yet; wait for the stack (caseforge wait) and try again"
+  # The host's network, so the container reaches the instance's credentials with IMDSv2's hop limit of 1 kept as is:
+  # the stack's own containers, on Docker's bridge network, still cannot.
+  exec docker run --rm --network host "${keys[@]}" "$image" uv run --no-dev python -m app.cloudcheck all "$url"
 }
 
 cmd_extend() { need_root extend "$@"; schedule_stop "${1:-$AUTO_STOP_HOURS}"; }
@@ -193,7 +223,7 @@ main() {
   local cmd="${1:-status}"
   shift || true
   case "$cmd" in
-    provision|run|halt|status|wait|logs|restart|stack|update|env|extend|reset) "cmd_$cmd" "$@" ;;
+    provision|run|halt|status|wait|logs|restart|stack|update|env|extend|reset|cloudcheck) "cmd_$cmd" "$@" ;;
     autostop) need_root autostop "$@"; schedule_stop "$AUTO_STOP_HOURS" ;;
     help|-h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//' ;;
     *) die "unknown command '$cmd' (try: caseforge help)" ;;

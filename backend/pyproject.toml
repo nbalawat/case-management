@@ -35,6 +35,9 @@ dev = [
     "time-machine>=2.15",
     {include-group = "llm"},
     {include-group = "s3"},
+    {include-group = "aws"},
+    {include-group = "adls"},
+    {include-group = "gcs"},
     {include-group = "kafka"},
     {include-group = "lake"},
     {include-group = "search"},
@@ -58,6 +61,8 @@ durable = ["temporalio>=1.9"]
 s3 = ["s3fs>=2024.6"]
 adls = ["adlfs>=2024.4"]
 gcs = ["gcsfs>=2024.6"]
+# Per-client keys in AWS KMS (KEY_PROVIDER=aws-kms).
+aws = ["boto3>=1.34"]
 # Models that rank alerts (scikit-learn). Without it the registry and feature store work and training says what is missing.
 ml = ["scikit-learn>=1.5"]
 

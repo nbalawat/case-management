@@ -326,13 +326,17 @@ class Lifecycle:
                        | {"caseforge"})
         self.out(f"This deletes, on {self.cloud.label} in {setup['region']}: every cloud machine ({', '.join(names)}) "
                  "with its disk and data, then everything setup created: the state store and the machines' state, the "
-                 "operator and CI roles, and the state key (deleted after the cloud's shortest waiting period). "
+                 "operator and CI roles, the data bucket, and the state key and any client keys the application made "
+                 "(deleted after the cloud's shortest waiting period). "
                  "Afterwards nothing bills.")
         self.confirm("Tear everything down?", expect="delete everything")
         asked, self.assume_yes = self.assume_yes, True
         try:
             for name in names:
                 self.down(name)
+            note = self.cloud.retire_client_keys(setup)  # the application's own keys: in no OpenTofu state
+            if note:
+                self.out(note)
             sdir = self.home.setup_dir(self.cloud.name)
             tofu = self.tofu_factory(self.cloud.setup_root, sdir / "tofu", {})
             var_file = sdir / "setup.tfvars.json"
@@ -353,8 +357,8 @@ class Lifecycle:
         if note:
             self.out(note)
         self.refresh_ssh_config()
-        self.out(f"Torn down: nothing CaseForge created on {self.cloud.label} is left (apart from the key, which the "
-                 "cloud deletes at the end of its waiting period). `setup` starts again from nothing.")
+        self.out(f"Torn down: nothing CaseForge created on {self.cloud.label} is left (apart from the keys, which the "
+                 "cloud deletes at the end of their waiting period). `setup` starts again from nothing.")
 
     def status(self, name: str) -> int:
         record = self._known(name)

@@ -11,7 +11,7 @@ locals {
   trusted   = length(var.trusted_principals) > 0 ? var.trusted_principals : ["arn:${local.partition}:iam::${local.account}:root"]
 }
 
-# ---- the machine's instance profile: Session Manager as a second way in, nothing else
+# ---- the machine's instance profile: Session Manager as a second way in, and the application's own permissions below
 data "aws_iam_policy_document" "ec2_trust" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -31,6 +31,70 @@ resource "aws_iam_role" "machine" {
 resource "aws_iam_role_policy_attachment" "machine_ssm" {
   role       = aws_iam_role.machine.name
   policy_arn = "arn:${local.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# ---- what the application on the machine may do with the machine's own credentials (python -m app.cloudcheck, and
+# KEY_PROVIDER=aws-kms with EVIDENCE_URL=s3://...). Only the data bucket, and only KMS keys the application itself made
+# for a client: tagged caseforge:client and named alias/<prefix>-client-*. It cannot touch the state key or any other key.
+data "aws_iam_policy_document" "machine_app" {
+  #checkov:skip=CKV_AWS_356:kms:CreateKey and kms:ListAliases have no resource to scope to; CreateKey requires the client tag in the request
+  #checkov:skip=CKV_AWS_111:CreateKey is limited by the required request tag; every other KMS write is limited to keys carrying the tag
+  dynamic "statement" {
+    for_each = var.data_bucket_arn == null ? [] : [var.data_bucket_arn]
+    content {
+      sid       = "DataBucketList"
+      actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+      resources = [statement.value]
+    }
+  }
+  dynamic "statement" {
+    for_each = var.data_bucket_arn == null ? [] : [var.data_bucket_arn]
+    content {
+      sid       = "DataBucketObjects"
+      actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+      resources = ["${statement.value}/*"]
+    }
+  }
+  statement {
+    sid       = "ClientKeysCreate"
+    actions   = ["kms:CreateKey", "kms:TagResource"]
+    resources = ["*"]
+    condition {
+      test     = "Null"
+      variable = "aws:RequestTag/caseforge:client"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = var.regions
+    }
+  }
+  statement {
+    sid = "ClientKeysUse"
+    actions = [
+      "kms:Encrypt", "kms:Decrypt", "kms:DescribeKey", "kms:ListKeyRotations", "kms:ListResourceTags",
+      "kms:RotateKeyOnDemand", "kms:EnableKeyRotation", "kms:GetKeyRotationStatus",
+      "kms:DisableKey", "kms:ScheduleKeyDeletion", "kms:CreateAlias",
+    ]
+    resources = [for r in var.regions : "arn:${local.partition}:kms:${r}:${local.account}:key/*"]
+    condition {
+      test     = "Null"
+      variable = "aws:ResourceTag/caseforge:client"
+      values   = ["false"]
+    }
+  }
+  statement {
+    sid       = "ClientKeyAliases"
+    actions   = ["kms:CreateAlias"]
+    resources = [for r in var.regions : "arn:${local.partition}:kms:${r}:${local.account}:alias/${var.prefix}-client-*"]
+  }
+}
+
+resource "aws_iam_role_policy" "machine_app" {
+  name   = "application"
+  role   = aws_iam_role.machine.id
+  policy = data.aws_iam_policy_document.machine_app.json
 }
 
 resource "aws_iam_instance_profile" "machine" {

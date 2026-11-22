@@ -19,6 +19,12 @@ variable "state_key_arn" {
   type        = string
 }
 
+variable "data_bucket_arn" {
+  description = "ARN of the machine's data bucket, which the machine's own role may read and write. Null: no bucket access."
+  type        = string
+  default     = null
+}
+
 variable "trusted_principals" {
   description = "IAM ARNs that may assume the operator role. Empty: any identity in this account whose own policy allows sts:AssumeRole on it."
   type        = list(string)

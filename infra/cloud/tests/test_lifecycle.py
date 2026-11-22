@@ -193,9 +193,17 @@ class LifecycleTest(unittest.TestCase):
         with self.assertRaises(UserError):
             life.teardown()
         self.assertIsNotNone(self.world.machine)
+        self.world.kms = {"alias/caseforge-client-meridian": ["k-1", "Enabled"], "alias/caseforge-client-gone": ["k-2", "PendingDeletion"]}
         self.world.answers = ["delete everything"]
         life.teardown()
         self.assertIsNone(self.world.machine)
+        self.assertEqual(self.world.kms["alias/caseforge-client-meridian"][1], "PendingDeletion", "client keys are shredded")
+        retire = next(i for i, c in enumerate(self.world.calls) if c[:3] == ("aws", "kms", "schedule-key-deletion"))
+        applies = [i for i, c in enumerate(self.world.calls) if c[0] == "apply"]
+        self.assertTrue(applies[-3] < retire < applies[-2], "keys go after the machines and before the setup")
+        self.assertEqual(sum(1 for c in self.world.calls if c[:3] == ("aws", "kms", "schedule-key-deletion")), 1,
+                         "a key already pending deletion is left alone")
+        self.assertTrue(any("meridian" in line for line in self.world.output))
         self.assertFalse(self.world.setup_applied)
         order = [(c[1], c[2]) for c in self.world.calls if c[0] == "apply"]
         self.assertEqual(order[-3:], [("machine", True), ("bootstrap", False), ("bootstrap", True)],
@@ -203,6 +211,14 @@ class LifecycleTest(unittest.TestCase):
         self.assertIsNone(life.home.setup_outputs("aws"))
         self.assertNotIn("caseforge-operator", (self.tmp / "aws-config").read_text())
         self.assertFalse(life.assume_yes, "teardown must not leave questions switched off")
+
+    def test_teardown_says_what_to_do_when_client_keys_cannot_be_listed(self):
+        life = self.setup_done()
+        life.cloud.cli = lambda args: (127, "", "the AWS CLI (aws) is not installed")
+        self.world.answers = ["delete everything"]
+        life.teardown()
+        self.assertTrue(any("alias/caseforge-client-" in line and "console" in line for line in self.world.output))
+        self.assertFalse(self.world.setup_applied, "the rest of the teardown still happens")
 
     # ---- status
     def test_status_runs_the_machines_status_or_explains_why_not(self):

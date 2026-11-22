@@ -58,6 +58,11 @@ class Cloud(ABC):
         """Undo prepare_operator after a teardown. Returns a note."""
         return None
 
+    def retire_client_keys(self, setup: Mapping[str, Any]) -> Optional[str]:
+        """Schedule deletion of the per-client keys the application made in the cloud's key service (they are not in
+        any OpenTofu state). Called by teardown after the machines are gone. Returns a note."""
+        return None
+
     def teardown_vars(self, region: str) -> Dict[str, Any]:
         """Setup variables for the apply just before destroying it (for example: let the state store be emptied)."""
         return {**self.setup_vars(region), "teardown": True}

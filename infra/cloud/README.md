@@ -46,7 +46,11 @@ No Docker on the laptop: images build and run on the machine.
   machine's network, instance, disk and budget in the allowed regions and read and write the machine's state, and it
   cannot create or change IAM. Setup writes a `caseforge-operator` profile to `~/.aws/config` that assumes it from
   the profile you signed in with, and later commands use it automatically (`--as-caller` uses your own credentials).
-- the machine's **instance profile** (Session Manager only), so the operator never needs IAM write access.
+- the machine's **instance profile**, so the operator never needs IAM write access: Session Manager, plus what the
+  application may do with the machine's own credentials: read and write the data bucket, and make and use AWS KMS keys
+  for clients (only keys tagged `caseforge:client`, named `alias/caseforge-client-*`; never the state key).
+- the **data bucket** `caseforge-data-<account>-<region>` (empty, so free): where `caseforge cloudcheck` proves object
+  storage, and where a stack can keep documents (`EVIDENCE_URL=s3://<bucket>/evidence`).
 - the GitHub OIDC roles the rest of `infra/` uses for CI plans and applies (no cost; see `infra/README.md`).
 
 It also adds one `Include` line at the top of `~/.ssh/config` (with a backup of the original next to it) pointing at
@@ -92,7 +96,14 @@ ssh caseforge caseforge restart       restart the stack, keeping data
 ssh caseforge caseforge stack sso     run another Makefile target (here: sign-in through Keycloak)
 ssh caseforge caseforge update BRANCH run another branch, tag or commit
 ssh caseforge caseforge reset --yes   wipe every volume and start from a fresh seed
+ssh caseforge caseforge cloudcheck    prove S3 and AWS KMS with the machine's own role (see below)
 ```
+
+`caseforge cloudcheck` runs `python -m app.cloudcheck` in the app's image on the host's network (so the instance's
+credentials are reachable with IMDSv2's hop limit of 1 kept; the stack's own containers still cannot reach them). It
+writes, lists, reads and deletes probe objects in the data bucket, then makes a throwaway client key in AWS KMS, seals a
+document, rotates the key, re-wraps the document and destroys the key (disabled at once, deleted by AWS after 7 days,
+not billed meanwhile). One line per step, `PASSED` at the end. It costs well under a cent.
 
 The same through the command: `infra/bin/cloud.py status | logs [service] | update REF | stack NAME | extend HOURS`.
 Because the consoles are on `localhost`, `stack sso` works unchanged: Keycloak's issuer is
@@ -117,9 +128,10 @@ Prices are on-demand list prices in us-east-1; `infra/bin/cloud.py cost` prints 
 | `stop` (or the automatic stop) | the machine, its disk, all data | the disk only | about $12 a month |
 | `down` | nothing: machine, disk, data, network and budget are deleted | nothing | $0 |
 | setup (stays after `down`) | state bucket, key, roles | the key and a few KB of state | about $1 a month |
-| `teardown` | nothing: every machine, then the state bucket and its contents, the roles and the GitHub OIDC provider | nothing (the key waits 7 days, AWS's minimum, before it is deleted, and does not bill meanwhile) | $0 |
+| `teardown` | nothing: every machine, any client keys the application made in KMS, then the state and data buckets and their contents, the roles and the GitHub OIDC provider | nothing (the key waits 7 days, AWS's minimum, before it is deleted, and does not bill meanwhile) | $0 |
 
-`teardown` asks you to type `delete everything`; it runs `down` for every machine first, then destroys the setup
+`teardown` asks you to type `delete everything`; it runs `down` for every machine first, then schedules deletion of
+every `alias/caseforge-client-*` key with the AWS CLI (those keys are the application's, in no OpenTofu state), then destroys the setup
 (with an administrator's credentials, as setup ran) and removes the operator profile from `~/.aws/config`.
 
 `down` asks you to type the machine's name. It needs only the setup on this computer, not the machine's own files,

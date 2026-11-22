@@ -55,3 +55,34 @@ run "no_iam_writes_and_scoped_state" {
     error_message = "EC2 writes must be limited to the allowed regions"
   }
 }
+
+run "the_application_reaches_only_its_bucket_and_its_own_client_keys" {
+  command = plan
+  variables {
+    data_bucket_arn = "arn:aws:s3:::caseforge-data-123456789012-us-east-1"
+  }
+  assert {
+    condition     = one([for s in data.aws_iam_policy_document.machine_app.statement : s.resources if s.sid == "DataBucketObjects"]) == toset(["arn:aws:s3:::caseforge-data-123456789012-us-east-1/*"])
+    error_message = "the machine may write only its data bucket"
+  }
+  assert {
+    condition     = jsonencode(one([for s in data.aws_iam_policy_document.machine_app.statement : s.condition if s.sid == "ClientKeysUse"])) == jsonencode([{ test = "Null", values = ["false"], variable = "aws:ResourceTag/caseforge:client" }])
+    error_message = "KMS use must be limited to keys tagged as a client's"
+  }
+  assert {
+    condition     = length([for s in data.aws_iam_policy_document.machine_app.statement : s if contains(s.resources, "arn:aws:kms:us-east-1:123456789012:key/mock")]) == 0
+    error_message = "the machine must not reach the state key"
+  }
+  assert {
+    condition     = one([for s in data.aws_iam_policy_document.machine_app.statement : s.resources if s.sid == "ClientKeyAliases"]) == toset(["arn:aws:kms:us-east-1:123456789012:alias/caseforge-client-*"])
+    error_message = "aliases are limited to the client prefix"
+  }
+}
+
+run "no_bucket_no_bucket_access" {
+  command = plan
+  assert {
+    condition     = length([for s in data.aws_iam_policy_document.machine_app.statement : s if startswith(coalesce(s.sid, ""), "DataBucket")]) == 0
+    error_message = "without a data bucket the machine gets no S3 access"
+  }
+}
