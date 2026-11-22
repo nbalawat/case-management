@@ -50,8 +50,10 @@ class FakeTofu:
             return self.world.machine is None or self.world.machine["running"] != values["running"] or self.world.cidrs != values["allowed_cidrs"]
         return not self.world.setup_applied
 
-    def apply(self, plan: Path, state: Optional[Path] = None) -> None:
+    def apply(self, plan: Path, state: Optional[Path] = None, var_file: Optional[Path] = None) -> None:
         root, destroy, values = self.world.pending
+        if self.root.name == "machine" and var_file is None:
+            raise AssertionError("an encrypted plan cannot be applied without its variables")
         self.world.calls.append(("apply", root, destroy))
         if root != "machine":
             self.world.setup_applied = True
@@ -65,9 +67,11 @@ class FakeTofu:
                               "machine_type": "m7i.2xlarge", "public_ip": address, "running": values["running"],
                               "console_url": "https://console.example/i"}
 
-    def outputs(self, state: Optional[Path] = None) -> Dict[str, Any]:
+    def outputs(self, state: Optional[Path] = None, var_file: Optional[Path] = None) -> Dict[str, Any]:
         if self.root.name != "machine":
             return dict(SETUP_OUTPUTS)
+        if var_file is None:
+            raise AssertionError("encrypted state cannot be read without its variables")
         return {"machine": self.world.machine, "ssh_user": "caseforge", "forwarded_ports": {"app": 8000, "keycloak": 8080}}
 
 

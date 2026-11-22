@@ -115,7 +115,7 @@ class Lifecycle:
             plan.unlink(missing_ok=True)
             return False
         self.confirm(question, expect)
-        tofu.apply(plan)
+        tofu.apply(plan, var_file=var_file)
         plan.unlink(missing_ok=True)
         return True
 
@@ -201,9 +201,9 @@ class Lifecycle:
         changed = tofu.plan(out=sdir / "setup.tfplan", var_file=var_file, state=state)
         if changed:
             self.confirm("Create or update these setup resources?")
-            tofu.apply(sdir / "setup.tfplan", state=state)
+            tofu.apply(sdir / "setup.tfplan", state=state, var_file=var_file)
         (sdir / "setup.tfplan").unlink(missing_ok=True)
-        summary = self.cloud.setup_summary(tofu.outputs(state=state))
+        summary = self.cloud.setup_summary(tofu.outputs(state=state, var_file=var_file))
         note = None if self.as_caller else self.cloud.prepare_operator(summary)
         summary["operator_profile_written"] = bool(note and note.startswith("Wrote"))
         self.home.save_setup_outputs(self.cloud.name, summary)
@@ -235,7 +235,7 @@ class Lifecycle:
         self.out(f"SSH will be open to {', '.join(opts.allowed_cidrs)} only. {stop_note}")
         self._plan_and_apply(tofu, mdir / "machine.tfplan", var_file,
                              f"Bring up '{opts.name}' on {self.cloud.label} ({opts.size}, stack '{opts.stack}')?")
-        outputs = tofu.outputs()
+        outputs = tofu.outputs(var_file=var_file)
         record = self._record(opts.name, opts, outputs["machine"], outputs.get("ssh_user", "caseforge"),
                               outputs.get("forwarded_ports", {}))
         self.refresh_ssh_config()
@@ -284,7 +284,7 @@ class Lifecycle:
         verb = "Start" if running else "Stop"
         what = "compute bills again" if running else "the disk and all data are kept; only storage bills"
         self._plan_and_apply(tofu, mdir / "machine.tfplan", var_file, f"{verb} '{name}' ({what})?")
-        outputs = tofu.outputs()
+        outputs = tofu.outputs(var_file=var_file)
         record = self._record(name, opts, outputs["machine"], outputs.get("ssh_user", "caseforge"),
                               outputs.get("forwarded_ports", {}))
         self.refresh_ssh_config()

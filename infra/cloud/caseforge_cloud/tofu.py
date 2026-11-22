@@ -85,17 +85,22 @@ class Tofu:
             raise ToolError(f"`tofu plan` failed in {self.root.name}")
         return result.returncode == 2
 
-    def apply(self, plan: Path, state: Optional[Path] = None) -> None:
+    def apply(self, plan: Path, state: Optional[Path] = None, var_file: Optional[Path] = None) -> None:
+        """Apply a saved plan. The variables go in again: state encryption needs them to read the plan at all."""
         args: List[str] = ["apply", "-input=false"]
         if state is not None:
             args.append(f"-state={state}")
+        if var_file is not None:
+            args.append(f"-var-file={var_file}")
         args.append(str(plan))
         self.run(*args)
 
-    def outputs(self, state: Optional[Path] = None) -> Dict[str, Any]:
+    def outputs(self, state: Optional[Path] = None, var_file: Optional[Path] = None) -> Dict[str, Any]:
         args: List[str] = ["output", "-json"]
         if state is not None:
             args.append(f"-state={state}")
+        if var_file is not None:  # encrypted state cannot be read without the key's variables
+            args.append(f"-var-file={var_file}")
         raw = json.loads(self.run(*args, capture=True).stdout or "{}")
         return {k: v.get("value") for k, v in raw.items()}
 
