@@ -30,10 +30,16 @@ def _sample_on_close(s: Session, case: Case, defn: dict, actor: Persona, ts: dat
         return
     if (case.data or {}).get("qa_done") or not sampled(case.id, float(qa.get("sample_rate", 0))):
         return
+    open_review(s, case, actor.id, ts, {"sample_rate": qa.get("sample_rate")})
+
+
+def open_review(s: Session, case: Case, closed_by: str, ts: datetime, why: dict) -> Case:
+    """A QA review of a closed case: the sampler's pick, or one a QA lead adds to the sample."""
     review = create_case(s, load_case_types(case.tenant_id)[QA_CASE_TYPE], case.party_id, "low", created=ts, parent_id=case.id, actor="qa-sampler")
-    review.data = {"closed_by": actor.id, "closed_as": case.disposition}
+    review.data = {"closed_by": closed_by, "closed_as": case.disposition}
     case.data = dict(case.data or {}) | {"qa_done": True}
-    record(s, case.id, "qa-sampler", "system", "qa.sampled", {"review_case": review.id, "sample_rate": qa.get("sample_rate")}, ts=ts)
+    record(s, case.id, "qa-sampler", "system", "qa.sampled", {"review_case": review.id} | why, ts=ts)
+    return review
 
 
 def _apply_qa_outcome(s: Session, review: Case, defn: dict, actor: Persona, ts: datetime) -> None:

@@ -197,3 +197,17 @@ def test_the_backchannel_only_reroutes_the_configured_addresses():
         assert backchannel("https://login.example.com/x") == "https://login.example.com/x"
     finally:
         object.__setattr__(settings, "oidc_backchannel", saved)
+
+
+def test_the_console_shows_a_provider_declared_in_configuration(client):
+    saved = settings.oidc_clients
+    object.__setattr__(settings, "oidc_clients", "alder=https://login.alder.example/realms/alder")
+    try:
+        rows = {t["id"]: t for t in client.get("/api/platform/overview", headers={"X-Operator": "olivia"}).json()["tenants"]}
+        assert rows["alder"]["identity_declared"] == "https://login.alder.example/realms/alder" and rows["meridian"]["identity_declared"] is None
+        from app.auth import identity
+        from app.tenants.registry import runtime
+
+        assert identity.provider_of(runtime("alder")).issuer == "https://login.alder.example/realms/alder"
+    finally:
+        object.__setattr__(settings, "oidc_clients", saved)
