@@ -28,7 +28,7 @@ locals {
     ssh_user       = var.ssh_user
     ssh_public_key = trimspace(var.ssh_public_key)
     settings       = join("\n", [for k in sort(keys(local.settings)) : "${k}=${local.settings[k]}"])
-    helper         = base64encode(file("${path.module}/files/caseforge.sh"))
+    helper         = base64gzip(file("${path.module}/files/caseforge.sh"))
     service        = base64encode(templatefile("${path.module}/files/caseforge.service.tftpl", { ssh_user = var.ssh_user }))
     autostop       = base64encode(file("${path.module}/files/caseforge-autostop.service"))
   })

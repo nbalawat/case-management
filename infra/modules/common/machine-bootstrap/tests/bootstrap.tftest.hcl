@@ -31,6 +31,14 @@ run "renders_defaults" {
     error_message = "the stack must run as the machine's user"
   }
   assert {
+    condition     = length(output.user_data) <= 14000
+    error_message = "user data must stay well under AWS's 16 KB limit"
+  }
+  assert {
+    condition     = strcontains(output.user_data, "encoding: gz+b64")
+    error_message = "the helper must be gzipped to fit in user data"
+  }
+  assert {
     condition     = output.forwarded_ports.app == 8000 && output.forwarded_ports.keycloak == 8080
     error_message = "the app and Keycloak must be forwarded on the ports the laptop stack uses"
   }

@@ -21,9 +21,10 @@ write_files:
     permissions: "0644"
     content: |
       ${indent(6, settings)}
+  # Gzipped: AWS caps user data at 16 KB and the helper alone is over 10 KB.
   - path: /usr/local/bin/caseforge
     permissions: "0755"
-    encoding: b64
+    encoding: gz+b64
     content: ${helper}
   - path: /etc/systemd/system/caseforge.service
     permissions: "0644"
