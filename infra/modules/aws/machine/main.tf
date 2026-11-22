@@ -171,7 +171,9 @@ resource "aws_instance" "this" {
   lifecycle {
     # A newer Ubuntu image or changed user data must not replace a machine that holds data: cloud-init runs once, and
     # later changes go through the machine's own `caseforge update` and `caseforge stack`.
-    ignore_changes = [ami, user_data]
+    # A stopped instance reports no public address (associate_public_ip_address reads back false), which would
+    # otherwise force a replacement on `start`, destroying the disk and its data.
+    ignore_changes = [ami, user_data, associate_public_ip_address]
   }
 }
 
