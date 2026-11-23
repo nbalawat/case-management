@@ -112,3 +112,26 @@ Neither run logged a warning or an error. Three consumers reached about 56% of l
 Run B, throughput fell to half its first-half rate. Either the partitions finished unevenly, or Postgres became the
 shared limit, since three consumers and the API compete for it. API latency rose with the extra consumers for the same
 reason. A clean baseline, meaning a fresh database on an idle machine, is still to be run.
+
+### On AWS: one consumer, then three (commit 5b68916)
+
+The cloud machine (`infra/bin/cloud.py up`) was a freshly created m7i.2xlarge in us-east-1, with 8 vCPUs, 32 GB and gp3, running the `full`
+stack. Each run used a fresh client with 90,000 transactions over 1,800 customers on a topic with 3 partitions.
+
+| | Run A, 1 stream consumer | Run B, 3 stream consumers |
+|---|---:|---:|
+| Stream (first to last load) | **855 / s** | **2,302 / s** (2.69 times Run A) |
+| First half / second half of the run | 953 / 732 per s | 3,017 / 1,390 per s |
+| All 90,000 in Iceberg after publishing began | 110 s | 45 s |
+| Duplicates, rejects | 0, 0 | 0, 0 |
+| Alerts | 100 | 100 |
+| API under read load | 65 / s, p95 221 ms, 0 errors | 73 / s, p95 199 ms, 0 errors |
+
+`kafka-consumer-groups --describe` during Run B showed the group Stable with three members, and each partition
+held by a different member.
+
+An earlier run on the same machine type found three consumers **no faster** than one (794 / s against 748 / s) and
+500 duplicates. The consumers used the cooperative-sticky assignor, which balances the total number of partitions
+in the group across all topics, not each topic on its own. Each client has its own topic, so all three of the new
+client's partitions could, and did, land on one consumer. The consumers now default to the `range` assignor, which
+shares each topic's partitions out on its own (PR 86). `KAFKA_CONFIG` can still choose another strategy.
